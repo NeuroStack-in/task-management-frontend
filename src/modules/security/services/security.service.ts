@@ -4,10 +4,10 @@
  * Two real capabilities live here; the rest of the Security page is platform-fixed (Cognito) or
  * deferred (§15 IP allowlist / per-session revoke), and stays honestly read-only.
  *
- * - `GET /v1/me/sessions` — your signed-in sessions. Lean by necessity: `{session_id, last_seen}`
- *   only. Cognito exposes no device / IP / location without its paid advanced-security tier, so those
- *   columns are honestly absent rather than invented. There is **no per-session revoke** endpoint
- *   (that's the blocked §15 work), so the list is read-only.
+ * - `GET /v1/me/sessions` — your signed-in browsers, one row per browser: `{session_id, last_seen,
+ *   user_agent?, ip?}`. `user_agent` is the label the client reports ("Chrome on Windows"); `ip` is on
+ *   the server's shape but nothing writes it (Cognito gives no IP without its paid tier). There is
+ *   **no route that ends a session** — per-session or "all others" — so the list is read-only.
  * - `POST /v1/users/{id}/mfa/reset` — the lost-phone flow: an admin turns a member's TOTP off (perm
  *   `security:manage`). Nothing forces a re-enrol — the pool is `Mfa.OPTIONAL` — so the member signs
  *   in with a password until they set up a new authenticator themselves. The one admin MFA action.
@@ -24,6 +24,19 @@ export interface ApiSession {
   last_seen: number | null;
   /** Friendly device label ("Chrome on Windows") when the client reported one; else absent. */
   user_agent?: string | null;
+  /** On the server's `SessionRow`, but nothing writes it yet — absent in practice. */
+  ip?: string | null;
+  /** Epoch ms this browser was first seen (UX audit SET-18). Absent from older servers. */
+  created_at?: number | null;
+}
+
+/**
+ * `POST /v1/me/sessions/sign-out-everywhere` — revoke every refresh token this account holds, this
+ * browser's included, and clear the session rows (UX audit SET-18). Tokens already issued expire
+ * within the hour; the caller signs this browser out straight after.
+ */
+export async function signOutEverywhere(): Promise<void> {
+  await apiFetch("/v1/me/sessions/sign-out-everywhere", { method: "POST" });
 }
 
 export async function listMySessions(): Promise<ApiSession[]> {

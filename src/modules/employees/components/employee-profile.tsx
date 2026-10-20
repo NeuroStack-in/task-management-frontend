@@ -7,6 +7,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   ArrowLeft,
+  ArrowUpRight,
   Download,
   FileText,
   FolderKanban,
@@ -16,6 +17,8 @@ import {
   ShieldCheck,
   BarChart3,
   Loader2,
+  MonitorSmartphone,
+  TriangleAlert,
   Users,
 } from "lucide-react";
 import {
@@ -63,7 +66,11 @@ import {
 import { TablePagination } from "@/components/shared/table-pagination";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { isUuid, UNKNOWN_ROLE } from "@/lib/format";
+import { isUuid } from "@/lib/format";
+import { friendlyError } from "@/lib/errors";
+import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth.store";
+import { useQueryState } from "@/modules/projects/use-query-state";
 import { useRolesStore } from "@/stores/roles.store";
 import { SYSTEM_ROLES } from "@/constants/roles";
 import { downloadBlob } from "@/lib/download";
@@ -72,10 +79,17 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
 import {
   assignRole,
-  contributorRoleIds,
+  getPermissionCatalog,
   listRoles,
+  TIME_TRACK_SELF,
+  type ApiPermissionCatalog,
   type ApiRole,
 } from "@/modules/roles/services/roles.service";
+import { roleChange, scopeLabel } from "@/modules/roles/lib/role-change";
+import { helpFor, isSensitive } from "@/modules/roles/lib/permission-help";
+import { RoleChangeSummary } from "@/modules/roles/components/role-change-summary";
+import { connMeta, lastSeen } from "@/modules/agents/components/fleet-view";
+import { deviceStateLabel, isLiveDevice } from "@/modules/agents/lib/device-state";
 import {
   listDepartments,
   updateEmployee,
@@ -87,6 +101,12 @@ import { EmployeeAppUsageCard } from "./employee-app-usage-card";
 import { withEmp } from "@/modules/insights/lib/employee-scope";
 import { formatHours, isoDay } from "@/lib/format";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
+import {
+  useEmployeeDevices,
+  useEmployeeLeave,
+  type EmployeeLeave,
+  type ExtraState,
+} from "../use-employee-extras";
 import { collectEmployeeReport } from "../lib/employee-report-data";
 import {
   renderEmployeeReportPdf,
@@ -252,72 +272,92 @@ function exportEmployeeCsv(d: EmployeeProfileData) {
 }
 
 /**
- * Change this employee's RBAC role — the one reassignment WorkPulse actually has an endpoint for
- * (`PUT /v1/users/{id}/role`). Department/team moves have no backend route yet, so only the role is
- * persisted on save. The server enforces the caller's authority.
+ * Change this employee's role (`PUT /v1/users/{id}/role`). The server enforces the caller's
+ * authority.
+ *
+ * Called "Change role", as on the Roles page — this dialog said "Reassign" there and "Change role"
+ * here for the same action, and it changed the role on one click with no word about what the person
+ * would gain (UX audit PEOPLE-09). The pick now shows what changes — permissions gained and lost,
+ * sensitive ones named — before the button commits it. Department and team are edited under Edit;
+ * the stale "Department moves aren't available yet" line is gone (PEOPLE-15).
  */
-function ReassignDialog({
+function ChangeRoleDialog({
   open,
   onOpenChange,
   employeeId,
   name,
-  currentRoleName,
+  currentRoleId,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   employeeId: string;
   name: string;
-  currentRoleName: string;
+  currentRoleId: string;
   onSaved: () => void;
 }) {
   const [roles, setRoles] = useState<ApiRole[]>([]);
+  const [catalog, setCatalog] = useState<ApiPermissionCatalog | null>(null);
   const [roleId, setRoleId] = useState("");
   const [loadingRoles, setLoadingRoles] = useState(false);
   const [saving, setSaving] = useState(false);
+  const callerId = useAuthStore((s) => s.user?.id);
+  const isSelf = callerId === employeeId;
 
   useEffect(() => {
     if (!open) return;
     let live = true;
     setLoadingRoles(true);
+    setRoleId(currentRoleId);
     listRoles()
       .then((rs) => {
-        if (!live) return;
-        // Never the Owner role: ownership is granted from Settings → Organization → Owners, and the
-        // role route refuses it — offering it only led to a generic failure (WP-228).
-        setRoles(rs.filter((r) => r.id !== "role-owner"));
-        // Pre-select the role matching the current role name, if we can find it.
-        setRoleId(rs.find((r) => r.name === currentRoleName)?.id ?? "");
+        // Every role, Owner included, so the summary can read the current one — Owner is filtered
+        // out of the choices below: ownership is granted from Settings → Ownership, and the role
+        // route refuses it (WP-228).
+        if (live) setRoles(rs);
       })
       .catch(() => toast.error("Couldn't load roles"))
       .finally(() => {
         if (live) setLoadingRoles(false);
       });
+    // Labels for the summary only — without it the summary falls back to permission ids.
+    getPermissionCatalog()
+      .then((c) => live && setCatalog(c))
+      .catch(() => {});
     return () => {
       live = false;
     };
-  }, [open, currentRoleName]);
+  }, [open, currentRoleId]);
+
+  const choices = roles.filter((r) => r.id !== "role-owner");
+  const from = roles.find((r) => r.id === currentRoleId) ?? null;
+  const to = roles.find((r) => r.id === roleId) ?? null;
+  const changed = Boolean(to && roleId !== currentRoleId);
+  const change = changed && to ? roleChange(from, to) : null;
+  const labelById = useMemo(
+    () =>
+      new Map(
+        (catalog?.groups ?? []).flatMap((g) => g.permissions.map((p) => [p.id, p.label] as const)),
+      ),
+    [catalog],
+  );
 
   async function save() {
-    if (!roleId) {
-      toast.error("Pick a role");
-      return;
-    }
+    if (!to || !changed) return;
     setSaving(true);
     try {
-      await assignRole(employeeId, roleId);
-      const roleName = roles.find((r) => r.id === roleId)?.name ?? UNKNOWN_ROLE;
-      toast.success("Role updated", { description: `${name} → ${roleName}` });
+      await assignRole(employeeId, to.id);
+      toast.success(`${name}'s role is now ${to.name}`, {
+        description: "Their own view updates the next time they sign in.",
+      });
       onOpenChange(false);
       onSaved();
     } catch (e) {
-      toast.error("Couldn't update role", {
+      toast.error("Couldn't change the role", {
         description:
           e instanceof ApiError && e.status === 403
             ? "You can't grant this role — it carries permissions you don't hold, or you can't manage roles."
-            : e instanceof ApiError
-              ? e.message
-              : "Check your connection and try again.",
+            : friendlyError(e, "Check your connection and try again."),
       });
     } finally {
       setSaving(false);
@@ -325,42 +365,65 @@ function ReassignDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Reassign {name}</DialogTitle>
+          <DialogTitle>Change {name}&apos;s role</DialogTitle>
           <DialogDescription>
-            Change this employee&apos;s access role. Department moves aren&apos;t available
-            yet.
+            A person holds one role, so the new one replaces {from ? from.name : "their current one"}.
+            It applies on the server now; their own view updates at their next sign-in.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Role</Label>
+            <Label htmlFor="change-role-select">Role</Label>
             <Select
-              value={roleId}
+              value={roleId || null}
               onValueChange={(v) => setRoleId(v as string)}
-              items={Object.fromEntries(roles.map((r) => [r.id, r.name]))}
+              items={Object.fromEntries(choices.map((r) => [r.id, r.name]))}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger id="change-role-select" className="w-full">
                 <SelectValue placeholder={loadingRoles ? "Loading roles…" : "Select a role"} />
               </SelectTrigger>
               <SelectContent>
-                {roles.map((r) => (
+                {choices.map((r) => (
                   <SelectItem key={r.id} value={r.id}>
                     {r.name}
+                    {r.id === currentRoleId ? " (current)" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {to?.description ? (
+              <p className="text-xs text-muted-foreground">{to.description}</p>
+            ) : null}
           </div>
+          {change && to ? (
+            <RoleChangeSummary
+              change={change}
+              labelOf={(id) => labelById.get(id) ?? id}
+              fromName={from?.name ?? "their current role"}
+            />
+          ) : null}
+          {changed && isSelf ? (
+            <p className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+              <TriangleAlert className="mt-px size-3.5 shrink-0 text-warning" />
+              This is your own role. From your next sign-in you&apos;ll have only what{" "}
+              {to?.name ?? "it"} grants — if that doesn&apos;t include managing roles, you
+              can&apos;t change it back yourself.
+            </p>
+          ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={saving || loadingRoles}>
-            {saving ? "Saving…" : "Save changes"}
+          <Button
+            onClick={save}
+            disabled={saving || loadingRoles || !changed}
+            variant={changed && isSelf ? "destructive" : "default"}
+          >
+            {saving ? "Saving…" : isSelf ? "Change my role" : "Change role"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -475,20 +538,28 @@ function EditEmployeeDialog({
         <DialogHeader>
           <DialogTitle>Edit {data.name}</DialogTitle>
           <DialogDescription>
-            Update this employee&apos;s details. Access role is changed via Reassign.
+            Update this employee&apos;s details. Their role is changed with Change role.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>Full name</Label>
-            <Input value={form.name} onChange={(e) => setField("name")(e.target.value)} />
+            <Label htmlFor="edit-emp-name">Full name</Label>
+            <Input
+              id="edit-emp-name"
+              value={form.name}
+              onChange={(e) => setField("name")(e.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
-            <Label>Job title</Label>
-            <Input value={form.title} onChange={(e) => setField("title")(e.target.value)} />
+            <Label htmlFor="edit-emp-title">Job title</Label>
+            <Input
+              id="edit-emp-title"
+              value={form.title}
+              onChange={(e) => setField("title")(e.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
-            <Label>Department</Label>
+            <Label htmlFor="edit-emp-dept">Department</Label>
             <Select
               value={form.departmentId || NONE}
               onValueChange={(v) => onDepartmentChange(v as string)}
@@ -497,7 +568,7 @@ function EditEmployeeDialog({
                 ...Object.fromEntries(depts.map((d) => [d.id, d.name])),
               }}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger id="edit-emp-dept" className="w-full">
                 <SelectValue placeholder={loadingOpts ? "Loading…" : "Select a department"} />
               </SelectTrigger>
               <SelectContent>
@@ -511,8 +582,9 @@ function EditEmployeeDialog({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Location</Label>
+            <Label htmlFor="edit-emp-location">Location</Label>
             <Input
+              id="edit-emp-location"
               placeholder="City, State"
               value={form.location}
               onChange={(e) => setField("location")(e.target.value)}
@@ -637,6 +709,15 @@ function appUsageWindow(): { from: string; to: string } {
   };
 }
 
+/**
+ * The profile's tabs (UX audit PEOPLE-15). The profile was one long page that left out time,
+ * attendance, leave and devices entirely and sent screenshots and locations to other pages without
+ * saying so. It now groups what it knows about the person, and says where a fuller view lives.
+ * The tab is in the URL, so Back from a linked page returns to it.
+ */
+const PROFILE_TABS = ["overview", "time", "activity", "access"] as const;
+type ProfileTab = (typeof PROFILE_TABS)[number];
+
 function ProfileView({
   data,
   reload,
@@ -686,6 +767,9 @@ function ProfileView({
   // Separate from `activity:view` on purpose — see the card's own note. The server is the
   // real gate; this keeps a 403 card off a page the viewer is otherwise entitled to.
   const canSeeAppUsage = can("activity:apps:person");
+  const canChangeRole = canManage && can("roles:manage") && data.roleId !== "role-owner";
+
+  const [tab, setTab] = useQueryState<ProfileTab>("tab", "overview", PROFILE_TABS);
 
   // Whether *today* is a scheduled working day, so a Sunday isn't reported as an absence.
   //
@@ -711,70 +795,71 @@ function ProfileView({
   // change on every render, re-rendered, and looped until React gave up and showed the error
   // boundary. It took down the whole employee profile page.
   const customRoles = useRolesStore((st) => st.customRoles);
-  // The server's own answer to "which roles run a timer" (bit 110), custom roles included. The
-  // local store knows only the built-ins, so a custom non-tracking role (an "HR Manager") read as
-  // tracked and showed a red "Today · Absent" every working day (QA audit 2026-10-08, WP-227).
-  const [contributors, setContributors] = useState<Set<string> | null>(null);
+  // The server's roles: which of them run a timer (bit 110), custom roles included — the local store
+  // knows only the built-ins, so a custom non-tracking role (an "HR Manager") read as tracked and
+  // showed a red "Today · Absent" every working day (QA audit 2026-10-08, WP-227) — and this
+  // person's own role, for the Access tab.
+  const [serverRoles, setServerRoles] = useState<ApiRole[] | null>(null);
   useEffect(() => {
     let live = true;
-    contributorRoleIds()
-      .then((ids) => live && setContributors(ids))
+    listRoles()
+      .then((rs) => live && setServerRoles(rs))
       .catch(() => {
         /* no roles access — fall back to the built-in lookup below */
       });
     return () => {
       live = false;
     };
-  }, []);
+  }, [data.roleId]);
+  const role = serverRoles?.find((r) => r.id === data.roleId) ?? null;
   const isTracked = useMemo(() => {
     const roleId = data?.roleId;
     if (!roleId) return true;
-    if (contributors) return contributors.has(roleId);
-    const role =
+    if (serverRoles) {
+      const r = serverRoles.find((x) => x.id === roleId);
+      return r ? r.permissions.includes(TIME_TRACK_SELF) : true;
+    }
+    const local =
       SYSTEM_ROLES.find((r) => r.id === roleId) ??
       customRoles.find((r) => r.id === roleId);
-    return role ? role.permissions.includes("time-tracking:self") : true;
-  }, [contributors, customRoles, data?.roleId]);
+    return local ? local.permissions.includes("time-tracking:self") : true;
+  }, [serverRoles, customRoles, data?.roleId]);
   useEffect(() => {
     setTodayIsWorkday(isWorkday(new Date(), workdays));
   }, [workdays]);
 
   const department = data.department;
-  const [reassignOpen, setReassignOpen] = useState(false);
+  const [changeRoleOpen, setChangeRoleOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
   // Surface the employee's name + role in the top navbar for this detail route.
   usePageTitle(data.name, `${data.jobTitle} · ${department}`);
 
-  const chartData = data.kpi.days;
-  // A day only appears here if the agent recorded it, so any bars at all means real work to show;
-  // no days means nothing measured (an honest empty state, never a flat line of measured zeros).
-  const kpiMeasured = chartData.length > 0;
-  // The attendance statuses actually present in the window, in a stable order — the chart legend.
-  const seenStatuses = new Set(chartData.map((d) => d.status));
-  const legendStatuses = [
-    ...["present", "late", "partial", "leave"].filter((s) => seenStatuses.has(s)),
-    ...([...seenStatuses].some((s) => !ATTENDANCE_META[s]) ? ["_other"] : []),
+  const badge = headerBadge(data, todayIsWorkday, isTracked);
+  const tabs: { key: ProfileTab; label: string; short: string }[] = [
+    { key: "overview", label: "Overview", short: "Overview" },
+    { key: "time", label: "Time & attendance", short: "Time" },
+    { key: "activity", label: "Activity", short: "Activity" },
+    { key: "access", label: can("agents:manage") ? "Access & devices" : "Access", short: "Access" },
   ];
-
-  // Projects list paginates so a heavily-staffed employee doesn't run a wall of
-  // bars down the card.
-  const PROJECTS_PER_PAGE = 5;
-  const [projectPage, setProjectPage] = useState(0);
-  const projectPageCount = Math.max(
-    1,
-    Math.ceil(data.projects.length / PROJECTS_PER_PAGE),
-  );
-  const safeProjectPage = Math.min(projectPage, projectPageCount - 1);
-  const pagedProjects = data.projects.slice(
-    safeProjectPage * PROJECTS_PER_PAGE,
-    safeProjectPage * PROJECTS_PER_PAGE + PROJECTS_PER_PAGE,
-  );
+  const tabRefs = useRef<Partial<Record<ProfileTab, HTMLButtonElement | null>>>({});
+  const onTabKey = (e: React.KeyboardEvent, i: number) => {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    const to = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : i + step;
+    if (to === i || (step === 0 && e.key !== "Home" && e.key !== "End")) return;
+    e.preventDefault();
+    const next = tabs[(to + tabs.length) % tabs.length].key;
+    setTab(next);
+    tabRefs.current[next]?.focus();
+  };
 
   return (
-    <div className="space-y-4">
-      {/* Top bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    // Bottom room for the floating assistant button, which covered the recap's Regenerate and the
+    // last card's controls on a phone (UX audit PEOPLE-13).
+    <div className="space-y-4 pb-24">
+      {/* Top bar. Wraps on a phone — the action row didn't, so "Manage" sat off-screen behind a
+          sideways scroll (UX audit PEOPLE-13). */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <Link
           href="/employees"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -782,11 +867,11 @@ function ProfileView({
           <ArrowLeft className="size-4" />
           All employees
         </Link>
-        <div className="flex items-center gap-3">
-          <nav className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <nav className="hidden min-w-0 items-center gap-1.5 text-sm text-muted-foreground md:flex">
             <Link href="/employees" className="transition-colors hover:text-foreground">Employees</Link>
             <span className="text-muted-foreground/50">/</span>
-            <span className="font-medium text-foreground">{data.name}</span>
+            <span className="truncate font-medium text-foreground">{data.name}</span>
           </nav>
           {canViewAnalytics ? (
             // One way into this person's analytics (owner request 2026-10-16): it replaced the
@@ -845,12 +930,12 @@ function ProfileView({
 
       {canManage ? (
         <>
-          <ReassignDialog
-            open={reassignOpen}
-            onOpenChange={setReassignOpen}
+          <ChangeRoleDialog
+            open={changeRoleOpen}
+            onOpenChange={setChangeRoleOpen}
             employeeId={data.id}
             name={data.name}
-            currentRoleName={data.roleName}
+            currentRoleId={data.roleId}
             onSaved={reload}
           />
           <EditEmployeeDialog
@@ -862,100 +947,182 @@ function ProfileView({
         </>
       ) : null}
 
-      {/* 2-column layout on lg+: left = identity + projects, right = stats + chart + AI */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        {/* ── LEFT COLUMN ── */}
-        <div className="flex flex-col gap-4">
-          {/* Employee — identity, contact & address in ONE card */}
-          <div className="overflow-hidden rounded-xl border bg-card">
-            <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center">
-              {/* From the shared avatar store: one cache, refreshed before the presign expires,
-                  and no late patch into `data` to disturb an open Edit dialog (WP-454). */}
-              <UserAvatar
-                userId={data.id}
-                name={data.name}
-                className="size-16 shrink-0 ring-4 ring-feature-tint"
-                fallbackClassName="text-lg"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <h1 className="font-display text-xl font-semibold tracking-tight">
-                    {data.name}
-                  </h1>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {dash(data.empCode)}
-                  </span>
-                </div>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  {data.jobTitle} · {department}
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Badge className="bg-feature-tint text-primary">
-                    {data.roleName}
-                  </Badge>
-                  {(() => {
-                    const b = headerBadge(data, todayIsWorkday, isTracked);
-                    return (
-                      <Badge className={b.className} title={b.title}>
-                        {b.label}
-                      </Badge>
-                    );
-                  })()}
-                </div>
-              </div>
-              {canManage ? (
-                <div className="flex shrink-0 items-center gap-2 self-start sm:self-center">
-                  <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-                    <Pencil className="size-4" /> Edit
-                  </Button>
-                  {/* The role route needs `roles:manage`, not `employees:manage`, and an owner's role
-                      is changed through ownership, not here (WP-228). */}
-                  {can("roles:manage") && data.roleId !== "role-owner" ? (
-                    <Button variant="outline" size="sm" onClick={() => setReassignOpen(true)}>
-                      <ShieldCheck className="size-4" /> Reassign
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5">
-              <Detail label="Department" value={department} />
-              <Detail label="Phone" value={data.phone} />
-              <Detail label="Email" value={data.email} />
-              <Detail label="Hire date" value={data.hireDate} />
-              <Detail label="City / State" value={data.cityState} />
-              <Detail label="Country" value={data.country} />
-            </dl>
+      {/* Identity — who this is, above every tab. */}
+      <div className="flex flex-col gap-4 rounded-xl border bg-card p-5 sm:flex-row sm:items-center">
+        {/* From the shared avatar store: one cache, refreshed before the presign expires,
+            and no late patch into `data` to disturb an open Edit dialog (WP-454). */}
+        <UserAvatar
+          userId={data.id}
+          name={data.name}
+          className="size-16 shrink-0 ring-4 ring-feature-tint"
+          fallbackClassName="text-lg"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {/* Wraps rather than truncating — a long name is the one thing this page must show
+                whole (PEOPLE-13). */}
+            <h1 className="font-display text-xl font-semibold tracking-tight break-words">
+              {data.name}
+            </h1>
+            <span className="font-mono text-xs text-muted-foreground">
+              {dash(data.empCode)}
+            </span>
           </div>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {[data.jobTitle, department].filter(Boolean).join(" · ") || "—"}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge className="bg-feature-tint text-primary">{data.roleName || "No role"}</Badge>
+            <Badge className={badge.className} title={badge.title}>
+              {badge.label}
+            </Badge>
+          </div>
+        </div>
+        {canManage ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 self-start sm:self-center">
+            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+              <Pencil className="size-4" /> Edit
+            </Button>
+            {/* The role route needs `roles:manage`, not `employees:manage`, and an owner's role
+                is changed through ownership, not here (WP-228). */}
+            {canChangeRole ? (
+              <Button variant="outline" size="sm" onClick={() => setChangeRoleOpen(true)}>
+                <ShieldCheck className="size-4" /> Change role
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
-          {/* Projects — all projects, single accent bar, Active badge when active */}
-          <div className="flex-1 rounded-xl border bg-card p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-                <FolderKanban className="size-4" />
-              </span>
-              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Projects
-              </p>
-              <Badge className="bg-muted font-normal text-muted-foreground">
-                {data.projects.length}
-              </Badge>
-            </div>
-            {data.projects.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {/* A failed read is not "no projects" (WP-229). */}
-                {data.projectsFailed
-                  ? "Couldn't load this person's projects. Refresh to try again."
-                  : "Not assigned to any project yet."}
-              </p>
-            ) : (
-              <>
-                <ul className="space-y-4">
+      <div
+        role="tablist"
+        aria-label={`${data.name}'s profile`}
+        className="flex gap-1 overflow-x-auto border-b"
+      >
+        {tabs.map((t, i) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              ref={(el) => {
+                tabRefs.current[t.key] = el;
+              }}
+              type="button"
+              role="tab"
+              id={`profile-tab-${t.key}`}
+              aria-selected={active}
+              aria-controls={`profile-panel-${t.key}`}
+              tabIndex={active ? 0 : -1}
+              onClick={() => setTab(t.key)}
+              onKeyDown={(e) => onTabKey(e, i)}
+              className={cn(
+                "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+                active
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span className="sm:hidden">{t.short}</span>
+              <span className="hidden sm:inline">{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        role="tabpanel"
+        id={`profile-panel-${tab}`}
+        aria-labelledby={`profile-tab-${tab}`}
+        className="focus-visible:outline-none"
+      >
+        {tab === "overview" ? (
+          <OverviewTab data={data} />
+        ) : tab === "time" ? (
+          <TimeTab data={data} isTracked={isTracked} />
+        ) : tab === "activity" ? (
+          <ActivityTab
+            data={data}
+            appUsage={canSeeAppUsage ? appUsage : null}
+          />
+        ) : (
+          <AccessTab
+            data={data}
+            role={role}
+            rolesRead={serverRoles !== null}
+            isTracked={isTracked}
+            onChangeRole={canChangeRole ? () => setChangeRoleOpen(true) : undefined}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------- tabs -------------------------------- */
+
+/** Who they are, what they work on, and the AI recap of how it's going. */
+function OverviewTab({ data }: { data: EmployeeProfileData }) {
+  // Projects list paginates so a heavily-staffed employee doesn't run a wall of
+  // bars down the card.
+  const PROJECTS_PER_PAGE = 5;
+  const [projectPage, setProjectPage] = useState(0);
+  const projectPageCount = Math.max(1, Math.ceil(data.projects.length / PROJECTS_PER_PAGE));
+  const safeProjectPage = Math.min(projectPage, projectPageCount - 1);
+  const pagedProjects = data.projects.slice(
+    safeProjectPage * PROJECTS_PER_PAGE,
+    safeProjectPage * PROJECTS_PER_PAGE + PROJECTS_PER_PAGE,
+  );
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <div className="flex flex-col gap-4">
+        <div className="rounded-xl border bg-card">
+          <p className="border-b px-5 py-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Details
+          </p>
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-4 p-5 min-[420px]:grid-cols-2">
+            <Detail label="Department" value={data.department} />
+            {/* Team was loaded and never shown (PEOPLE-15). */}
+            <Detail label="Team" value={data.team} />
+            <Detail label="Email" value={data.email} />
+            <Detail label="Phone" value={data.phone} />
+            <Detail label="Hire date" value={data.hireDate} />
+            <Detail label="Location" value={data.cityState} />
+            {/* No Country row: the server's profile has no country, so it read "—" for everyone
+                (PEOPLE-15). The location above is the place the server does keep. */}
+          </dl>
+        </div>
+
+        {/* Projects — all projects, single accent bar, Active badge when active */}
+        <div className="flex-1 rounded-xl border bg-card p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+              <FolderKanban className="size-4" />
+            </span>
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Projects
+            </p>
+            <Badge className="bg-muted font-normal text-muted-foreground">
+              {data.projects.length}
+            </Badge>
+          </div>
+          {data.projects.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {/* A failed read is not "no projects" (WP-229). */}
+              {data.projectsFailed
+                ? "Couldn't load this person's projects. Refresh to try again."
+                : "Not assigned to any project yet."}
+            </p>
+          ) : (
+            <>
+              <ul className="space-y-4">
                 {pagedProjects.map((p) => (
                   <li key={p.id} className="space-y-1.5">
                     <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="flex min-w-0 items-center gap-2 font-medium">
+                      <Link
+                        href={`/projects/${p.id}`}
+                        className="flex min-w-0 items-center gap-2 font-medium hover:underline"
+                      >
                         <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
                           {p.key}
                         </span>
@@ -965,7 +1132,7 @@ function ProfileView({
                             Active
                           </Badge>
                         ) : null}
-                      </span>
+                      </Link>
                       <span
                         className="shrink-0 font-mono tabular-nums text-muted-foreground"
                         title="The project's completion, across everyone's tasks"
@@ -984,173 +1151,160 @@ function ProfileView({
                     </p>
                   </li>
                 ))}
-                </ul>
-                {data.projects.length > PROJECTS_PER_PAGE ? (
-                  <TablePagination
-                    page={safeProjectPage}
-                    pageCount={projectPageCount}
-                    total={data.projects.length}
-                    pageSize={PROJECTS_PER_PAGE}
-                    onPageChange={setProjectPage}
-                    className="mt-4"
-                  />
-                ) : null}
-              </>
-            )}
-          </div>
+              </ul>
+              {data.projects.length > PROJECTS_PER_PAGE ? (
+                <TablePagination
+                  page={safeProjectPage}
+                  pageCount={projectPageCount}
+                  total={data.projects.length}
+                  pageSize={PROJECTS_PER_PAGE}
+                  onPageChange={setProjectPage}
+                  className="mt-4"
+                />
+              ) : null}
+            </>
+          )}
         </div>
+      </div>
 
-        {/* ── RIGHT COLUMN ── */}
-        <div className="flex flex-col gap-4">
-          {/* The AI summary leads the column, and it is the *only* summary here now.
-              A second card used to sit above it, styled as an AI insight but composed
-              client-side from a sentence template — "{first} is a {tier} performer" and
-              "Reliable output — small focus gains could lift them into the top tier". Those read
-              as a model's judgement of a named colleague and were nothing of the kind. Every
-              figure it recited (productivity, completion, tasks, active projects) is already in
-              the stat cards below, so removing it costs no fact — only a verdict nothing had
-              earned the right to make. */}
-          <EmployeeRecapCard userId={data.id} name={data.name} />
+      <div className="flex flex-col gap-4">
+        {/* The AI summary leads the column, and it is the *only* summary here now.
+            A second card used to sit above it, styled as an AI insight but composed
+            client-side from a sentence template — "{first} is a {tier} performer" and
+            "Reliable output — small focus gains could lift them into the top tier". Those read
+            as a model's judgement of a named colleague and were nothing of the kind. Every
+            figure it recited (productivity, completion, tasks, active projects) is already in
+            the stat cards below, so removing it costs no fact — only a verdict nothing had
+            earned the right to make. */}
+        <EmployeeRecapCard userId={data.id} name={data.name} />
 
-          {/* Where the time actually went. Sits under the recap because it is the evidence the
-              recap narrates — both read the same per-person APPDAY#/URLDAY# rows, so the panel and
-              the summary above it cannot tell different stories about the same fortnight.
+        {/* Stat cards row */}
+        <div className="grid grid-cols-2 gap-4">
+          <ProductivityStat data={data} />
+          {/* Both of these are the projects' figures — everyone's tasks — and are labelled so. As
+              "Avg. completion · task delivery rate" and "Total tasks", a new hire on three big
+              projects read as having 412 tasks on day one (QA audit 2026-10-08, WP-234). */}
+          <Stat
+            label="Project completion"
+            value={data.avgCompletion === null ? "—" : `${data.avgCompletion}%`}
+            hint="average of their projects"
+          />
+          <Stat label="Project tasks" value={String(data.totalTasks)} hint="in their projects, all assignees" />
+          <Stat
+            label="Active projects"
+            value={String(data.projects.filter((p) => p.active).length)}
+            hint={`of ${data.projects.length} total`}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-              Gated on its own permission rather than the page's: everything else here is aggregate
-              oversight, and an individual's application history is a narrower privilege an org can
-              withhold from a manager who still needs the rest of this page. The server enforces it
-              (`AppUsageReadPerson`); this only avoids rendering a card that would 403. */}
-          {canSeeAppUsage && appUsage ? (
-            <EmployeeAppUsageCard userId={data.id} from={appUsage.from} to={appUsage.to} />
-          ) : null}
+/** Hours on the clock, this year's leave, and where the full attendance and time views live. */
+function TimeTab({ data, isTracked }: { data: EmployeeProfileData; isTracked: boolean }) {
+  const { can } = usePermissions();
+  const canSeeLeave = can("leave:manage");
+  const leave = useEmployeeLeave(data.id, canSeeLeave);
 
-          {/* Stat cards row */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl border bg-card p-4">
-              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Productivity
-              </p>
-              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
-                {data.productivityScore == null ? "—" : `${data.productivityScore}%`}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {data.productivityScore != null
-                  ? "overall score"
-                  : data.activityStatus === "forbidden"
-                    ? "activity isn't visible to you"
-                    : data.activityStatus === "failed"
-                      ? "couldn't load activity"
-                      : "no activity reported yet"}
-              </p>
+  const chartData = data.kpi.days;
+  // A day only appears here if the agent recorded it, so any bars at all means real work to show;
+  // no days means nothing measured (an honest empty state, never a flat line of measured zeros).
+  const kpiMeasured = chartData.length > 0;
+  // The attendance statuses actually present in the window, in a stable order — the chart legend.
+  const seenStatuses = new Set(chartData.map((d) => d.status));
+  const legendStatuses = [
+    ...["present", "late", "partial", "leave"].filter((s) => seenStatuses.has(s)),
+    ...([...seenStatuses].some((s) => !ATTENDANCE_META[s]) ? ["_other"] : []),
+  ];
+  const totalHours = chartData.reduce((s, d) => s + d.hours, 0);
+
+  const links = [
+    can("attendance:view") ? { href: "/attendance", label: "Attendance", note: "daily status and history" } : null,
+    can("time-tracking:view") ? { href: "/time-tracking", label: "Time Tracking", note: "timesheets, session by session" } : null,
+    canSeeLeave ? { href: "/leave-requests", label: "Leave", note: "requests and balances" } : null,
+  ].filter((l): l is { href: string; label: string; note: string } => l !== null);
+
+  return (
+    <div className="space-y-4">
+      {!isTracked ? (
+        <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+          {data.name}&apos;s role doesn&apos;t track time, so there are no hours or daily attendance
+          to show for them.
+        </p>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        {/* KPI chart — capped so it never balloons */}
+        <div className="flex max-h-[380px] flex-col rounded-xl border bg-card p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+                <BarChart2 className="size-4" />
+              </span>
+              <div>
+                <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  Hours worked
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {kpiMeasured
+                    ? `${formatHours(totalHours)} over ${chartData.length} ${chartData.length === 1 ? "day" : "days"} · last 30 days`
+                    : "Total hours on the clock · last 30 days"}
+                </p>
+              </div>
             </div>
-            {/* Both of these are the projects' figures — everyone's tasks — and are labelled so. As
-                "Avg. completion · task delivery rate" and "Total tasks", a new hire on three big
-                projects read as having 412 tasks on day one (QA audit 2026-10-08, WP-234). */}
-            <div className="rounded-xl border bg-card p-4">
-              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Project completion
-              </p>
-              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
-                {data.avgCompletion === null ? "—" : `${data.avgCompletion}%`}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">average of their projects</p>
-            </div>
-            <div className="rounded-xl border bg-card p-4">
-              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Project tasks
-              </p>
-              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
-                {data.totalTasks}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                in their projects, all assignees
-              </p>
-            </div>
-            <div className="rounded-xl border bg-card p-4">
-              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Active projects
-              </p>
-              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
-                {data.projects.filter((p) => p.active).length}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                of {data.projects.length} total
-              </p>
+            {/* Legend reflects the attendance verdicts actually present in the window. */}
+            <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {legendStatuses.map((s) => {
+                const meta = s === "_other" ? ATTENDANCE_FALLBACK : attendanceMeta(s);
+                return (
+                  <span key={s} className="flex items-center gap-1.5">
+                    <span
+                      className="size-2.5 rounded-full"
+                      style={{ background: meta.color }}
+                      aria-hidden
+                    />
+                    {meta.label}
+                  </span>
+                );
+              })}
             </div>
           </div>
-
-          {/* KPI chart — capped so it never balloons to match a taller left column */}
-          <div className="flex max-h-[360px] flex-1 flex-col rounded-xl border bg-card p-5">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-                  <BarChart2 className="size-4" />
-                </span>
-                <div>
-                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                    Hours worked
+          {!kpiMeasured ? (
+            // The honest empty state. Says which of the possible blanks this is, and names the
+            // cause, so nobody reads a blank chart as a verdict on the person — including when
+            // the read itself was refused or failed, which used to say "nothing recorded" (WP-229).
+            <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-1 text-center">
+              {data.activityStatus === "forbidden" ? (
+                <>
+                  <p className="text-sm font-medium">Activity isn&apos;t visible to you</p>
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    Seeing a person&apos;s hours and activity needs access to org activity, which
+                    your role doesn&apos;t have.
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Total hours on the clock · last 30 days
+                </>
+              ) : data.activityStatus === "failed" ? (
+                <>
+                  <p className="text-sm font-medium">Couldn&apos;t load activity</p>
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    This isn&apos;t a sign that nothing was recorded. Refresh to try again.
                   </p>
-                </div>
-              </div>
-              {/* Legend reflects the attendance verdicts actually present in the window. */}
-              <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                {legendStatuses.map((s) => {
-                  const meta = s === "_other" ? ATTENDANCE_FALLBACK : attendanceMeta(s);
-                  return (
-                    <span key={s} className="flex items-center gap-1.5">
-                      <span
-                        className="size-2.5 rounded-full"
-                        style={{ background: meta.color }}
-                        aria-hidden
-                      />
-                      {meta.label}
-                    </span>
-                  );
-                })}
-              </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">No work recorded in the last 30 days</p>
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    This chart is built from activity the desktop agent tracks. Nothing has been
+                    recorded for this employee in the last 30 days — which is not the same as a
+                    measured zero.
+                  </p>
+                </>
+              )}
             </div>
-            {!kpiMeasured ? (
-              // The honest empty state. Says which of the possible blanks this is, and names the
-              // cause, so nobody reads a blank chart as a verdict on the person — including when
-              // the read itself was refused or failed, which used to say "nothing recorded" (WP-229).
-              <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-1 text-center">
-                {data.activityStatus === "forbidden" ? (
-                  <>
-                    <p className="text-sm font-medium">Activity isn&apos;t visible to you</p>
-                    <p className="max-w-xs text-xs text-muted-foreground">
-                      Seeing a person&apos;s hours and activity needs access to org activity, which
-                      your role doesn&apos;t have.
-                    </p>
-                  </>
-                ) : data.activityStatus === "failed" ? (
-                  <>
-                    <p className="text-sm font-medium">Couldn&apos;t load activity</p>
-                    <p className="max-w-xs text-xs text-muted-foreground">
-                      This isn&apos;t a sign that nothing was recorded. Refresh to try again.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium">No work recorded in the last 30 days</p>
-                    <p className="max-w-xs text-xs text-muted-foreground">
-                      This chart is built from activity the desktop agent tracks. Nothing has been
-                      recorded for this employee in the last 30 days — which is not the same as a
-                      measured zero.
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : (
+          ) : (
             <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
               <BarChart data={chartData} margin={CHART_MARGIN_WITH_LEGEND}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="var(--border)"
-                  vertical={false}
-                />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis
                   dataKey="label"
                   {...xAxisLabel("Day")}
@@ -1180,26 +1334,343 @@ function ProfileView({
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-            )}
-          </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-4">
+          {canSeeLeave ? <LeaveCard state={leave} /> : null}
+          {links.length ? (
+            <div className="rounded-xl border bg-card p-5">
+              <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Full views
+              </p>
+              <p className="mb-3 text-xs text-muted-foreground">
+                These pages cover everyone; find {data.name.split(" ")[0]} there.
+              </p>
+              <ul className="space-y-1.5">
+                {links.map((l) => (
+                  <li key={l.href}>
+                    <Link
+                      href={l.href}
+                      className="inline-flex items-center gap-1 text-sm font-medium hover:underline"
+                    >
+                      {l.label}
+                      <ArrowUpRight className="size-3.5" aria-hidden />
+                    </Link>
+                    <span className="text-xs text-muted-foreground"> — {l.note}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
+/** Days with a half are possible (half-day leave), so one decimal when it isn't whole. */
+const days = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)} ${n === 1 ? "day" : "days"}`;
+
+function LeaveCard({ state }: { state: ExtraState<EmployeeLeave> }) {
+  return (
+    <div className="rounded-xl border bg-card p-5">
+      <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        Leave{state.status === "ready" ? ` · ${state.value.year}` : ""}
+      </p>
+      {state.status === "loading" || state.status === "idle" ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading balances…
+        </p>
+      ) : state.status === "forbidden" ? (
+        <p className="text-sm text-muted-foreground">Leave balances aren&apos;t visible to you.</p>
+      ) : state.status === "failed" ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          Couldn&apos;t load leave balances.
+          <Button variant="outline" size="sm" onClick={state.retry}>
+            Retry
+          </Button>
+        </p>
+      ) : state.value.balances.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No leave balances for this person this year.</p>
+      ) : (
+        <ul className="divide-y text-sm">
+          {state.value.balances.map((b) => (
+            <li key={b.type_id} className="flex items-baseline justify-between gap-3 py-1.5">
+              <span className="min-w-0 truncate">{b.name}</span>
+              <span className="shrink-0 text-right text-xs text-muted-foreground tabular-nums">
+                {b.allowance > 0 ? (
+                  <>
+                    <span className="font-medium text-foreground">{days(b.remaining)} left</span> of{" "}
+                    {b.allowance} · {days(b.used)} used
+                  </>
+                ) : (
+                  `${days(b.used)} used`
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Where their time went, and the way into the screenshots, locations and AI reports — which live
+ * in Analytics, scoped to this person. They opened other pages without warning (PEOPLE-15); now
+ * each link says where it goes.
+ */
+function ActivityTab({
+  data,
+  appUsage,
+}: {
+  data: EmployeeProfileData;
+  /** `null` when the viewer can't see per-person app usage (or the window isn't resolved yet). */
+  appUsage: { from: string; to: string } | null;
+}) {
+  const { can } = usePermissions();
+  const links = [
+    can("activity:view") ? { href: "/insights/activity", label: "Activity", note: "scores and time, day by day" } : null,
+    can("screenshots:view") ? { href: "/insights/screenshots", label: "Screenshots", note: "with their AI review" } : null,
+    can("locations:view") ? { href: "/insights/locations", label: "Locations", note: "map and daily trail" } : null,
+    can("ai:view") ? { href: "/insights/ai-reports", label: "AI reports", note: "written summaries" } : null,
+  ].filter((l): l is { href: string; label: string; note: string } => l !== null);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="flex flex-col gap-4">
+        {/* Where the time actually went — the evidence the AI recap narrates. Gated on its own
+            permission rather than the page's: an individual's application history is a narrower
+            privilege an org can withhold from a manager who still needs the rest of this page. The
+            server enforces it (`AppUsageReadPerson`); this only avoids rendering a card that would
+            403. */}
+        {appUsage ? (
+          <EmployeeAppUsageCard userId={data.id} from={appUsage.from} to={appUsage.to} />
+        ) : (
+          <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
+            Which apps and websites a person used needs the “See one person&apos;s app history”
+            permission, which your role doesn&apos;t have.
+          </p>
+        )}
+      </div>
+      <div className="flex flex-col gap-4">
+        <ProductivityStat data={data} />
+        {links.length ? (
+          <div className="rounded-xl border bg-card p-5">
+            <p className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              In Analytics
+            </p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Opens the Analytics page showing only {data.name.split(" ")[0]}.
+            </p>
+            <ul className="space-y-1.5">
+              {links.map((l) => (
+                <li key={l.href}>
+                  <Link
+                    href={withEmp(l.href, data.id)}
+                    className="inline-flex items-center gap-1 text-sm font-medium hover:underline"
+                  >
+                    {l.label}
+                    <ArrowUpRight className="size-3.5" aria-hidden />
+                  </Link>
+                  <span className="text-xs text-muted-foreground"> — {l.note}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Their role and what it reaches, whether they're tracked, and the devices attributed to them. */
+function AccessTab({
+  data,
+  role,
+  rolesRead,
+  isTracked,
+  onChangeRole,
+}: {
+  data: EmployeeProfileData;
+  role: ApiRole | null;
+  /** The roles list was read — so a missing `role` means an unknown role, not "still loading". */
+  rolesRead: boolean;
+  isTracked: boolean;
+  onChangeRole?: () => void;
+}) {
+  const { can } = usePermissions();
+  const canSeeDevices = can("agents:manage");
+  const devices = useEmployeeDevices(data.id, canSeeDevices);
+  const sensitive = role ? role.permissions.filter(isSensitive) : [];
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="rounded-xl border bg-card p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Role</p>
+          {onChangeRole ? (
+            <Button variant="outline" size="sm" onClick={onChangeRole}>
+              <ShieldCheck className="size-4" /> Change role
+            </Button>
+          ) : null}
+        </div>
+        <p className="font-medium">{data.roleName || "No role"}</p>
+        {role?.is_owner ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Owners have full, unrestricted access to the whole organization.
+          </p>
+        ) : role ? (
+          <>
+            {role.description ? (
+              <p className="mt-1 text-sm text-muted-foreground">{role.description}</p>
+            ) : null}
+            <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3">
+              <Detail label="Data they can see" value={scopeLabel(role.scope)} />
+              <Detail label="Permissions" value={String(role.permissions.length)} />
+            </dl>
+            {sensitive.length ? (
+              <p className="mt-3 text-xs text-muted-foreground">
+                <span className="font-medium text-warning">
+                  {sensitive.length} sensitive:
+                </span>{" "}
+                {sensitive
+                  .map((id) => helpFor(id)?.sensitive?.reason)
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            ) : null}
+          </>
+        ) : rolesRead ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            This role&apos;s details couldn&apos;t be read.
+          </p>
+        ) : null}
+        {can("roles:view") && !role?.is_owner ? (
+          <Link
+            href="/settings/roles"
+            className="mt-3 inline-flex items-center gap-1 text-sm font-medium hover:underline"
+          >
+            See every role&apos;s permissions
+            <ArrowUpRight className="size-3.5" aria-hidden />
+          </Link>
+        ) : null}
+        <div className="mt-4 border-t pt-3">
+          <Detail
+            label="Tracking"
+            value={
+              data.benched
+                ? "Not tracked — excluded from Attendance and Time Tracking"
+                : isTracked
+                  ? "Tracked — their time, activity and screenshots are recorded"
+                  : "Their role doesn't track time"
+            }
+            wrap
+          />
+        </div>
+      </div>
+
+      {canSeeDevices ? (
+        <div className="rounded-xl border bg-card p-5">
+          <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Devices
+          </p>
+          {devices.status === "loading" || devices.status === "idle" ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" /> Loading devices…
+            </p>
+          ) : devices.status === "forbidden" ? (
+            <p className="text-sm text-muted-foreground">Devices aren&apos;t visible to you.</p>
+          ) : devices.status === "failed" ? (
+            <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              Couldn&apos;t load devices.
+              <Button variant="outline" size="sm" onClick={devices.retry}>
+                Retry
+              </Button>
+            </p>
+          ) : devices.value.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No device reports for {data.name.split(" ")[0]} yet.{" "}
+              <Link href="/settings/agents" className="font-medium text-foreground hover:underline">
+                Device agents
+              </Link>{" "}
+              lists every enrolled computer.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {devices.value.map((d) => {
+                const live = isLiveDevice(d.state);
+                const conn = connMeta(d.connectivity);
+                return (
+                  <li key={d.agent_id} className="flex items-center gap-3 py-2">
+                    <MonitorSmartphone className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/settings/agents/${encodeURIComponent(d.agent_id)}`}
+                        className="block truncate text-sm font-medium hover:underline"
+                      >
+                        {d.hostname || "Unnamed device"}
+                      </Link>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {d.variant === "service" ? "Managed service" : "Desktop app"}
+                        {d.agent_version ? ` · v${d.agent_version}` : ""} · last seen{" "}
+                        {lastSeen(d.last_heartbeat)}
+                      </p>
+                    </div>
+                    <Badge className={cn("shrink-0 font-medium", live ? conn.badge : "bg-muted text-muted-foreground")}>
+                      {live ? conn.label : deviceStateLabel(d.state)}
+                    </Badge>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /* ------------------------------- atoms -------------------------------- */
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="mt-1 font-display text-3xl font-bold tabular-nums">{value}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
+    </div>
+  );
+}
+
+function ProductivityStat({ data }: { data: EmployeeProfileData }) {
+  return (
+    <Stat
+      label="Productivity"
+      value={data.productivityScore == null ? "—" : `${data.productivityScore}%`}
+      hint={
+        data.productivityScore != null
+          ? "overall score, last 30 days"
+          : data.activityStatus === "forbidden"
+            ? "activity isn't visible to you"
+            : data.activityStatus === "failed"
+              ? "couldn't load activity"
+              : "no activity reported yet"
+      }
+    />
+  );
+}
+
+function Detail({ label, value, wrap = false }: { label: string; value: string; wrap?: boolean }) {
   return (
     <div className="min-w-0">
       <dt className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </dt>
-      <dd className="mt-1 truncate text-sm font-medium" title={value}>
+      <dd className={cn("mt-1 text-sm font-medium", wrap ? "break-words" : "truncate")} title={value}>
         {dash(value)}
       </dd>
     </div>
   );
 }
-

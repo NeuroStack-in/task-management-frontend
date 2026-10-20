@@ -27,31 +27,42 @@
  * cannot grant it. The Owner row therefore lists its members and links to Settings → Ownership
  * instead of offering a control that would 403. That card also owns the last-owner rule and the
  * `take_role` exit; a second implementation of an irreversible action is how the two drift apart.
+ *
+ * ## Every change is confirmed, with what it changes (UX audit PEOPLE-09)
+ *
+ * Moving someone to Admin or a custom role was one click with no summary. Each move now opens a
+ * confirmation naming what the person gains and loses — sensitive permissions one by one — and the
+ * action is called "Change role" here and on the employee profile alike (the profile said
+ * "Reassign").
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Loader2, Shield, ShieldCheck, UserCog } from "lucide-react";
+import { ArrowUpRight, Loader2, Search, Shield, ShieldCheck, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { TablePagination } from "@/components/shared/table-pagination";
 import { friendlyError } from "@/lib/errors";
 import { assignRole, type ApiRole } from "../services/roles.service";
+import { roleChange } from "../lib/role-change";
+import { RoleChangeSummary } from "./role-change-summary";
 import { grantOwner } from "@/modules/settings/services/org.service";
 import { useAuthStore } from "@/stores/auth.store";
+import { usePermissions } from "@/hooks/use-permissions";
 import type { ApiEmployee } from "@/modules/employees/services/employees.service";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
 /** The system role id ownership rides on — assignable only through Settings → Ownership. */
 const ROLE_OWNER = "role-owner";
+
+/**
+ * Members shown per page. The list was unbounded — a 150-person Employee role ran a wall of rows
+ * down the page under the table (UX audit PEOPLE-17).
+ */
+const MEMBERS_PER_PAGE = 10;
 
 export function RoleMembers({
   role,
@@ -59,14 +70,17 @@ export function RoleMembers({
   roles,
   canManage,
   onChanged,
+  labelOf = (id) => id,
 }: {
   role: ApiRole;
   members: ApiEmployee[];
-  /** Every role, for the "Move to …" menu. */
+  /** Every role, for the "Change role to …" menu. */
   roles: ApiRole[];
   canManage: boolean;
   /** Re-read the directory after a move, so the counts above stay true. */
   onChanged: () => void;
+  /** Permission id → catalog label, for the change summary. */
+  labelOf?: (id: string) => string;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   /**
@@ -75,16 +89,27 @@ export function RoleMembers({
    */
   const callerIsOwner = useAuthStore((st) => st.user?.isOwner === true);
   const callerId = useAuthStore((st) => st.user?.id);
+  /** Settings → Ownership is gated on `settings:manage` in the rail. */
+  const canOpenOwnership = usePermissions().can("settings:manage");
   /**
-   * A move that needs a second look first: changing your OWN role (one click lost an Admin role
-   * management at their next sign-in), and making someone an owner (full, unrestricted access) —
-   * neither asked before (QA audit 2026-10-08, WP-510).
+   * Every move is confirmed with what it changes (PEOPLE-09). Changing your OWN role and making
+   * someone an owner carry their own warnings on top (QA audit 2026-10-08, WP-510).
    */
   const [pending, setPending] = useState<{ person: ApiEmployee; to: ApiRole } | null>(null);
-  const request = (person: ApiEmployee, to: ApiRole) => {
-    if (to.id === ROLE_OWNER || person.user_id === callerId) setPending({ person, to });
-    else void move(person, to);
-  };
+  const request = (person: ApiEmployee, to: ApiRole) => setPending({ person, to });
+
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter((m) =>
+      [m.name, m.title ?? "", m.emp_id ?? ""].join(" ").toLowerCase().includes(q),
+    );
+  }, [members, query]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / MEMBERS_PER_PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+  const shown = filtered.slice(safePage * MEMBERS_PER_PAGE, (safePage + 1) * MEMBERS_PER_PAGE);
 
   /**
    * Two destinations, two endpoints.
@@ -104,7 +129,7 @@ export function RoleMembers({
       if (promoting) await grantOwner(person.user_id);
       else await assignRole(person.user_id, to.id);
       toast.success(
-        promoting ? `${person.name} is now an owner` : `${person.name} moved to ${to.name}`,
+        promoting ? `${person.name} is now an owner` : `${person.name}'s role is now ${to.name}`,
         {
           description: promoting
             ? "Owners have full, unrestricted access. Their own view updates at their next sign-in."
@@ -150,12 +175,17 @@ export function RoleMembers({
   const roleTargets = targets.filter((r) => r.id !== ROLE_OWNER);
   const ownerTarget = targets.find((r) => r.id === ROLE_OWNER) ?? null;
 
+  /** The confirmation's copy — ownership, your own role, or anyone else's. */
+  const pendingOwner = pending?.to.id === ROLE_OWNER;
+  const pendingSelf = pending !== null && pending.person.user_id === callerId;
+  const change = pending && !pendingOwner ? roleChange(role, pending.to) : null;
+
   return (
     <div className="bg-muted/30 px-6 py-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-muted-foreground text-xs">
           {members.length} {members.length === 1 ? "person holds" : "people hold"} this role
-          {canManage && !isOwnerRole ? " · moving someone replaces the role they have now" : ""}
+          {canManage && !isOwnerRole ? " · changing someone's role replaces the one they have now" : ""}
         </p>
         {isOwnerRole ? (
           <Link
@@ -168,8 +198,28 @@ export function RoleMembers({
         ) : null}
       </div>
 
+      {members.length > MEMBERS_PER_PAGE ? (
+        <div className="relative mb-2 max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+          <Input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(0);
+            }}
+            placeholder="Search members"
+            aria-label={`Search people with the ${role.name} role`}
+            className="h-8 pl-8 text-sm"
+          />
+        </div>
+      ) : null}
+
+      {shown.length === 0 ? (
+        <p className="text-muted-foreground py-2 text-sm">No one with this role matches.</p>
+      ) : null}
+
       <ul className="divide-border/60 divide-y">
-        {members.map((m) => (
+        {shown.map((m) => (
           <li key={m.user_id} className="flex items-center gap-3 py-2">
             <UserAvatar
               userId={m.user_id}
@@ -178,9 +228,19 @@ export function RoleMembers({
               fallbackClassName="text-[11px]"
             />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{m.name}</p>
-              {m.title ? (
-                <p className="text-muted-foreground truncate text-xs">{m.title}</p>
+              <Link
+                href={`/employees/${m.user_id}`}
+                className="block truncate text-sm font-medium hover:underline focus-visible:underline"
+              >
+                {m.name}
+              </Link>
+              {m.title || m.status === "deactivated" ? (
+                <p className="text-muted-foreground truncate text-xs">
+                  {/* A deactivated person still holds the role, and still blocks deleting it. */}
+                  {m.status === "deactivated" ? "Deactivated" : ""}
+                  {m.status === "deactivated" && m.title ? " · " : ""}
+                  {m.title}
+                </p>
               ) : null}
             </div>
 
@@ -211,7 +271,7 @@ export function RoleMembers({
                       so this heading is decorative. */}
                   <div className="px-2 py-1.5">
                     <p className="text-muted-foreground text-[0.6875rem] font-semibold uppercase tracking-wide">
-                      Move to
+                      Change role to
                     </p>
                     <p className="truncate text-sm font-medium">{m.name}</p>
                   </div>
@@ -255,36 +315,57 @@ export function RoleMembers({
         ))}
       </ul>
 
-      <Dialog open={pending !== null} onOpenChange={(o) => !o && setPending(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {pending?.to.id === ROLE_OWNER
-                ? `Make ${pending.person.name} an owner?`
-                : `Change your own role to ${pending?.to.name ?? ""}?`}
-            </DialogTitle>
-            <DialogDescription>
-              {pending?.to.id === ROLE_OWNER
-                ? "Owners have full, unrestricted access to the whole organization, including billing, transferring ownership and closing it. An owner can remove an owner again under Settings → Ownership."
-                : `You'll have only what ${pending?.to.name ?? "that role"} grants from your next sign-in. If it doesn't include managing roles, you won't be able to change this back yourself.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPending(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant={pending?.to.id === ROLE_OWNER ? "default" : "destructive"}
-              onClick={() => {
-                if (pending) void move(pending.person, pending.to);
-                setPending(null);
-              }}
-            >
-              {pending?.to.id === ROLE_OWNER ? "Make an owner" : "Change my role"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {filtered.length > MEMBERS_PER_PAGE ? (
+        <TablePagination
+          page={safePage}
+          pageCount={pageCount}
+          total={filtered.length}
+          pageSize={MEMBERS_PER_PAGE}
+          onPageChange={setPage}
+          className="mt-3"
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={pending !== null}
+        onOpenChange={(o) => !o && setPending(null)}
+        title={
+          pendingOwner
+            ? `Make ${pending?.person.name ?? ""} an owner?`
+            : pendingSelf
+              ? `Change your own role to ${pending?.to.name ?? ""}?`
+              : `Change ${pending?.person.name ?? ""}'s role to ${pending?.to.name ?? ""}?`
+        }
+        description={
+          pendingOwner ? (
+            <>
+              Owners have full, unrestricted access to the whole organization, including billing,
+              transferring ownership and closing it. An owner can remove an owner again under{" "}
+              {/* Only an owner gets this far, and owners can open it — a link (UX audit SET-15). */}
+              {canOpenOwnership ? (
+                <Link href="/settings/ownership" className="text-foreground font-medium underline-offset-2 hover:underline">
+                  Settings → Ownership
+                </Link>
+              ) : (
+                "Settings → Ownership"
+              )}
+              .
+            </>
+          ) : pendingSelf
+              ? `You'll have only what ${pending?.to.name ?? "that role"} grants from your next sign-in. If it doesn't include managing roles, you won't be able to change this back yourself.`
+              : `${pending?.to.name ?? ""} replaces ${role.name} — a person holds one role. It applies on the server now; their own view updates at their next sign-in.`
+        }
+        confirmLabel={pendingOwner ? "Make an owner" : pendingSelf ? "Change my role" : "Change role"}
+        destructive={pendingSelf && !pendingOwner}
+        onConfirm={() => {
+          if (pending) void move(pending.person, pending.to);
+          setPending(null);
+        }}
+      >
+        {change ? (
+          <RoleChangeSummary change={change} labelOf={labelOf} fromName={role.name} />
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }

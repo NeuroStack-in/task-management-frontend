@@ -195,16 +195,36 @@ export function EmployeeManageMenu({
           <DropdownMenuSeparator />
           {/* `variant="destructive"` rather than hand-rolled text colours: it also carries the
               destructive focus background and tints the icon, which the ad-hoc classes missed —
-              the row highlighted in plain grey on hover, like a neutral action. */}
+              the row highlighted in plain grey on hover, like a neutral action.
+
+              Disabled for an active employee, with the reason in place (UX audit PEOPLE-16). It was
+              enabled and opened a dialog whose only content was "deactivate first" — a dead end one
+              click deep. The path is the Deactivate item directly above. */}
           <DropdownMenuItem
             variant="destructive"
+            disabled={isActive}
             onClick={() => {
               setConfirmName("");
               setDeleteOpen(true);
             }}
             className="gap-2 py-1.5 whitespace-nowrap"
           >
-            <Trash2 className="size-4" /> Delete permanently
+            {isActive ? (
+              <span className="flex flex-col gap-0.5">
+                <span className="flex items-center gap-2">
+                  <Trash2 className="size-4" /> Delete permanently
+                </span>
+                <span className="text-muted-foreground max-w-56 text-xs whitespace-normal">
+                  {blocked
+                    ? "Only a deactivated employee can be deleted."
+                    : "Deactivate them first — only a deactivated employee can be deleted."}
+                </span>
+              </span>
+            ) : (
+              <>
+                <Trash2 className="size-4" /> Delete permanently
+              </>
+            )}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -251,7 +271,13 @@ export function EmployeeManageMenu({
             >
               Cancel
             </Button>
-            <Button onClick={toggleActivation} disabled={busy}>
+            {/* Deactivating ends someone's access and unassigns their work — styled as the
+                destructive action it is (PEOPLE-16). Reactivating restores access, so it isn't. */}
+            <Button
+              variant={isActive ? "destructive" : "default"}
+              onClick={toggleActivation}
+              disabled={busy}
+            >
               {busy ? "Working…" : isActive ? "Deactivate" : "Reactivate"}
             </Button>
           </DialogFooter>
@@ -272,34 +298,21 @@ export function EmployeeManageMenu({
             </DialogDescription>
           </DialogHeader>
 
-          {isActive ? (
-            // Permanent delete is only allowed once the deactivation saga has reassigned their work
-            // and released their seat/devices — so an active employee is steered there first.
-            <div className="border-warning/40 bg-warning/10 min-w-0 rounded-lg border px-3 py-2.5 text-sm">
-              <span className="text-foreground font-medium">
-                Deactivate {name} first.
-              </span>{" "}
-              <span className="text-muted-foreground">
-                Permanent deletion is only allowed on a deactivated employee —
-                deactivating reassigns their projects and revokes access. Close this,
-                choose Deactivate, then delete.
-              </span>
-            </div>
-          ) : (
-            <div className="min-w-0 space-y-1.5">
-              <p className="text-muted-foreground text-xs">
-                Type <span className="text-foreground font-medium">{name}</span> to
-                confirm.
-              </p>
-              <Input
-                value={confirmName}
-                onChange={(e) => setConfirmName(e.target.value)}
-                placeholder={name}
-                autoFocus
-                aria-label="Type the employee's name to confirm deletion"
-              />
-            </div>
-          )}
+          {/* Only reachable for a deactivated employee — the menu item is disabled for an active
+              one (PEOPLE-16); the server's `must_deactivate_first` still has its own message. */}
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-muted-foreground text-xs">
+              Type <span className="text-foreground font-medium">{name}</span> to
+              confirm.
+            </p>
+            <Input
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              placeholder={name}
+              autoFocus
+              aria-label="Type the employee's name to confirm deletion"
+            />
+          </div>
 
           <DialogFooter>
             <Button

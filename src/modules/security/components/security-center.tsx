@@ -1,9 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import {
+  KeyRound,
   Lock,
-  Monitor,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react"
@@ -32,36 +33,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
-import { MfaCard } from "@/modules/settings/components/mfa-card"
-import { PasswordCard } from "@/modules/settings/components/password-card"
 import { usePermissions } from "@/hooks/use-permissions"
-import { useDeviceId } from "@/hooks/use-device-id"
 import { resetMfaDevice } from "../services/security.service"
-import { useSessions } from "../use-sessions"
 import { SecurityEventsFeed } from "./security-events-feed"
 import { listAllEmployees } from "@/modules/employees/services/employees.service"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { PASSWORD_MIN } from "@/lib/password"
-
-// ── Active sessions (your signed-in devices) ──────────────────────────────────
-// Real, from GET /v1/me/sessions — {session_id, last_seen} only. Cognito gives no device / IP /
-// location without its paid tier, and there is no per-session revoke endpoint (§15), so the list is
-// intentionally lean and read-only.
-
-/** Epoch ms → a short relative label. */
-function timeAgo(ms: number | null): string {
-  if (!ms) return "Unknown"
-  const diff = Date.now() - ms
-  if (diff < 0) return "Just now"
-  const min = Math.floor(diff / 60_000)
-  if (min < 1) return "Active now"
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const d = Math.floor(hr / 24)
-  return d === 1 ? "Yesterday" : `${d}d ago`
-}
 
 // ── Small shared bits ─────────────────────────────────────────────────────────
 
@@ -113,6 +91,15 @@ function PlatformFixed({ value }: { value: string }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Settings → Security — **organisation security only** (UX audit 2026-10-16, SET-08).
+ *
+ * It used to mix the reader's own sign-in (their authenticator, password and sessions — the same
+ * components Login & security renders) with the platform policies, because Owner/Admin had no
+ * Login & security entry in their rail. Every role has that page now, so this one holds what applies
+ * to everyone: the MFA policy and the lost-phone reset, session lifetimes, the password policy, and
+ * security events.
+ */
 export function SecurityCenter() {
   const { can } = usePermissions()
   const canManage = can("security:manage")
@@ -123,14 +110,7 @@ export function SecurityCenter() {
   const [resetMfaUserId, setResetMfaUserId] = useState("")
   const [resetting, setResetting] = useState(false)
 
-  // Real sessions (GET /v1/me/sessions) + the real employee roster for the MFA-reset picker.
-  const { sessions, loading: sessionsLoading, error: sessionsError, reload: reloadSessions } =
-    useSessions()
-  // "This device" is the row matching THIS browser's stable id; fall back to the newest when it
-  // isn't among them yet (heartbeat not landed / storage blocked) so the badge always marks a row.
-  const deviceId = useDeviceId()
-  const currentIdx = deviceId ? sessions.findIndex((s) => s.session_id === deviceId) : -1
-  const thisDeviceIdx = currentIdx >= 0 ? currentIdx : 0
+  // The real employee roster for the MFA-reset picker.
   const [roster, setRoster] = useState<{ id: string; name: string }[]>([])
   const [rosterError, setRosterError] = useState(false)
 
@@ -197,8 +177,23 @@ export function SecurityCenter() {
     <div className="space-y-6">
       <PageHeader
         title="Security"
-        description="Authentication, sessions, and the platform policies that protect every account."
+        description="Security for the whole organization: the policies that apply to every member, resetting a member's authenticator, and security events."
       />
+
+      {/* Where the reader's own sign-in went (SET-08). */}
+      <p className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground">
+        <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <span>
+          Your own authenticator, password and signed-in browsers are in{" "}
+          <Link
+            href="/settings/login-security"
+            className="font-medium text-primary underline-offset-2 hover:underline"
+          >
+            Login &amp; security
+          </Link>
+          .
+        </span>
+      </p>
 
       {!canManage && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
@@ -217,8 +212,8 @@ export function SecurityCenter() {
         "Require MFA" / "grace period" / "adoption %" widget: the first two are enforcement that
         doesn't exist, and the third is a number the backend doesn't return.
 
-        Owner/Admin have no personal /settings/login-security entry in the rail, so without the
-        enrolment control here they had no way to turn their own MFA on at all.
+        Your own enrolment control is on Login & security, which every role's rail now lists
+        (UX audit SET-08) — it used to be embedded here because Owner/Admin had no such entry.
       */}
       <Card id="mfa" className="scroll-mt-24">
         <CardHeader>
@@ -229,15 +224,17 @@ export function SecurityCenter() {
                 The pool enforces nothing; don't reintroduce "required" copy here without also
                 building the enforcement. */}
             Optional and strongly recommended for every member who signs in with a
-            password. Each member manages their own authenticator under Settings →
-            Login &amp; security.
+            password. Each member manages their own authenticator under{" "}
+            <Link
+              href="/settings/login-security#mfa"
+              className="font-medium text-primary underline-offset-2 hover:underline"
+            >
+              Login &amp; security
+            </Link>
+            . It can&apos;t yet be made mandatory for the whole organization.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          {/* Your own authenticator — status + enrol/turn off. Shared with the personal Security
-              page so the two can't drift (modules/settings/components/mfa-card). */}
-          <MfaCard embedded />
-
           {/* The one action (LLD §2): the lost-phone flow. */}
           {canManage ? (
             <SettingRow
@@ -266,8 +263,7 @@ export function SecurityCenter() {
         <CardHeader>
           <CardTitle>Session &amp; Access</CardTitle>
           <CardDescription>
-            Session lifetimes are fixed by the platform. Your active sessions are listed
-            below.
+            Session lifetimes are fixed by the platform and apply to every member.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-0 pb-2">
@@ -294,10 +290,7 @@ export function SecurityCenter() {
         </CardContent>
       </Card>
 
-      {/* Your own password — change it, or reset by an emailed code. Owner/Admin have no separate
-          personal security page, so their own credentials live here, next to the org policy that
-          governs them. Employees get the same card on /settings/login-security. */}
-      <PasswordCard />
+      {/* Your own password is on Login & security for every role now (SET-08). */}
 
       {/* ── Password policy (platform-fixed, read-only) ── */}
       {/*
@@ -332,62 +325,6 @@ export function SecurityCenter() {
           >
             <PlatformFixed value="Email" />
           </SettingRow>
-        </CardContent>
-      </Card>
-
-      {/* ── Active sessions (your devices) — real, lean, read-only ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Active Sessions</CardTitle>
-          <CardDescription>
-            Devices signed in to your account. Location isn&apos;t recorded, and per-session
-            sign-out isn&apos;t available yet.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2.5">
-          {sessionsLoading ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Loading sessions…</p>
-          ) : sessionsError ? (
-            <div className="flex flex-col items-center gap-2 py-6 text-center">
-              <p className="text-sm text-muted-foreground">{sessionsError}</p>
-              <Button variant="outline" size="sm" onClick={reloadSessions}>
-                Retry
-              </Button>
-            </div>
-          ) : sessions.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No active sessions recorded.
-            </p>
-          ) : (
-            sessions.map((s, i) => (
-              <div
-                key={s.session_id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Monitor className="size-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      {s.user_agent || "Web session"}
-                      {i === thisDeviceIdx ? (
-                        <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
-                          This device
-                        </span>
-                      ) : null}
-                    </p>
-                    <p className="truncate font-mono text-[11px] text-muted-foreground">
-                      {s.session_id}
-                    </p>
-                  </div>
-                </div>
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                  {timeAgo(s.last_seen)}
-                </span>
-              </div>
-            ))
-          )}
         </CardContent>
       </Card>
 

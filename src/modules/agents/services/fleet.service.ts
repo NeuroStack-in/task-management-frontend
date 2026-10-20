@@ -277,6 +277,17 @@ export async function releaseDevice(deviceId: string): Promise<void> {
   });
 }
 
+/**
+ * `POST /v1/fleet/{id}/archive` — tidy a retired (released / revoked / deactivated) device out of the
+ * list (UX audit SET-12). Refused (`409 device_active`) for a live device — release it first. The row
+ * is kept; `GET /v1/fleet?include_archived=true` still returns it.
+ */
+export async function archiveDevice(deviceId: string): Promise<void> {
+  await apiFetch(`/v1/fleet/${encodeURIComponent(deviceId)}/archive`, {
+    method: "POST",
+  });
+}
+
 /** Persist a new tracking policy. Returns the new `TrackingConfig` (with a bumped `version`). */
 export function updateTrackingPolicy(
   body: UpdateTrackingPolicyInput,

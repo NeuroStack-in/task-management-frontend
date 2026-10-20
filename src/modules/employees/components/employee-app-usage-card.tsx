@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AppWindow } from "lucide-react";
+import { usePermissions } from "@/hooks/use-permissions";
 
 import { ApiError } from "@/lib/api";
 import { formatMinutes } from "@/lib/format";
@@ -102,6 +104,8 @@ export function EmployeeAppUsageCard({
   const [data, setData] = useState<AppUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Tracking rules are read and written with `MonitoringManage` — the same gate the rail uses.
+  const canEditRules = usePermissions().can("monitoring:manage");
 
   useEffect(() => {
     let live = true;
@@ -135,8 +139,19 @@ export function EmployeeAppUsageCard({
       </div>
       {/* Says whose verdict the category is — the same label Analytics → Activity carries. */}
       <p className="mt-1 text-xs text-muted-foreground">
-        Categories by your app rules (not AI) — set from each app&apos;s name in Settings → Tracking
-        rules.
+        Categories by your app rules (not AI) — set from each app&apos;s name in{" "}
+        {/* A link for whoever can open the page (UX audit SET-15); plain text for everyone else. */}
+        {canEditRules ? (
+          <Link
+            href="/settings/tracking-rules"
+            className="font-medium text-foreground underline-offset-2 hover:underline"
+          >
+            Settings → Tracking rules
+          </Link>
+        ) : (
+          "Settings → Tracking rules"
+        )}
+        .
       </p>
 
       {loading ? (

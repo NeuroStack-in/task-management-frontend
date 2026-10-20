@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Cpu,
+  Download,
+  KeyRound,
   MonitorSmartphone,
   Search,
   Wifi,
@@ -18,6 +20,10 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { useDirectory } from "@/hooks/use-directory";
 import { useTrackingMode } from "@/hooks/use-features";
+import { useAgentRelease } from "@/hooks/use-agent-release";
+import { usePermissions } from "@/hooks/use-permissions";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import type { TrackingMode } from "@/lib/tracking-mode";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +48,8 @@ import { cn } from "@/lib/utils";
 import { useFleet } from "../use-fleet";
 import type { ApiDevice } from "../services/fleet.service";
 import { effectiveUserId, presenceOf } from "../lib/presence";
+import { deviceStateLabel, isLiveDevice } from "../lib/device-state";
+import { isBehind, latestVersions, targetFor, type LatestVersions } from "../lib/agent-version";
 
 /**
  * Status colours in two flavours, because the same badge appears on two very different surfaces.
@@ -105,41 +113,6 @@ export function lastSeen(ms: number): string {
   return `${d}d ago`;
 }
 
-/** Numeric dotted-version compare ("0.1.0" < "1.0.0"). Non-numeric parts compare as 0. */
-function cmpVersion(a: string, b: string): number {
-  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
-  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (d !== 0) return d;
-  }
-  return 0;
-}
-
-/**
- * The newest agent version present in the fleet — the honest "latest": derived from what is
- * actually enrolled, not a hardcoded constant that would rot the moment a release ships. Devices
- * behind it are flagged; when every device matches, nothing is flagged.
- */
-function latestVersion(devices: ApiDevice[]): string | null {
-  let max: string | null = null;
-  for (const d of devices) {
-    if (d.agent_version && (max === null || cmpVersion(d.agent_version, max) > 0)) {
-      max = d.agent_version;
-    }
-  }
-  return max;
-}
-
-/** The interactive `.exe` and the managed `.msi` are **separate release streams** (§8 Ph1), so a
- *  single fleet-wide max would falsely flag every device of the lagging variant as "behind latest".
- *  Compute the latest per variant, then compare each device against its own. */
-function latestByVariant(devices: ApiDevice[]): (d: ApiDevice) => string | null {
-  const service = latestVersion(devices.filter((d) => d.variant === "service"));
-  const interactive = latestVersion(devices.filter((d) => d.variant !== "service"));
-  return (d) => (d.variant === "service" ? service : interactive);
-}
-
 /** Display label for the device variant. `service` → "Managed service", else "Interactive app". */
 function variantLabel(variant?: string): string {
   return variant === "service" ? "Managed service" : "Interactive app";
@@ -190,7 +163,8 @@ function DeviceRow({
   onOpen,
 }: {
   d: ApiDevice;
-  behind: boolean;
+  /** The version it should be on when it is behind it, else `null`. */
+  behind: string | null;
   /** Resolved from the directory; `null` while it loads or when the id isn't in it. */
   ownerName: string | null;
   onOpen: () => void;
@@ -228,7 +202,7 @@ function DeviceRow({
               {d.os} {d.os_version} · agent {d.agent_version}
               {behind && (
                 <span className="ml-1.5 inline-flex items-center gap-1 text-warning">
-                  <AlertTriangle className="size-3" /> behind latest
+                  <AlertTriangle className="size-3" /> behind v{behind.replace(/^v/i, "")}
                 </span>
               )}
             </p>
@@ -270,11 +244,23 @@ function DeviceRow({
         </Badge>
       </TableCell>
       <TableCell>
-        <Badge className={cn("font-medium", meta.badge)}>
-          <span className={cn("mr-1.5 size-1.5 rounded-full", meta.dot)} />
-          {/* A managed device that slept mid-shift reads "asleep" rather than a bare offline. */}
-          {d.variant === "service" && presenceOf(d) === "asleep" ? "Asleep" : meta.label}
-        </Badge>
+        {isLiveDevice(d.state) ? (
+          <Badge className={cn("font-medium", meta.badge)}>
+            <span className={cn("mr-1.5 size-1.5 rounded-full", meta.dot)} />
+            {/* A managed device that slept mid-shift reads "asleep" rather than a bare offline. */}
+            {d.variant === "service" && presenceOf(d) === "asleep" ? "Asleep" : meta.label}
+          </Badge>
+        ) : (
+          // Its real state, not "Offline" (UX audit SET-12): a released, revoked or deactivated
+          // device will never come back online, and "Offline" read as one that might.
+          <Badge
+            variant="outline"
+            className="font-medium text-muted-foreground"
+            title={RETIRED_HINT[d.state] ?? "This device no longer reports."}
+          >
+            {deviceStateLabel(d.state)}
+          </Badge>
+        )}
       </TableCell>
       <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">
         <span className="inline-flex items-center gap-1.5">
@@ -291,6 +277,13 @@ function DeviceRow({
     </TableRow>
   );
 }
+
+/** What each retired state means, for the badge's tooltip. */
+const RETIRED_HINT: Record<string, string> = {
+  released: "IT released this device: its credential is revoked and its employee can get another.",
+  revoked: "This device's credential was revoked. It can't report again.",
+  deactivated: "Its employee was deactivated, so this device stopped tracking.",
+};
 
 /**
  * What to do when nothing is enrolled yet — per tracking mode, because the two agents are installed
@@ -310,10 +303,19 @@ export function FleetView() {
   const { fleet, loading, error, reload } = useFleet();
   const router = useRouter();
   const mode = useTrackingMode();
+  const { can } = usePermissions();
+  /** The published desktop-app release — what "behind" means for the app (SET-11). */
+  const { version: release } = useAgentRelease();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [osFilter, setOsFilter] = useState("all");
+  /**
+   * Released, revoked and deactivated devices are hidden unless asked for (UX audit SET-12). They
+   * read "Offline" among the live ones, and nothing can archive them yet — that needs a server
+   * route — so a filter is the honest interim.
+   */
+  const [showRetired, setShowRetired] = useState(false);
 
   // user_id → display name. The directory is cached process-wide by the hook, so this costs at
   // most one shared fetch; a caller without `employees:view` gets an empty roster and the rows
@@ -329,13 +331,17 @@ export function FleetView() {
   const attributedName = (d: ApiDevice) => ownerName(effectiveUserId(d) ?? "");
 
   const devices = useMemo(() => fleet?.devices ?? [], [fleet]);
-  // Per-variant latest: the .exe and .msi are separate release streams (§8 Ph1).
-  const latestFor = useMemo(() => latestByVariant(devices), [devices]);
-  const isBehind = (d: ApiDevice) => {
-    const latest = latestFor(d);
-    return latest !== null && d.agent_version !== "" && cmpVersion(d.agent_version, latest) < 0;
-  };
-  const outdated = devices.filter(isBehind).length;
+  const live = useMemo(() => devices.filter((d) => isLiveDevice(d.state)), [devices]);
+  const retiredCount = devices.length - live.length;
+  // Per-variant: the .exe and .msi are separate release streams (§8 Ph1). The app is compared with
+  // its published release; the service with the newest in the fleet (see `lib/agent-version`).
+  const latest: LatestVersions = useMemo(() => latestVersions(devices, release), [devices, release]);
+  const behindOf = (d: ApiDevice) => (isBehind(d, latest) ? targetFor(d, latest) : null);
+  const outdated = live.filter((d) => isBehind(d, latest)).length;
+  // Counted over live devices only — a retired device is neither online nor waiting to come back.
+  const onlineCount = live.filter((d) => d.connectivity !== "offline").length;
+  const hasService = live.some((d) => d.variant === "service");
+  const hasApp = live.some((d) => d.variant !== "service");
 
   // Distinct OS names, for the filter — derived from the fleet, never a hardcoded list.
   const osOptions = useMemo(
@@ -343,7 +349,7 @@ export function FleetView() {
     [devices],
   );
 
-  const visible = devices.filter((d) => {
+  const visible = (showRetired ? devices : live).filter((d) => {
     if (statusFilter !== "all" && d.connectivity !== statusFilter) return false;
     if (osFilter !== "all" && d.os !== osFilter) return false;
     const q = search.trim().toLowerCase();
@@ -386,7 +392,36 @@ export function FleetView() {
     );
   }
 
-  const f = fleet!;
+  // The stat hint says what "behind" was measured against.
+  const behindHint =
+    live.length === 0
+      ? "no versions reported"
+      : [
+          hasApp && latest.app
+            ? latest.appSource === "release"
+              ? `app: v${latest.app.replace(/^v/i, "")}, the current release`
+              : "app: newest in your fleet"
+            : "",
+          hasService && latest.service ? "service: newest in your fleet" : "",
+        ]
+          .filter(Boolean)
+          .join(" · ") || "no versions reported";
+
+  /** The empty state's actions, per mode — it named them without offering them (SET-12). */
+  const emptyActions = (
+    <div className="flex flex-wrap justify-center gap-2">
+      {mode !== "machine" ? (
+        <Button variant="outline" size="sm" render={<Link href="/download" />} nativeButton={false}>
+          <Download className="size-4" /> Download agent
+        </Button>
+      ) : null}
+      {mode !== "project" && can("agents:manage") ? (
+        <Button size="sm" render={<Link href="/settings/agents/enrollment" />} nativeButton={false}>
+          <KeyRound className="size-4" /> Enrol a device
+        </Button>
+      ) : null}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -397,19 +432,21 @@ export function FleetView() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Devices" value={f.total} icon={MonitorSmartphone} hint="enrolled" featured />
-        <StatCard label="Online" value={f.online} icon={Wifi} hint="heartbeat in the last 10 min" />
-        <StatCard label="Offline" value={f.offline} icon={WifiOff} hint="no recent heartbeat" />
         <StatCard
-          label="Behind latest"
-          value={outdated}
-          icon={AlertTriangle}
-          hint={
-            devices.length > 0
-              ? "compared per agent type — app and service update separately"
-              : "no versions reported"
-          }
+          label="Devices"
+          value={live.length}
+          icon={MonitorSmartphone}
+          hint={retiredCount ? `active · ${retiredCount} retired not counted` : "enrolled"}
+          featured
         />
+        <StatCard label="Online" value={onlineCount} icon={Wifi} hint="heartbeat in the last 10 min" />
+        <StatCard
+          label="Offline"
+          value={live.length - onlineCount}
+          icon={WifiOff}
+          hint="no recent heartbeat"
+        />
+        <StatCard label="Behind latest" value={outdated} icon={AlertTriangle} hint={behindHint} />
       </div>
 
       <Card>
@@ -456,6 +493,18 @@ export function FleetView() {
                 ))}
               </SelectContent>
             </Select>
+            {retiredCount > 0 ? (
+              <div className="flex items-center gap-2 sm:pl-2">
+                <Switch
+                  id="fleet-show-retired"
+                  checked={showRetired}
+                  onCheckedChange={(v) => setShowRetired(Boolean(v))}
+                />
+                <Label htmlFor="fleet-show-retired" className="text-sm font-normal whitespace-nowrap">
+                  Show retired ({retiredCount})
+                </Label>
+              </div>
+            ) : null}
           </div>
 
           {devices.length === 0 ? (
@@ -463,6 +512,22 @@ export function FleetView() {
               icon={MonitorSmartphone}
               title="No agents enrolled yet"
               description={EMPTY_FLEET_HINT[mode]}
+              action={emptyActions}
+              className="m-4 border-0"
+            />
+          ) : live.length === 0 && !showRetired ? (
+            <EmptyState
+              icon={MonitorSmartphone}
+              title="No active devices"
+              description={`${retiredCount} retired ${retiredCount === 1 ? "device is" : "devices are"} hidden. ${EMPTY_FLEET_HINT[mode]}`}
+              action={
+                <div className="flex flex-col items-center gap-2">
+                  {emptyActions}
+                  <Button variant="link" size="sm" onClick={() => setShowRetired(true)}>
+                    Show retired devices
+                  </Button>
+                </div>
+              }
               className="m-4 border-0"
             />
           ) : visible.length === 0 ? (
@@ -473,7 +538,13 @@ export function FleetView() {
               className="m-4 border-0"
             />
           ) : (
-            <div className="overflow-x-auto">
+            // A named, focusable scroll region (axe `scrollable-region-focusable`).
+            <div
+              className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              role="region"
+              aria-label="Devices"
+              tabIndex={0}
+            >
               <table className="w-full text-sm">
                 <TableHeader>
                   <TableRow>
@@ -491,7 +562,7 @@ export function FleetView() {
                     <DeviceRow
                       key={d.agent_id}
                       d={d}
-                      behind={isBehind(d)}
+                      behind={behindOf(d)}
                       ownerName={attributedName(d)}
                       onOpen={() => router.push(deviceHref(d))}
                     />

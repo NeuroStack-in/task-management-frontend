@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -62,6 +62,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useQueryState } from "@/modules/projects/use-query-state";
+import { useAuthStore } from "@/stores/auth.store";
+import { readInterruptedRun, type InviteRunRecord } from "../lib/invite-run";
 import { InviteDialog } from "./invite-dialog";
 import { AddEmployeeDialog } from "./add-employee-dialog";
 import { PendingInvites } from "./pending-invites";
@@ -402,6 +404,18 @@ export function EmployeesView() {
   // Bumped when an invite is created, so the Invited section refetches without a page reload.
   const [invitesVersion, setInvitesVersion] = useState(0);
   /**
+   * A bulk invite run this admin left unfinished — the tab closed mid-run (UX audit PEOPLE-12). Said
+   * here as well as in the dialog, because nothing else would prompt anyone to open the dialog.
+   * Re-read whenever the dialog closes, since finishing the run there clears it.
+   */
+  const tenantId = useAuthStore((s) => s.user?.organizationId ?? "");
+  const userId = useAuthStore((s) => s.user?.id ?? "");
+  const mayInvite = can("employees:manage");
+  const [interruptedRun, setInterruptedRun] = useState<InviteRunRecord | null>(null);
+  useEffect(() => {
+    setInterruptedRun(mayInvite && !inviteOpen ? readInterruptedRun(tenantId, userId) : null);
+  }, [mayInvite, inviteOpen, tenantId, userId]);
+  /**
    * Which action leads. In `machine` mode almost nobody needs a console login — the org's people are
    * recorded by a managed agent (MANAGED-AGENT.md §6.4) — so "Add employee" is primary and Invite
    * moves into the overflow. In `project` mode the reverse, which is today's behaviour unchanged.
@@ -568,7 +582,10 @@ export function EmployeesView() {
         description="Your organization's people, productivity, and teams."
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* From `sm` up, the four cards. On a phone they stacked to ≈ 640 px before the search box
+          (UX audit PEOPLE-14) — the phone gets the same four figures as one compact strip, placed
+          after the toolbar so search comes first. */}
+      <div className="hidden gap-4 sm:grid sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total employees"
           value={liveStats.total}
@@ -724,6 +741,26 @@ export function EmployeesView() {
         </div>
       </div>
 
+      <dl className="grid grid-cols-4 divide-x rounded-xl border bg-card text-center sm:hidden">
+        {[
+          { label: "People", value: String(liveStats.total) },
+          {
+            label: "Active",
+            value:
+              liveStats.benched > 0
+                ? `${liveStats.activeWorking}/${liveStats.total}`
+                : String(liveStats.activeWorking),
+          },
+          { label: "Productivity", value: pct(liveStats.avgProductivity) },
+          { label: "Departments", value: String(liveStats.departments) },
+        ].map((s) => (
+          <div key={s.label} className="min-w-0 px-1 py-2">
+            <dt className="truncate text-[11px] text-muted-foreground">{s.label}</dt>
+            <dd className="font-display text-lg font-semibold tabular-nums">{s.value}</dd>
+          </div>
+        ))}
+      </dl>
+
       {incomplete ? (
         // A short roster is said, not shown as the whole org (WP-230).
         <div
@@ -736,6 +773,22 @@ export function EmployeesView() {
           </span>
           <Button variant="outline" size="sm" onClick={reload}>
             Retry
+          </Button>
+        </div>
+      ) : null}
+
+      {interruptedRun ? (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-2.5 text-sm"
+        >
+          <span>
+            An invite run didn&apos;t finish: {interruptedRun.remaining.length} of{" "}
+            {interruptedRun.total} {interruptedRun.total === 1 ? "address wasn't" : "addresses weren't"}{" "}
+            sent before the page closed.
+          </span>
+          <Button variant="outline" size="sm" onClick={() => setInviteOpen(true)}>
+            Review and send
           </Button>
         </div>
       ) : null}
@@ -767,8 +820,11 @@ export function EmployeesView() {
               className="m-4 border-0"
             />
           ) : (
-            <div className="overflow-x-auto" data-tour="emp:roster">
-              <Table>
+            // The table's own container scrolls — named and focusable, so the columns past the edge
+            // are reachable by keyboard (PEOPLE-14). The extra scrolling wrapper here was a second,
+            // unfocusable scroll region around it.
+            <div data-tour="emp:roster">
+              <Table scrollLabel="Employees">
                 <TableHeader>
                   <TableRow>
                     {/* Sortable columns (PEOPLE-04): a click sorts, a second click reverses. */}

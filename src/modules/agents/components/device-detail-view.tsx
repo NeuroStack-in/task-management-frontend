@@ -19,7 +19,11 @@ import {
   type ApiEmployeeProfile,
 } from "@/modules/employees/services/employees.service";
 import { usePermissions } from "@/hooks/use-permissions";
-import { getDevice, type ApiDevice } from "../services/fleet.service";
+import { archiveDevice, getDevice, type ApiDevice } from "../services/fleet.service";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { toast } from "sonner";
+import { friendlyError } from "@/lib/errors";
+import { useRouter } from "next/navigation";
 import { ReleaseDeviceButton } from "./release-device-button";
 import { deviceStateLabel, isLiveDevice } from "../lib/device-state";
 import { effectiveUserId } from "../lib/presence";
@@ -226,6 +230,10 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
                       onReleased={() => setNonce((n) => n + 1)}
                     />
                   )}
+                  {/* Archive — a retired device only, to take it out of the list (SET-12). */}
+                  {can("agents:manage") && !isLiveDevice(device.state) && (
+                    <ArchiveDeviceButton deviceId={device.agent_id} hostname={device.hostname} />
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -291,5 +299,39 @@ function BackLink() {
     >
       <ArrowLeft className="size-4" /> All devices
     </Link>
+  );
+}
+
+/** "Archive" for a retired device, confirmed; back to the list afterwards (UX audit SET-12). */
+function ArchiveDeviceButton({ deviceId, hostname }: { deviceId: string; hostname: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+        Archive
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={(o) => !o && setOpen(false)}
+        title={`Archive ${hostname || "this device"}?`}
+        description="It leaves the device list. Its history stays on the employee's record, and nothing on the device changes — it has already stopped reporting."
+        confirmLabel="Archive"
+        busy={busy}
+        onConfirm={async () => {
+          setBusy(true);
+          try {
+            await archiveDevice(deviceId);
+            toast.success("Device archived");
+            router.push("/settings/agents");
+          } catch (e) {
+            toast.error(friendlyError(e, "Couldn't archive the device."));
+            setBusy(false);
+            setOpen(false);
+          }
+        }}
+      />
+    </>
   );
 }

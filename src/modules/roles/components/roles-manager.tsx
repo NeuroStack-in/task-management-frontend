@@ -3,6 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import {
   Copy,
+  Eye,
   KeyRound,
   Lock,
   ChevronDown,
@@ -47,6 +48,7 @@ import {
 import { RoleEditorDialog } from "./role-editor-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { RoleMembers } from "./role-members";
+import { RolePermissionsDialog } from "./role-permissions-dialog";
 import { useRoles } from "../use-roles";
 import { cloneName } from "../lib/role-names";
 import type { ApiRole } from "../services/roles.service";
@@ -56,6 +58,30 @@ import type { ApiEmployee } from "@/modules/employees/services/employees.service
 function permissionLabel(role: ApiRole): string {
   if (role.is_owner) return "All";
   return String(role.permissions.length);
+}
+
+/**
+ * The permission count, as the way into the role's read-only permission list (UX audit PEOPLE-17).
+ * It was a bare number — the only way to see what "43" meant was the editor, which a viewer without
+ * "Manage roles" can't open.
+ */
+function PermissionsButton({ role, onView }: { role: ApiRole; onView: (role: ApiRole) => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="-ml-2 h-7 gap-1.5 px-2 font-medium tabular-nums"
+      aria-label={
+        role.is_owner
+          ? `${role.name}: every permission — view`
+          : `${role.name}: view its ${role.permissions.length} permissions`
+      }
+      onClick={() => onView(role)}
+    >
+      {permissionLabel(role)}
+      <Eye className="size-3.5 text-muted-foreground" aria-hidden />
+    </Button>
+  );
 }
 
 /** "Couldn't <verb> “X”" in the terms the server actually refused for (WP-327). */
@@ -95,6 +121,18 @@ export function RolesManager() {
   const [busy, setBusy] = useState(false);
   /** Which role's member list is expanded — one at a time; this is a table, not an accordion set. */
   const [openRole, setOpenRole] = useState<string | null>(null);
+  /** The role whose permissions are open read-only (PEOPLE-17). */
+  const [viewing, setViewing] = useState<ApiRole | null>(null);
+
+  /** Permission id → the catalog's label, for the role-change summary (PEOPLE-09). */
+  const labelById = useMemo(
+    () =>
+      new Map(
+        (catalog?.groups ?? []).flatMap((g) => g.permissions.map((p) => [p.id, p.label] as const)),
+      ),
+    [catalog],
+  );
+  const labelOf = (id: string) => labelById.get(id) ?? id;
 
   /**
    * Membership comes from the directory, not a new endpoint: `GET /v1/employees` already returns
@@ -124,6 +162,10 @@ export function RolesManager() {
     for (const list of m.values()) list.sort((a, b) => a.name.localeCompare(b.name));
     return m;
   }, [employees]);
+
+  /** How many hold the role being deleted — `null` when the roster couldn't be read (PEOPLE-17). */
+  const deleteHolders =
+    deleteTarget && membersKnown ? (membersByRole.get(deleteTarget.id)?.length ?? 0) : null;
 
   const refreshMembers = () => {
     invalidateDirectory();
@@ -264,13 +306,14 @@ export function RolesManager() {
                     </span>
                     <span className="flex items-center gap-1.5">
                       <span className="text-muted-foreground">Permissions</span>
-                      <span className="font-medium tabular-nums">{permissionLabel(role)}</span>
+                      <PermissionsButton role={role} onView={setViewing} />
                     </span>
                   </div>
                 </div>
                 {canManage ? (
                   <RoleActionsMenu
                     role={role}
+                    onView={setViewing}
                     onClone={handleClone}
                     onEdit={openEdit}
                     onRestore={setRestoreTarget}
@@ -299,6 +342,7 @@ export function RolesManager() {
                     roles={roles}
                     canManage={canManage}
                     onChanged={refreshMembers}
+                    labelOf={labelOf}
                   />
                 </div>
               ) : null}
@@ -307,9 +351,14 @@ export function RolesManager() {
         })}
       </ul>
 
+      {/* A named, focusable scroll region, so the columns past the edge are reachable without a
+          swipe (UX audit PEOPLE-14, axe `scrollable-region-focusable`). */}
       <div
         data-tour="roles:list"
-        className="hidden overflow-x-auto rounded-[1.4rem] bg-card shadow-soft sm:block"
+        role="region"
+        aria-label="Roles"
+        tabIndex={0}
+        className="hidden overflow-x-auto rounded-[1.4rem] bg-card shadow-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:block"
       >
         <table className="w-full caption-bottom text-sm">
           <TableHeader>
@@ -379,14 +428,15 @@ export function RolesManager() {
                   </Button>
                 </TableCell>
 
-                <TableCell className="py-3 pr-6 font-medium tabular-nums md:pr-2">
-                  {permissionLabel(role)}
+                <TableCell className="py-3 pr-6 md:pr-2">
+                  <PermissionsButton role={role} onView={setViewing} />
                 </TableCell>
 
                 {canManage && (
                   <TableCell className="py-3 pr-4 text-right">
                     <RoleActionsMenu
                       role={role}
+                      onView={setViewing}
                       onClone={handleClone}
                       onEdit={openEdit}
                       onRestore={setRestoreTarget}
@@ -405,6 +455,7 @@ export function RolesManager() {
                       roles={roles}
                       canManage={canManage}
                       onChanged={refreshMembers}
+                      labelOf={labelOf}
                     />
                   </TableCell>
                 </TableRow>
@@ -431,24 +482,60 @@ export function RolesManager() {
         onUpdate={update}
       />
 
+      {/* The delete dialog says who holds the role (UX audit PEOPLE-17). It asked "Are you sure?"
+          whatever the member count, and a held role then failed with a toast — the server refuses
+          to delete a role anyone holds (`role_in_use`), because they would be left with no access
+          at all. Now a held role can't be confirmed, and the dialog leads to its member list. */}
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete role</DialogTitle>
+            <DialogTitle>Delete “{deleteTarget?.name}”?</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete “{deleteTarget?.name}”? This action cannot be undone.
+              {deleteHolders === null
+                ? "Who holds this role couldn't be checked. If anyone still does, the delete is refused and nothing changes. Deleting a role can't be undone."
+                : deleteHolders > 0
+                  ? `${deleteHolders === 1 ? "1 person holds" : `${deleteHolders} people hold`} this role, so it can't be deleted — they would be left with no access at all. Change their role first; deactivated people count too.`
+                  : "No one holds this role, so no one loses access. Deleting it can't be undone."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" disabled={busy} onClick={confirmDelete}>
-              {busy ? "Deleting…" : "Delete role"}
-            </Button>
+            {deleteHolders !== null && deleteHolders > 0 ? (
+              <Button
+                onClick={() => {
+                  if (deleteTarget) setOpenRole(deleteTarget.id);
+                  setDeleteTarget(null);
+                }}
+              >
+                Show who holds it
+              </Button>
+            ) : (
+              <Button variant="destructive" disabled={busy} onClick={confirmDelete}>
+                {busy ? "Deleting…" : "Delete role"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RolePermissionsDialog
+        role={viewing}
+        catalog={catalog}
+        memberCount={
+          viewing && membersKnown ? (membersByRole.get(viewing.id)?.length ?? 0) : null
+        }
+        onOpenChange={(o) => !o && setViewing(null)}
+        onEdit={
+          canManage
+            ? (role) => {
+                setViewing(null);
+                openEdit(role);
+              }
+            : undefined
+        }
+      />
 
       <ConfirmDialog
         open={restoreTarget !== null}
@@ -480,12 +567,14 @@ function RoleKindBadge({ role }: { role: ApiRole }) {
 /** One role's ⋮ menu — the same actions in the desktop table row and the phone card. */
 function RoleActionsMenu({
   role,
+  onView,
   onClone,
   onEdit,
   onRestore,
   onDelete,
 }: {
   role: ApiRole;
+  onView: (role: ApiRole) => void;
   onClone: (role: ApiRole) => void;
   onEdit: (role: ApiRole) => void;
   onRestore: (role: ApiRole) => void;
@@ -509,6 +598,9 @@ function RoleActionsMenu({
           menu to the 32px icon trigger and made "Restore to default" wrap onto two
           lines. Let it size to its widest item instead, with a sane floor. */}
       <DropdownMenuContent align="end" className="w-auto min-w-[10rem]">
+        <DropdownMenuItem onClick={() => onView(role)}>
+          <Eye className="size-4" /> View permissions
+        </DropdownMenuItem>
         {/* Not for Owner: its access is `is_owner`, outside the bitset, so a copy
             holds one inert permission and nothing else (WP-321). */}
         <DropdownMenuItem disabled={role.is_owner} onClick={() => onClone(role)}>

@@ -15,6 +15,10 @@
  *
  * Hidden entirely in `project` mode (the server 409s a mint anyway) — offering a button that cannot
  * succeed is a dead end.
+ *
+ * The employee picker searches, and marks who already has a device or a pending code (UX audit
+ * SET-13); the tracking mode is named as Settings names it ("Both", not "Mixed") with a link to
+ * where it is changed.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -39,13 +43,6 @@ import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
@@ -53,18 +50,30 @@ import { useDirectory } from "@/hooks/use-directory";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useEntitlementsSettled, useTrackingMode } from "@/hooks/use-features";
 import { useEntitlementsStore } from "@/stores/entitlements.store";
-import { personName } from "@/lib/format";
+import { formatDate, formatDateTime, personName } from "@/lib/format";
+import { TRACKING_MODE_META } from "@/lib/tracking-mode";
 import {
   getUninstallPasscode,
   listEnrollmentCodes,
+  listFleet,
   mintEnrollmentCode,
   revokeEnrollmentCode,
   rotateUninstallPasscode,
   type MintedCode,
   type PendingCode,
   type UninstallPasscode,
+  type ApiDevice,
 } from "../services/fleet.service";
 import { MANAGED_AGENT_MSI_URL } from "@/lib/agent-release";
+import { effectiveUserId } from "../lib/presence";
+import { isLiveDevice } from "../lib/device-state";
+import { EmployeePicker } from "./employee-picker";
+
+/** Where the tracking mode is changed — the Profile tab of Settings → Organization. */
+const MODE_SETTINGS_HREF = "/settings/organization#profile";
+
+/** The managed modes, in Settings' own words ("Machine uptime", "Both" — never "Mixed"). */
+const MANAGED_MODES = `“${TRACKING_MODE_META.machine.label}” or “${TRACKING_MODE_META.both.label}”`;
 
 /**
  * The installer file the commands name. The managed agent's release builds `WorkPulse-<version>.msi`
@@ -149,7 +158,11 @@ export function EnrollmentView() {
   /** The just-minted code, revealed once. Cleared when a new employee is picked. */
   const [minted, setMinted] = useState<MintedCode | null>(null);
   /** A typed 409 rendered inline (not a toast) — it is the answer to a real question. */
-  const [conflict, setConflict] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<{ kind: "device" | "mode"; text: string } | null>(
+    null,
+  );
+  /** The fleet, read once — who already has a device (SET-13). `null` until read or if it failed. */
+  const [fleet, setFleet] = useState<ApiDevice[] | null>(null);
 
   const [codes, setCodes] = useState<PendingCode[]>([]);
   const [codesLoading, setCodesLoading] = useState(true);
@@ -169,10 +182,38 @@ export function EnrollmentView() {
   const [rotating, setRotating] = useState(false);
 
   const canManage = can("agents:manage");
+  /** Settings → Organization is linked only for someone who can open it (UX audit SET-15). */
+  const canOpenOrgSettings = can("settings:view");
 
   // Employees who already have a pending code — so the picker can flag them rather than let IT mint
   // a second code that will just sit unused beside the first.
   const pendingByUser = useMemo(() => new Set(codes.map((c) => c.user_id)), [codes]);
+  /**
+   * Who already has a device. A live **managed** device blocks a new code — the server keeps one per
+   * person (`EMPDEV#`) — so it is named; the desktop app doesn't, so it is only noted.
+   */
+  const marks = useMemo(() => {
+    const managed = new Map<string, { name: string; agentId: string }>();
+    const app = new Set<string>();
+    for (const d of fleet ?? []) {
+      const who = effectiveUserId(d);
+      if (!who || !isLiveDevice(d.state)) continue;
+      if (d.variant === "service") managed.set(who, { name: d.hostname || "a device", agentId: d.agent_id });
+      else app.add(who);
+    }
+    return { managed, app };
+  }, [fleet]);
+  const pickerMarks = useMemo(
+    () => ({
+      managed: new Map([...marks.managed].map(([k, v]) => [k, v.name] as const)),
+      app: marks.app,
+      pending: pendingByUser,
+    }),
+    [marks, pendingByUser],
+  );
+  // Only people who can still be given a device — a deactivated employee can't be enrolled.
+  const enrollable = useMemo(() => employees.filter((e) => e.status !== "deactivated"), [employees]);
+  const pickedDevice = userId ? (marks.managed.get(userId) ?? null) : null;
 
   const nameOf = useCallback(
     // Never the raw sub: this page lists the whole directory, so a miss means the employee was
@@ -194,6 +235,19 @@ export function EnrollmentView() {
   useEffect(() => {
     if (canManage && managedMode) reloadCodes();
   }, [canManage, managedMode, reloadCodes]);
+
+  // Best-effort: without it the picker simply carries no device marks, and the server still refuses
+  // a second code with its own message.
+  useEffect(() => {
+    if (!canManage || !managedMode) return;
+    let live = true;
+    listFleet()
+      .then((f) => live && setFleet(f.devices))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [canManage, managedMode]);
 
   // The GET mints the passcode if the org hasn't one yet, so this is also what creates it — there is
   // deliberately no "generate" button for a value that must simply always exist. Not in project mode,
@@ -240,13 +294,15 @@ export function EnrollmentView() {
       .catch((e) => {
         // The two typed 409s are answers, not errors — render them where the eye already is.
         if (e instanceof ApiError && e.code === "employee_already_has_device") {
-          setConflict(
-            `${nameOf(userId)} already has an agent. Release it from the device page before issuing a new code.`,
-          );
+          setConflict({
+            kind: "device",
+            text: `${nameOf(userId)} already has an agent. Release it from the device page before issuing a new code.`,
+          });
         } else if (e instanceof ApiError && e.code === "tracking_mode_not_managed") {
-          setConflict(
-            "This organization isn't in Machine or Mixed mode. Switch it in Settings → Organization first.",
-          );
+          setConflict({
+            kind: "mode",
+            text: `This organization isn't set to ${MANAGED_MODES} tracking, so a device can't be enrolled.`,
+          });
         } else {
           toast.error("Couldn't mint a code", { description: friendlyError(e) });
         }
@@ -275,20 +331,30 @@ export function EnrollmentView() {
     [reloadCodes],
   );
 
+  // Every state keeps the page's one <h1> (in-pane inside Settings): the guard states had only an
+  // empty state's <h3>, so the page had no H1 at all (UX audit 2026-10-16, XC-10).
+  const heading = <PageHeader title="Enrol a device" />;
+
   if (!canManage) {
     return (
-      <EmptyState
-        icon={KeyRound}
-        title="Enrolment is admin-only"
-        description="You need the Manage device agents permission to mint enrolment codes."
-      />
+      <div className="space-y-5">
+        {heading}
+        <EmptyState
+          icon={KeyRound}
+          title="Enrolment is admin-only"
+          description="You need the Manage device agents permission to mint enrolment codes."
+        />
+      </div>
     );
   }
 
   if (!settled) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <Loader label="Checking your organization's tracking mode…" />
+      <div className="space-y-5">
+        {heading}
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <Loader label="Checking your organization's tracking mode…" />
+        </div>
       </div>
     );
   }
@@ -297,11 +363,23 @@ export function EnrollmentView() {
   // (`tracking_mode_not_managed`) anyway. Offering a button that cannot succeed is a dead end.
   if (!managedMode) {
     return (
+      <div className="space-y-5">
+      {heading}
       <EmptyState
         icon={KeyRound}
         title="Device enrolment isn't available in this mode"
-        description="Switch to Machine or Mixed tracking in Settings → Organization to deploy the background agent."
+        description={`This organization tracks with “${TRACKING_MODE_META[mode].label}”. The background agent runs in ${MANAGED_MODES} tracking — the owner can switch it in Settings → Organization.`}
+        action={
+          // A link only for someone who can open the page (UX audit SET-15); the text above
+          // still says where it is for everyone else.
+          canOpenOrgSettings ? (
+            <Button variant="outline" size="sm" render={<Link href={MODE_SETTINGS_HREF} />} nativeButton={false}>
+              Open Settings → Organization
+            </Button>
+          ) : undefined
+        }
       />
+      </div>
     );
   }
 
@@ -311,6 +389,20 @@ export function EnrollmentView() {
         title="Enrol a device"
         description="Mint a one-time code for an employee, then install the agent on their computer with it."
       />
+
+      {modeKnown ? (
+        <p className="text-muted-foreground text-sm">
+          Tracking mode: <span className="text-foreground font-medium">{TRACKING_MODE_META[mode].label}</span>
+          {" · "}
+          {canOpenOrgSettings ? (
+            <Link href={MODE_SETTINGS_HREF} className="text-foreground font-medium underline-offset-2 hover:underline">
+              Change it in Settings → Organization
+            </Link>
+          ) : (
+            "the owner changes it in Settings → Organization"
+          )}
+        </p>
+      ) : null}
 
       {/* Said before a code is minted, so a technician has the file before copying a command for
           it. Each signed release is published to the public download bucket (QA audit 2026-10-08,
@@ -344,30 +436,24 @@ export function EnrollmentView() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="enrol-employee">Employee</Label>
-              <Select
+              <EmployeePicker
+                id="enrol-employee"
+                employees={enrollable}
                 value={userId}
-                onValueChange={(v) => {
-                  setUserId(String(v));
+                onChange={(v) => {
+                  setUserId(v);
                   setMinted(null);
                   setConflict(null);
                 }}
-              >
-                <SelectTrigger id="enrol-employee">
-                  {/* Base UI renders the *value* unless given a render function, and the value here
-                      is the user id — so the trigger showed a raw uuid instead of the person. */}
-                  <SelectValue placeholder={dirLoading ? "Loading…" : "Pick an employee"}>
-                    {(v) => (v ? nameOf(String(v)) : null)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {employees.map((e) => (
-                    <SelectItem key={e.user_id} value={e.user_id}>
-                      {e.name}
-                      {pendingByUser.has(e.user_id) ? " · code pending" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                marks={pickerMarks}
+                loading={dirLoading}
+              />
+              {userId && pendingByUser.has(userId) && !pickedDevice ? (
+                <p className="text-muted-foreground text-xs">
+                  {nameOf(userId)} already has a code waiting below. A new one works too; revoke the
+                  old one if it was handed out by mistake.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="enrol-upn">Windows account (optional)</Label>
@@ -384,14 +470,48 @@ export function EnrollmentView() {
             </div>
           </div>
 
+          {pickedDevice && !conflict ? (
+            // Said before Generate, not after a refused mint at the laptop (SET-13).
+            <p className="border-warning/40 bg-warning/5 flex items-start gap-2 rounded-lg border p-3 text-sm">
+              <TriangleAlert className="text-warning mt-0.5 size-4 shrink-0" />
+              <span>
+                {nameOf(userId)} already has a managed device, {pickedDevice.name}. Release it from{" "}
+                <Link
+                  href={`/settings/agents/${encodeURIComponent(pickedDevice.agentId)}`}
+                  className="font-medium underline-offset-2 hover:underline"
+                >
+                  its device page
+                </Link>{" "}
+                before issuing a new code.
+              </span>
+            </p>
+          ) : null}
+
           {conflict && (
             <p className="border-warning/40 bg-warning/5 flex items-start gap-2 rounded-lg border p-3 text-sm">
               <TriangleAlert className="text-warning mt-0.5 size-4 shrink-0" />
-              {conflict}
+              <span>
+                {conflict.text}
+                {conflict.kind === "mode" ? (
+                  canOpenOrgSettings ? (
+                    <>
+                      {" "}
+                      <Link
+                        href={MODE_SETTINGS_HREF}
+                        className="font-medium underline-offset-2 hover:underline"
+                      >
+                        Open Settings → Organization
+                      </Link>
+                    </>
+                  ) : (
+                    " The owner can switch it in Settings → Organization."
+                  )
+                ) : null}
+              </span>
             </p>
           )}
 
-          <Button onClick={mint} disabled={!userId || minting}>
+          <Button onClick={mint} disabled={!userId || minting || pickedDevice !== null}>
             {minting ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
@@ -554,8 +674,8 @@ export function EnrollmentView() {
                       </Button>
                       <p className="text-muted-foreground text-xs">
                         {pass.rotated_by
-                          ? `Rotated by ${nameOf(pass.rotated_by)} on ${new Date(pass.rotated_at).toLocaleDateString()}.`
-                          : `Created on ${new Date(pass.rotated_at).toLocaleDateString()}.`}{" "}
+                          ? `Rotated by ${nameOf(pass.rotated_by)} on ${formatDate(pass.rotated_at)}.`
+                          : `Created on ${formatDate(pass.rotated_at)}.`}{" "}
                         Rotating affects new installs only.
                       </p>
                     </>
@@ -595,7 +715,7 @@ export function EnrollmentView() {
                     <p className="truncate font-medium">{nameOf(c.user_id)}</p>
                     <p className="text-muted-foreground truncate text-xs">
                       Issued by {nameOf(c.created_by)} · expires{" "}
-                      {new Date(c.expires_at * 1000).toLocaleString()}
+                      {formatDateTime(c.expires_at * 1000)}
                       {c.assign_upn ? ` · ${c.assign_upn}` : ""}
                     </p>
                   </div>

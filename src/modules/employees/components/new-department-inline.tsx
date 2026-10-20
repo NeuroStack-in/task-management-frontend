@@ -11,6 +11,7 @@
  * Same `POST /v1/departments` the Departments settings card sends.
  */
 import { useState } from "react";
+import Link from "next/link";
 import { Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,19 @@ export function NewDepartmentInline({
   if (!canCreate) {
     return noneYet ? (
       <p className="text-muted-foreground text-xs">
-        No departments yet. An admin can add one in Settings → Organization → Departments.
+        No departments yet. An admin can add one in{" "}
+        {/* A link for whoever can open the page (UX audit SET-15). */}
+        {can("settings:view") ? (
+          <Link
+            href="/settings/organization#structure"
+            className="text-foreground font-medium underline-offset-2 hover:underline"
+          >
+            Settings → Organization → Departments
+          </Link>
+        ) : (
+          "Settings → Organization → Departments"
+        )}
+        .
       </p>
     ) : null;
   }

@@ -7,12 +7,12 @@
  *   - projects + per-project KPIs        → `GET /v1/projects/user/{id}` + `GET /v1/projects/{id}`.
  *
  * The output feeds the preview `EmployeeProfileData` shape verbatim. Fields the backend genuinely
- * doesn't carry (`dob`, `address`, `postcode`, `country`) are left `""` and the UI renders them as
- * an em dash. The photo is not here: the page shows it through `<UserAvatar>` (the shared store).
+ * doesn't carry (`dob`, `address`, `postcode`, `country`) are left `""`, and the page doesn't show
+ * them at all — a Country row reading "—" for everyone said nothing (UX audit PEOPLE-15). The photo is not here: the page shows it through `<UserAvatar>` (the shared store).
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
-import { UNKNOWN_DEPARTMENT, UNKNOWN_ROLE, UNKNOWN_TEAM } from "@/lib/format";
+import { formatDate, UNKNOWN_DEPARTMENT, UNKNOWN_ROLE, UNKNOWN_TEAM } from "@/lib/format";
 import { listRoles } from "@/modules/roles/services/roles.service";
 import {
   listUserProjects,
@@ -112,14 +112,6 @@ const MONTH_SHORT = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
-
-function fmtDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 /** `YYYY-MM-DD` in local calendar (the activity endpoint wants local, the server is UTC). */
 function ymd(d: Date): string {
@@ -315,7 +307,8 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           empCode: p.emp_id ?? "",
           phone: p.phone ?? "",
           dob: "", // not carried by the backend
-          hireDate: p.joined_at ? fmtDate(p.joined_at) : "",
+          // The one date notation (UX audit XC-06).
+          hireDate: p.joined_at ? formatDate(p.joined_at) : "",
           country: "", // not carried by the backend
           cityState: p.location ?? "",
           address: "", // not carried by the backend
