@@ -28,9 +28,9 @@
   /* --- Lines & status --- */
   --wp-border: #ece2d3;
   --wp-border-strong: #ddceb9;
-  --wp-success: #3f7d54;
+  --wp-success: #2e6a43; /* was #3f7d54 — 3.6–4.2:1 as chip text on its own tint; now 4.7:1+ (UX audit PUB-02 follow-up) */
   --wp-warning: #b9791f;
-  --wp-danger: #c14a35;
+  --wp-danger: #a83a27; /* was #c14a35 — 4.0:1 on its tint; now 5.3:1 */
 
   /* --- Motion --- */
   --wp-ease: cubic-bezier(0.22, 1, 0.36, 1);
