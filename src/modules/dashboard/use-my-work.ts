@@ -25,6 +25,8 @@ import {
 
 export interface MyTask {
   id: string;
+  /** The task's project — what a deep link to the task needs (`/projects/{id}?task=…`, PROJ-03). */
+  projectId: string;
   title: string;
   projectKey: string | null;
   projectName: string | null;
@@ -99,6 +101,7 @@ export function useMyWork(enabled = true): MyWork {
           open
             .map((t) => ({
               id: t.id,
+              projectId: t.project_id,
               // Empty only if the task vanished between the server's index read and its batch-get.
               title: t.title?.trim() || "Untitled task",
               projectKey: projById.get(t.project_id)?.key ?? null,

@@ -16,6 +16,7 @@
  * `useMyWork`, so both callers inherit it.
  */
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, CheckCircle2, ListChecks, TriangleAlert } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -70,6 +71,17 @@ function dueUrgency(iso: string | null): "overdue" | "soon" | null {
   return null;
 }
 
+/**
+ * Where a task opens: its project, with the task's dialog already open (`?task=`). Rows used to go
+ * nowhere and "View all" to the projects grid, so a task on the dashboard was a dead end (UX audit
+ * PROJ-03).
+ */
+const taskHref = (t: Pick<MyTask, "id" | "projectId">) =>
+  `/projects/${encodeURIComponent(t.projectId)}?task=${encodeURIComponent(t.id)}`;
+
+/** The Projects page's Tasks tab, filtered to the signed-in person's own tasks. */
+const MY_TASKS_HREF = "/projects?view=tasks&who=mine";
+
 /** Presentational. The caller owns the fetch, so the personal dashboard reuses the one it makes. */
 export function MyTasksCard({
   tasks,
@@ -86,6 +98,7 @@ export function MyTasksCard({
   error?: string | null;
   onRetry?: () => void;
 }) {
+  const router = useRouter();
   return (
     <Card
       data-tour="dash:tasks"
@@ -94,7 +107,7 @@ export function MyTasksCard({
       <div className="border-border flex items-center justify-between border-b px-5 py-4">
         <h2 className="font-display text-base font-semibold tracking-tight">My tasks</h2>
         <Link
-          href="/projects"
+          href={MY_TASKS_HREF}
           className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
         >
           View all <ArrowRight className="size-3.5" />
@@ -127,10 +140,12 @@ export function MyTasksCard({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-border text-muted-foreground border-b text-left text-xs font-medium tracking-wide uppercase">
-                  <th scope="col" className="px-5 py-2.5 font-medium">
+                  {/* Fixed shares for title and project: the project column took whatever it
+                      wanted and titles — now the link into the task — truncated to a few letters. */}
+                  <th scope="col" className="w-[45%] px-5 py-2.5 font-medium">
                     Task
                   </th>
-                  <th scope="col" className="px-3 py-2.5 font-medium">
+                  <th scope="col" className="w-[30%] px-3 py-2.5 font-medium">
                     Project
                   </th>
                   <th
@@ -149,12 +164,24 @@ export function MyTasksCard({
                   const meta = TASK_STATUS_META[t.status as TaskStatus];
                   const urgency = dueUrgency(t.due);
                   return (
-                    <tr key={t.id} className="hover:bg-muted/40 transition-colors">
+                    <tr
+                      key={t.id}
+                      className="hover:bg-muted/40 cursor-pointer transition-colors"
+                      // The whole row opens the task for the mouse; the title is the real link, so
+                      // the keyboard reaches it too.
+                      onClick={() => router.push(taskHref(t))}
+                    >
                       <td className="max-w-0 px-5 py-3">
-                        <span className="block truncate font-medium">{t.title}</span>
+                        <Link
+                          href={taskHref(t)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="block truncate font-medium hover:underline focus-visible:underline"
+                        >
+                          {t.title}
+                        </Link>
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
+                      <td className="max-w-0 px-3 py-3 whitespace-nowrap">
+                        <span className="text-muted-foreground flex min-w-0 items-center gap-1.5">
                           {t.projectKey ? (
                             <span className="bg-muted shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[0.65rem]">
                               {t.projectKey}
@@ -195,9 +222,12 @@ export function MyTasksCard({
             {tasks.length > 6 ? (
               <>
                 <ListChecks className="size-4 shrink-0" />
-                <span>
+                <Link
+                  href={MY_TASKS_HREF}
+                  className="hover:text-foreground hover:underline"
+                >
                   {tasks.length - 6} more open {tasks.length - 6 === 1 ? "task" : "tasks"}
-                </span>
+                </Link>
               </>
             ) : (
               <>

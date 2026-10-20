@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, Hourglass, ListChecks, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, Hourglass, ListChecks, MoreHorizontal, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCorners, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type Announcements, type CollisionDetection, type DragEndEvent, type KeyboardCoordinateGetter } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { Gauge } from "@/components/shared/gauge";
@@ -173,6 +174,33 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const canWork = canWorkOnTasks(authority);
   const [reviewTarget, setReviewTarget] = useState<Task | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
+  /**
+   * The open task, in the URL (`?task=<id>`), so a task can be linked to — from the Tasks tab, the
+   * dashboard's My tasks, a shared link — and Back or a refresh keeps it open. Those surfaces used to
+   * open the project and leave the person to find the task on the board (UX audit PROJ-03).
+   */
+  const [taskParam, setTaskParam] = useQueryState<string>("task", "");
+  const openTask = (t: Task) => {
+    setViewingTask(t);
+    setTaskParam(t.id);
+  };
+  const closeTask = () => {
+    setViewingTask(null);
+    setTaskParam("");
+  };
+  useEffect(() => {
+    if (!taskParam || loading || !project || viewingTask) return;
+    const linked = tasks.find((t) => t.id === taskParam);
+    if (linked) {
+      setViewingTask(linked);
+    } else {
+      // Deleted, or on another project: say so rather than opening the project as if nothing was asked.
+      toast.error("That task isn't on this project any more", {
+        description: "It may have been deleted or moved. Here is the project it was on.",
+      });
+      setTaskParam("");
+    }
+  }, [taskParam, loading, project, tasks, viewingTask, setTaskParam]);
 
   const [editOpen, setEditOpen] = useState(false);
   // A manager who has just handed their own project over is no longer its manager once the page
@@ -503,10 +531,13 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   return (
     <div className="flex flex-col gap-6">
       {/* Title + actions live in the top navbar; the back link stays in-page. */}
+      {/* Labelled actions in the top bar from `sm` up. Below it they went into the never-wrapping
+          bar too and squeezed the title to "Proj…" (UX audit PROJ-04); the phone gets a "⋯" menu
+          beside "All projects" instead. */}
       <PageHeader
         title={project.name}
         actions={
-          <>
+          <div className="hidden items-center gap-2 sm:flex">
             <Button variant="outline" className="gap-1.5" onClick={downloadReport}>
               <FileDown className="size-4" />
               Report (PDF)
@@ -531,17 +562,49 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                 </Button>
               </>
             ) : null}
-          </>
+          </div>
         }
       />
 
-      <Link
-        href="/projects"
-        className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1.5 text-sm font-medium transition-colors"
-      >
-        <ArrowLeft className="size-4" />
-        All projects
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link
+          href="/projects"
+          className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1.5 text-sm font-medium transition-colors"
+        >
+          <ArrowLeft className="size-4" />
+          All projects
+        </Link>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8 sm:hidden"
+                aria-label="Project actions"
+              />
+            }
+          >
+            <MoreHorizontal className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-auto min-w-44">
+            <DropdownMenuItem onClick={downloadReport}>
+              <FileDown className="size-4" /> Report (PDF)
+            </DropdownMenuItem>
+            {canManageProject ? (
+              <>
+                <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                  <Pencil className="size-4" /> Edit project
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={() => setConfirmOpen(true)}>
+                  <Trash2 className="size-4" /> Delete project
+                </DropdownMenuItem>
+              </>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {/* Hero — filled with the active palette's feature colour */}
       <header
@@ -836,7 +899,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                       ? undefined
                       : () => openCreateTask(col)
                   }
-                  onView={setViewingTask}
+                  onView={openTask}
                   onEdit={canWork ? openEditTask : undefined}
                   onDelete={setTaskToDelete}
                   canDelete={canDelete}
@@ -853,7 +916,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             tasks={tasks}
             userMap={userMap}
             // A viewer's row opens the read-only view instead of the edit form.
-            onEdit={canWork ? openEditTask : setViewingTask}
+            onEdit={canWork ? openEditTask : openTask}
             onAdd={canWork ? () => openCreateTask("todo") : undefined}
             onDelete={setTaskToDelete}
             canDelete={canDelete}
@@ -902,7 +965,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         task={viewingTask}
         projectId={project.id}
         open={!!viewingTask}
-        onOpenChange={(o) => !o && setViewingTask(null)}
+        onOpenChange={(o) => !o && closeTask()}
         userMap={userMap}
       />
 

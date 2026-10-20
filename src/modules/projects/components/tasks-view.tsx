@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { ListChecks } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   TASK_PRIORITY_META,
@@ -11,10 +12,14 @@ import {
   type Task,
   type TaskStatus,
 } from "../types";
-import { dueLabel, isTaskOverdue, toneDot, toneSoft } from "../lib";
+import { dueLabel, isTaskOverdue, toneDot, toneSoft, type UserMini } from "../lib";
+import { AssigneeStack } from "./assignees";
 import { StatusBadge } from "./parts";
 
 type Filter = TaskStatus | "all" | "overdue";
+
+/** Whose tasks the tab lists — the signed-in person's own, or everyone's on the projects they see. */
+export type TaskScope = "mine" | "all";
 
 interface TasksViewProps {
   /** Tasks already narrowed by the shared search in the parent toolbar. */
@@ -24,7 +29,17 @@ interface TasksViewProps {
   projectMap: Record<string, Project>;
   /** Shared search term — used only for the empty-state copy. */
   query: string;
-  onOpenProject: (projectId: string) => void;
+  /** For the assignee avatars on each row. */
+  userMap: Record<string, UserMini>;
+  /** Whose tasks `tasks` already is — used only for the empty-state copy. */
+  scope: TaskScope;
+  /** Offered from the empty "Assigned to me" state. */
+  onShowEveryone?: () => void;
+  /**
+   * Open this task. A row used to open its **project**, leaving the person to find the task on the
+   * board (UX audit PROJ-03); the caller now links straight to it.
+   */
+  onOpenTask: (task: Task) => void;
 }
 
 export function TasksView({
@@ -32,7 +47,10 @@ export function TasksView({
   filter,
   projectMap,
   query,
-  onOpenProject,
+  userMap,
+  scope,
+  onShowEveryone,
+  onOpenTask,
 }: TasksViewProps) {
   const visible = useMemo(() => {
     const list =
@@ -58,11 +76,26 @@ export function TasksView({
     return (
       <EmptyState
         icon={ListChecks}
-        title={query ? "No tasks match your search" : "No tasks yet"}
+        title={
+          query
+            ? "No tasks match your search"
+            : scope === "mine"
+              ? "Nothing is assigned to you"
+              : "No tasks yet"
+        }
         description={
           query
             ? "Try a different task or project name."
-            : "Tasks across every project will collect here."
+            : scope === "mine"
+              ? "Tasks assigned to you, across every project you're on, collect here."
+              : "Tasks across every project will collect here."
+        }
+        action={
+          scope === "mine" && onShowEveryone ? (
+            <Button variant="outline" onClick={onShowEveryone}>
+              Show everyone&apos;s tasks
+            </Button>
+          ) : undefined
         }
       />
     );
@@ -97,7 +130,7 @@ export function TasksView({
             <li key={t.id}>
               <button
                 type="button"
-                onClick={() => onOpenProject(t.projectId)}
+                onClick={() => onOpenTask(t)}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
               >
                 <span
@@ -155,6 +188,14 @@ export function TasksView({
                 >
                   {prio.label}
                 </span>
+                {/* Who it's on — the tab had no assignee anywhere (PROJ-03). */}
+                <AssigneeStack
+                  assignees={t.assignees}
+                  userMap={userMap}
+                  size="xs"
+                  ringClass="ring-card"
+                  className="shrink-0"
+                />
                 <StatusBadge
                   tone={status.tone}
                   label={status.label}

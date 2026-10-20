@@ -16,7 +16,8 @@ import { RefreshButton } from "@/components/shared/refresh-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { usePermissions } from "@/hooks/use-permissions";
+import { useCurrentRole, usePermissions } from "@/hooks/use-permissions";
+import { useAuthStore } from "@/stores/auth.store";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -39,7 +40,7 @@ import { useQueryState } from "../use-query-state";
 import { ProjectCard } from "./project-card";
 import { ProjectsList } from "./projects-list";
 import { ProjectsStatBand } from "./projects-stat-band";
-import { TasksView } from "./tasks-view";
+import { TasksView, type TaskScope } from "./tasks-view";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { Segmented } from "./parts";
 
@@ -53,10 +54,22 @@ const VIEWS: readonly View[] = ["projects", "tasks"];
 const LAYOUTS: readonly Layout[] = ["grid", "list"];
 const STATUS_FILTERS: readonly StatusFilter[] = ["all", ...PROJECT_STATUS_ORDER, "overdue"];
 const TASK_FILTERS: readonly TaskFilter[] = ["all", ...TASK_STATUS_ORDER, "overdue"];
+/** `""` = this person's default (see `defaultScope`); a choice they make is written explicitly. */
+const TASK_SCOPES: readonly (TaskScope | "")[] = ["", "mine", "all"];
 
 export function ProjectsView() {
   const router = useRouter();
   const { can } = usePermissions();
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const role = useCurrentRole();
+  /**
+   * "Assigned to me" is the default for anyone who isn't overseeing the whole organization — the same
+   * discriminator the server uses to decide whether `GET /v1/projects` is everything or just mine
+   * (`useMyWork` mirrors it). The tab listed every task with no way to find your own (UX audit
+   * PROJ-03).
+   */
+  const seesWholeOrg = (role?.scope ?? "org") === "org" && can("projects:view");
+  const defaultScope: TaskScope = seesWholeOrg ? "all" : "mine";
 
   // Real backend. The server scopes the list (oversight sees all, members see theirs), so there's
   // no client-side member filter anymore.
@@ -92,6 +105,8 @@ export function ProjectsView() {
   );
   const [taskFilter, setTaskFilter] = useQueryState<TaskFilter>("tasks", "all", TASK_FILTERS);
   const [query, setQuery] = useQueryState<string>("q", "");
+  const [scopeParam, setScope] = useQueryState<TaskScope | "">("who", "", TASK_SCOPES);
+  const taskScope: TaskScope = scopeParam || defaultScope;
   const [newOpen, setNewOpen] = useState(false);
 
   const stats = useMemo(() => projectStats(projects), [projects]);
@@ -153,16 +168,34 @@ export function ProjectsView() {
       { label: "With overdue tasks", value: tasksPending ? "loading" : String(overdueProjectIds.size) },
       { label: "Avg progress", value: `${stats.avgProgress}%` },
       { label: "Total tasks", value: tasksPending ? "loading" : String(visibleTasks.length) },
+      ...(view === "tasks"
+        ? [
+            {
+              label: "Tasks shown",
+              value: taskScope === "mine" ? "Assigned to me" : "Everyone's",
+            },
+          ]
+        : []),
       ...(statusFilter !== "all" ? [{ label: "Status filter", value: statusFilter }] : []),
       ...(query.trim() ? [{ label: "Search", value: query.trim() }] : []),
     ],
   });
 
+  // The signed-in person's own tasks — anyone assigned, since a task can have several people on it.
+  const myTasks = useMemo(
+    () =>
+      currentUserId
+        ? visibleTasks.filter((t) => t.assignees.some((a) => a.userId === currentUserId))
+        : [],
+    [visibleTasks, currentUserId],
+  );
+  const scopedTasks = taskScope === "mine" ? myTasks : visibleTasks;
+
   // Tasks matching the shared search (title or parent project name/key).
   const searchedTasks = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return visibleTasks;
-    return visibleTasks.filter((t) => {
+    if (!q) return scopedTasks;
+    return scopedTasks.filter((t) => {
       const project = projectMap[t.projectId];
       return (
         t.title.toLowerCase().includes(q) ||
@@ -170,7 +203,7 @@ export function ProjectsView() {
         (project?.key.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [visibleTasks, projectMap, query]);
+  }, [scopedTasks, projectMap, query]);
 
   const taskCounts = useMemo(() => {
     const c: Record<TaskStatus | "all" | "overdue", number> = {
@@ -299,7 +332,8 @@ export function ProjectsView() {
               {
                 value: "tasks",
                 label: "Tasks",
-                count: tasksPending ? undefined : visibleTasks.length,
+                // The tab's own scope: "Assigned to me" by default for a contributor.
+                count: tasksPending ? undefined : scopedTasks.length,
               },
             ]}
             value={view}
@@ -391,15 +425,33 @@ export function ProjectsView() {
           </div>
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by project, task, or ID…"
-            aria-label="Search projects and tasks"
-            className="pl-8"
-          />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <div className="relative w-full sm:w-72">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by project, task, or ID…"
+              aria-label="Search projects and tasks"
+              className="pl-8"
+            />
+          </div>
+          {view === "tasks" ? (
+            <div role="group" aria-label="Whose tasks" className="inline-flex w-fit items-center gap-1.5">
+              <FilterChip
+                active={taskScope === "mine"}
+                onClick={() => setScope("mine")}
+                label="Assigned to me"
+                count={tasksPending ? undefined : myTasks.length}
+              />
+              <FilterChip
+                active={taskScope === "all"}
+                onClick={() => setScope("all")}
+                label="Everyone"
+                count={tasksPending ? undefined : visibleTasks.length}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -523,7 +575,15 @@ export function ProjectsView() {
           filter={taskFilter}
           projectMap={projectMap}
           query={query}
-          onOpenProject={openProject}
+          userMap={userMap}
+          scope={taskScope}
+          onShowEveryone={() => setScope("all")}
+          // Straight to the task: its project page opens the task's dialog from `?task=` (PROJ-03).
+          onOpenTask={(t) =>
+            router.push(
+              `/projects/${encodeURIComponent(t.projectId)}?task=${encodeURIComponent(t.id)}`,
+            )
+          }
         />
       )}
 

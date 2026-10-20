@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Lock, TriangleAlert } from "lucide-react";
+import { Lock, ShieldAlert, TriangleAlert, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -34,6 +34,13 @@ import type {
   RolePayload,
 } from "../services/roles.service";
 import { ROLE_NAME_MAX } from "../lib/role-names";
+import {
+  SENSITIVITY_LABEL,
+  helpFor,
+  isSensitive,
+  permissionDiff,
+} from "../lib/permission-help";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
 interface RoleEditorDialogProps {
   open: boolean;
@@ -46,6 +53,12 @@ interface RoleEditorDialogProps {
   existingRoles: ApiRole[];
   onCreate: (body: RolePayload) => Promise<ApiRole>;
   onUpdate: (id: string, body: RolePayload) => Promise<ApiRole>;
+  /**
+   * How many people hold the role being edited — a save changes access for exactly them
+   * (UX audit PEOPLE-06). `null`/absent when unknown (the directory couldn't be read): the editor
+   * then says nothing about a count rather than "0 people".
+   */
+  memberCount?: number | null;
 }
 
 /** "Team" reach is the member's own department server-side (`attendance_oversight::reach`). */
@@ -64,6 +77,7 @@ export function RoleEditorDialog({
   existingRoles,
   onCreate,
   onUpdate,
+  memberCount = null,
 }: RoleEditorDialogProps) {
   const isEdit = Boolean(role);
   // A default role (Admin/Employee) — its name/scope are canonical; only permissions are editable.
@@ -73,6 +87,8 @@ export function RoleEditorDialog({
   const [scope, setScope] = useState("self");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  /** Saving grants sensitive permissions to people who hold the role — confirmed first (PEOPLE-06). */
+  const [confirmSensitive, setConfirmSensitive] = useState(false);
 
   // Reset form whenever the dialog opens or the target role changes.
   useEffect(() => {
@@ -81,6 +97,7 @@ export function RoleEditorDialog({
     setDescription(role?.description ?? "");
     setScope(role?.scope ?? "self");
     setSelected(new Set(role?.permissions ?? []));
+    setConfirmSensitive(false);
   }, [open, role]);
 
   const toggle = (id: string) =>
@@ -172,18 +189,37 @@ export function RoleEditorDialog({
 
   // The single master "Select all" that spans every section — distinct from each group's own
   // Select-all. Only over what this caller can grant; `allSelected` drives the label.
+  //
+  // **It no longer switches on sensitive permissions** (UX audit PEOPLE-06): one click used to grant
+  // screenshots, payroll, role management and employee deletion along with everything else. Those
+  // are switched on one at a time, each with its tag in view. "Clear all" still clears everything.
   const allPermissionIds = catalog?.groups.flatMap((g) => g.permissions.map((p) => p.id)) ?? [];
   const allGrantableIds = allPermissionIds.filter(canGrant);
+  const standardGrantableIds = allGrantableIds.filter((id) => !isSensitive(id));
   const allSelected =
-    allGrantableIds.length > 0 && allGrantableIds.every((id) => effective.has(id));
+    standardGrantableIds.length > 0 && standardGrantableIds.every((id) => effective.has(id));
   const toggleAll = () =>
     setSelected((prev) => {
       // Mirror `toggleGroup`: add/remove exactly these ids, leaving anything else untouched.
-      const on = allGrantableIds.length > 0 && allGrantableIds.every((id) => closure(prev).has(id));
+      const on =
+        standardGrantableIds.length > 0 &&
+        standardGrantableIds.every((id) => closure(prev).has(id));
       const next = new Set(prev);
-      allGrantableIds.forEach((id) => (on ? next.delete(id) : next.add(id)));
+      if (on) allGrantableIds.forEach((id) => next.delete(id));
+      else standardGrantableIds.forEach((id) => next.add(id));
       return next;
     });
+
+  /**
+   * What this save changes, against the role as stored — both sides closed over `implies`, so a
+   * prerequisite the server adds counts as a grant.
+   */
+  const diff = permissionDiff(isEdit ? closure(role?.permissions ?? []) : [], effective);
+  const scopeChanged = isEdit && scope !== (role?.scope ?? "self");
+  const changesAccess = isEdit && (diff.added.length > 0 || diff.removed.length > 0 || scopeChanged);
+  /** Newly granted sensitive permissions — the ones a save to a held role must confirm. */
+  const sensitiveAdded = diff.added.filter(isSensitive);
+  const peopleWord = (n: number) => (n === 1 ? "1 person" : `${n} people`);
 
   /**
    * Scope is checked by no server guard yet, so the editor at least won't offer one wider than the
@@ -226,7 +262,16 @@ export function RoleEditorDialog({
       toast.error("Select at least one permission for this role.");
       return;
     }
+    // Granting sensitive access to people who already hold the role is confirmed, naming what and
+    // for how many (PEOPLE-06). A new role has no one in it yet; an empty one changes nobody.
+    if (isEdit && sensitiveAdded.length > 0 && memberCount !== 0 && !confirmSensitive) {
+      setConfirmSensitive(true);
+      return;
+    }
+    await save(trimmedName);
+  }
 
+  async function save(trimmedName: string) {
     const body: RolePayload = {
       name: trimmedName,
       description: description.trim(),
@@ -243,6 +288,7 @@ export function RoleEditorDialog({
         await onCreate(body);
         toast.success(`Role “${trimmedName}” created.`);
       }
+      setConfirmSensitive(false);
       onOpenChange(false);
     } catch (e) {
       // The server enforces the real rules (name uniqueness, valid ids, no privilege escalation) —
@@ -336,11 +382,11 @@ export function RoleEditorDialog({
             </p>
           ) : null}
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Label>Permissions</Label>
             <div className="flex items-center gap-2">
               <Badge variant="secondary">{effective.size} selected</Badge>
-              {allGrantableIds.length > 0 && !cannotEdit && (
+              {standardGrantableIds.length > 0 && !cannotEdit && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -348,7 +394,7 @@ export function RoleEditorDialog({
                   className="h-7 text-xs"
                   onClick={toggleAll}
                 >
-                  {allSelected ? "Clear all" : "Select all"}
+                  {allSelected ? "Clear all" : "Select all except sensitive"}
                 </Button>
               )}
             </div>
@@ -382,19 +428,37 @@ export function RoleEditorDialog({
                       {group.permissions.map((perm) => {
                         const by = requiredBy(perm.id);
                         const ungrantable = !canGrant(perm.id);
+                        const help = helpFor(perm.id);
                         return (
                           <label
                             key={perm.id}
+                            // The wire id stays reachable for support, out of the way: it was the
+                            // only text under each label, and told an HR admin nothing (PEOPLE-06).
+                            title={perm.id}
                             className={cn(
-                              "flex items-center justify-between gap-2 rounded-md border p-2.5",
+                              "flex items-start justify-between gap-2 rounded-md border p-2.5",
+                              help?.sensitive && "border-warning/40",
                               (ungrantable || by) && "opacity-70",
                             )}
                           >
                             <span className="min-w-0">
-                              <span className="block text-sm">{perm.label}</span>
-                              <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                                {perm.id}
+                              <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
+                                {perm.label}
+                                {help?.sensitive ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-px text-[10px] font-medium text-warning"
+                                    title={help.sensitive.reason}
+                                  >
+                                    <ShieldAlert className="size-3" aria-hidden />
+                                    {SENSITIVITY_LABEL[help.sensitive.kind]}
+                                  </span>
+                                ) : null}
                               </span>
+                              {help ? (
+                                <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                                  {help.description}
+                                </span>
+                              ) : null}
                               {by ? (
                                 <span className="block text-[11px] text-muted-foreground">
                                   Included with “{labelOf.get(by) ?? by}”
@@ -407,6 +471,7 @@ export function RoleEditorDialog({
                               ) : null}
                             </span>
                             <Switch
+                              className="mt-0.5"
                               checked={effective.has(perm.id)}
                               disabled={cannotEdit || ungrantable || Boolean(by)}
                               onCheckedChange={() => toggle(perm.id)}
@@ -424,12 +489,22 @@ export function RoleEditorDialog({
         </div>
 
         <DialogFooter className="shrink-0 border-t p-6">
+          {/* Who a save reaches — the editor never said (PEOPLE-06). Only when something changed
+              and the count is known. */}
+          {changesAccess && memberCount !== null && !losesRoleManagement ? (
+            <p className="flex items-center gap-2 text-xs text-muted-foreground sm:mr-auto">
+              <Users className="size-3.5 shrink-0" />
+              {memberCount === 0
+                ? "No one has this role yet."
+                : `Changes access for ${peopleWord(memberCount)}.`}
+            </p>
+          ) : null}
           {losesRoleManagement ? (
             <p className="flex items-start gap-2 text-xs text-warning sm:mr-auto sm:max-w-sm">
               <TriangleAlert className="mt-px size-3.5 shrink-0" />
               You hold this role. Without “Manage roles &amp; permissions” you — and everyone else
-              with it — lose access to this page at your next sign-in, and only an owner can restore
-              it.
+              with it{memberCount ? `, ${peopleWord(memberCount)} in all` : ""} — lose access to
+              this page at your next sign-in, and only an owner can restore it.
             </p>
           ) : null}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -450,6 +525,39 @@ export function RoleEditorDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <ConfirmDialog
+        open={confirmSensitive}
+        onOpenChange={setConfirmSensitive}
+        title={
+          memberCount
+            ? `Give ${peopleWord(memberCount)} sensitive access?`
+            : "Give this role sensitive access?"
+        }
+        description={`Everyone with “${name.trim() || role?.name || "this role"}” gets ${
+          sensitiveAdded.length === 1 ? "this permission" : "these permissions"
+        }:`}
+        confirmLabel={saving ? "Saving…" : "Save and grant"}
+        busy={saving}
+        onConfirm={() => void save(name.trim())}
+      >
+        <ul className="space-y-2 rounded-md border p-3 text-sm">
+          {sensitiveAdded.map((id) => {
+            const h = helpFor(id);
+            return (
+              <li key={id} className="flex items-start gap-2">
+                <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
+                <span className="min-w-0">
+                  <span className="font-medium">{labelOf.get(id) ?? id}</span>
+                  {h?.sensitive ? (
+                    <span className="block text-xs text-muted-foreground">{h.sensitive.reason}.</span>
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </ConfirmDialog>
     </Dialog>
   );
 }

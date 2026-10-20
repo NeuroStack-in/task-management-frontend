@@ -16,7 +16,7 @@
  * showing an error — plenty of roles can open this page without being entitled to the section.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Crown, Plus, ShieldMinus } from "lucide-react";
+import { ChevronsUpDown, Crown, Plus, Search, ShieldMinus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,16 +32,37 @@ import { Card } from "@/components/ui/card";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Loader } from "@/components/shared/loader";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ApiError } from "@/lib/api";
 
 import { listOwners, grantOwner, revokeOwner, type OrgOwner } from "../services/org.service";
-import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
-import { useEmployees } from "@/modules/employees/use-employees";
+import { listRoles, TIME_TRACK_SELF, type ApiRole } from "@/modules/roles/services/roles.service";
+import { useEmployees, type EmployeeRow } from "@/modules/employees/use-employees";
+import { cn } from "@/lib/utils";
 
-/** The role a demoted owner keeps by default — never nothing (the server requires one). */
-const DEFAULT_TAKE_ROLE = "role-admin";
+/**
+ * The built-in Employee role (`wp_contracts::roles::ROLE_EMPLOYEE`) — the least-privileged role every
+ * org has. It is the default a removed owner drops to, and the one used when the role list can't be
+ * read. Removal used to send `role-admin` silently while the dialog promised "an ordinary role", so
+ * every former owner kept near-full access (UX audit PEOPLE-08).
+ */
+const ROLE_EMPLOYEE = "role-employee";
+
+/** Privileges a role grants — contributor-only `time:track:self` is not one (`PermSet::privileges`). */
+const privilegeCount = (r: ApiRole) => r.permissions.filter((p) => p !== TIME_TRACK_SELF).length;
+
+/** Most people the picker lists at once; a search narrows the rest. */
+const PICKER_LIMIT = 50;
 
 export function OrgOwnersCard() {
   const [owners, setOwners] = useState<OrgOwner[]>([]);
@@ -59,6 +80,8 @@ export function OrgOwnersCard() {
   const [confirmRemove, setConfirmRemove] = useState<OrgOwner | null>(null);
   const [addId, setAddId] = useState<string | null>(null);
   const [roles, setRoles] = useState<ApiRole[]>([]);
+  /** The role the owner being removed will hold afterwards — chosen in the dialog (PEOPLE-08). */
+  const [takeRole, setTakeRole] = useState<string>(ROLE_EMPLOYEE);
 
   const { employees } = useEmployees();
 
@@ -84,7 +107,7 @@ export function OrgOwnersCard() {
     listRoles()
       .then(setRoles)
       .catch(() => {
-        /* the default take-role still works without the list */
+        /* the built-in Employee role still works without the list — the dialog says so */
       });
   }, []);
 
@@ -99,11 +122,27 @@ export function OrgOwnersCard() {
       employees.filter((u) => u.status === "active" && !u.monitored && !ownerIds.has(u.id)),
     [employees, ownerIds],
   );
-  // The roles a demoted owner may take. `role-owner` is excluded: that is not a demotion.
+  // The roles a demoted owner may take, least access first. `role-owner` is excluded: that is not a
+  // demotion.
   const takeRoles = useMemo(
-    () => roles.filter((r) => r.id !== "role-owner"),
+    () =>
+      roles
+        .filter((r) => !r.is_owner && r.id !== "role-owner")
+        .sort((a, b) => privilegeCount(a) - privilegeCount(b) || a.name.localeCompare(b.name)),
     [roles],
   );
+  /** Employee when the org has it (every org does), else the least-privileged role on offer. */
+  const defaultTakeRole = takeRoles.some((r) => r.id === ROLE_EMPLOYEE)
+    ? ROLE_EMPLOYEE
+    : (takeRoles[0]?.id ?? ROLE_EMPLOYEE);
+  const chosenTakeRole = takeRoles.find((r) => r.id === takeRole) ?? null;
+  /** The name of the role they'll hold — "Employee" when the list couldn't be read. */
+  const takeRoleName = chosenTakeRole?.name ?? "Employee";
+
+  const askRemove = (o: OrgOwner) => {
+    setTakeRole(defaultTakeRole);
+    setConfirmRemove(o);
+  };
 
   async function add() {
     if (!addId || busy) return;
@@ -129,16 +168,14 @@ export function OrgOwnersCard() {
     if (busy) return;
     setBusy(true);
     try {
-      const takeRole = takeRoles.some((r) => r.id === DEFAULT_TAKE_ROLE)
-        ? DEFAULT_TAKE_ROLE
-        : (takeRoles[0]?.id ?? DEFAULT_TAKE_ROLE);
-      const r = await revokeOwner(o.user_id, takeRole);
+      // Only a role the dialog showed — or, with no list, the built-in Employee it said they'd get.
+      const r = await revokeOwner(o.user_id, chosenTakeRole?.id ?? ROLE_EMPLOYEE);
       setOwners(r.owners);
       // Stepping down yourself: re-read the token now, so the owner-only screens close at once
       // rather than at the next silent refresh.
       if (o.is_you) void useAuthStore.getState().refreshClaims();
       toast.success(`${o.is_you ? "You are" : `${o.name} is`} no longer an owner`, {
-        description: "They keep their place in the organisation with an ordinary role.",
+        description: `${o.is_you ? "You now have" : "They now have"} the ${takeRoleName} role.`,
       });
     } catch (e) {
       // The server's own guards, read from the error **code**: `message` is display text the error
@@ -218,7 +255,7 @@ export function OrgOwnersCard() {
                   size="sm"
                   variant="outline"
                   disabled={busy || soleOwner}
-                  onClick={() => setConfirmRemove(o)}
+                  onClick={() => askRemove(o)}
                   // Say *why* it is unavailable rather than leaving a dead control. Self-removal is
                   // allowed when someone else owns the org — stepping down is legitimate.
                   title={
@@ -239,32 +276,12 @@ export function OrgOwnersCard() {
       </div>
 
       <div className="flex flex-col gap-3 border-t border-border px-6 py-4 sm:flex-row sm:items-center">
-        <Select
-          value={addId ?? ""}
-          onValueChange={(v) => setAddId(typeof v === "string" && v ? v : null)}
-          // The values are user ids; without this map the trigger showed the picked person's raw
-          // id, not their name — and "Add owner" then granted ownership to an identifier nobody
-          // could check (QA audit 2026-10-08, WP-532).
-          items={Object.fromEntries(candidates.map((u) => [u.id, u.name]))}
+        <MemberPicker
+          candidates={candidates}
+          value={addId}
+          onChange={setAddId}
           disabled={loadFailed}
-        >
-          <SelectTrigger className="sm:w-72" aria-label="Choose a member to make an owner">
-            <SelectValue placeholder="Add an owner…" />
-          </SelectTrigger>
-          <SelectContent>
-            {candidates.length === 0 ? (
-              <SelectItem value="" disabled>
-                No other active members
-              </SelectItem>
-            ) : (
-              candidates.map((u) => (
-                <SelectItem key={u.id} value={u.id}>
-                  {u.name}
-                </SelectItem>
-              ))
-            )}
-          </SelectContent>
-        </Select>
+        />
         <Button onClick={() => setConfirmAdd(true)} disabled={!addId || busy || loadFailed}>
           <Plus className="size-4" />
           Add owner
@@ -296,10 +313,63 @@ export function OrgOwnersCard() {
             </DialogTitle>
             <DialogDescription>
               {confirmRemove?.is_you
-                ? "You keep your place in the organisation with an ordinary role, but lose owner powers straight away."
-                : "They keep their place in the organisation with an ordinary role, but lose owner powers straight away."}
+                ? "You lose owner powers straight away and stay in the organisation with the role below."
+                : "They lose owner powers straight away and stay in the organisation with the role below."}
             </DialogDescription>
           </DialogHeader>
+          {/* Say which role, and let the remover pick it: the server takes any ordinary role as
+              `take_role`, and this used to send Admin while promising "an ordinary role" (PEOPLE-08). */}
+          <div className="space-y-2">
+            <Label htmlFor="owner-take-role">
+              {confirmRemove?.is_you ? "Your role afterwards" : "Their role afterwards"}
+            </Label>
+            {takeRoles.length > 0 ? (
+              <Select
+                value={takeRole}
+                onValueChange={(v) => typeof v === "string" && v && setTakeRole(v)}
+                items={Object.fromEntries(takeRoles.map((r) => [r.id, r.name]))}
+                disabled={busy}
+              >
+                <SelectTrigger id="owner-take-role" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {takeRoles.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <p id="owner-take-role" className="text-sm font-medium">
+                Employee
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {chosenTakeRole ? (
+                <>
+                  {chosenTakeRole.description ? `${chosenTakeRole.description} · ` : ""}
+                  {/* The same count the Roles page shows for this role. */}
+                  {chosenTakeRole.permissions.length}{" "}
+                  {chosenTakeRole.permissions.length === 1 ? "permission" : "permissions"},{" "}
+                  {chosenTakeRole.scope === "org"
+                    ? "across the organisation"
+                    : chosenTakeRole.scope === "team"
+                      ? "within their department"
+                      : "over their own data only"}
+                  .
+                  {/* An owner is never tracked (`is_owner` doesn't grant `time:track:self`); a role
+                      that does grant it starts recording them — worth saying before, not after. */}
+                  {chosenTakeRole.permissions.includes(TIME_TRACK_SELF)
+                    ? " With this role, their time, activity and screenshots are recorded."
+                    : ""}
+                </>
+              ) : (
+                "The role list couldn't be loaded, so they get the built-in Employee role. You can move them to another role on the Roles page afterwards."
+              )}
+            </p>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmRemove(null)} disabled={busy}>
               Cancel
@@ -320,5 +390,100 @@ export function OrgOwnersCard() {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+/**
+ * Who to make an owner — a searchable list, not a bare dropdown of every member: at 150 people the
+ * old select was a long scroll with no way to type a name (UX audit PEOPLE-08). Searches what the
+ * directory carries: name, employee ID, job title and department (it has no email).
+ */
+function MemberPicker({
+  candidates,
+  value,
+  onChange,
+  disabled,
+}: {
+  candidates: EmployeeRow[];
+  value: string | null;
+  onChange: (id: string | null) => void;
+  disabled?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const chosen = candidates.find((u) => u.id === value) ?? null;
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return candidates;
+    return candidates.filter((u) =>
+      [u.name, u.empId ?? "", u.jobTitle, u.department].some((f) => f.toLowerCase().includes(q)),
+    );
+  }, [candidates, query]);
+  const shown = matches.slice(0, PICKER_LIMIT);
+
+  return (
+    <DropdownMenu onOpenChange={(open) => !open && setQuery("")}>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        aria-label="Choose a member to make an owner"
+        className={cn(
+          "border-input bg-background flex h-9 w-full items-center gap-2 rounded-md border px-3 text-left text-sm sm:w-72",
+          "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+        )}
+      >
+        {chosen ? (
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <UserAvatar userId={chosen.id} name={chosen.name} className="size-5" fallbackClassName="text-[0.55rem]" />
+            <span className="truncate">{chosen.name}</span>
+          </span>
+        ) : (
+          <span className="flex-1 truncate text-muted-foreground">Add an owner…</span>
+        )}
+        <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-auto max-w-[calc(100vw-2rem)] min-w-72">
+        <div className="relative px-1.5 pt-0.5 pb-1.5">
+          <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name, ID, title or department"
+            aria-label="Search members"
+            className="h-8 pl-7"
+            // Typing must reach the input, not the menu's type-ahead (see `AssigneePicker`).
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+        </div>
+        <DropdownMenuSeparator />
+        <div className="max-h-64 overflow-y-auto">
+          {candidates.length === 0 ? (
+            <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+              No other active members who can sign in.
+            </p>
+          ) : shown.length === 0 ? (
+            <p className="px-2 py-3 text-center text-xs text-muted-foreground">No one matches.</p>
+          ) : (
+            shown.map((u) => (
+              <DropdownMenuItem key={u.id} onClick={() => onChange(u.id)} className="gap-2">
+                <UserAvatar userId={u.id} name={u.name} className="size-6" fallbackClassName="text-[0.6rem]" />
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="truncate text-sm">{u.name}</span>
+                  {u.jobTitle || u.department ? (
+                    <span className="truncate text-xs text-muted-foreground">
+                      {[u.jobTitle, u.department].filter(Boolean).join(" · ")}
+                    </span>
+                  ) : null}
+                </span>
+              </DropdownMenuItem>
+            ))
+          )}
+        </div>
+        {matches.length > shown.length ? (
+          <p className="border-t px-2 pt-1.5 pb-1 text-center text-xs text-muted-foreground">
+            Showing {shown.length} of {matches.length} — type to narrow the list.
+          </p>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

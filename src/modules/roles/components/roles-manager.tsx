@@ -104,7 +104,13 @@ export function RolesManager() {
    * the roster has to be re-read, or the counts would contradict the move just made.
    */
   const [dirVersion, setDirVersion] = useState(0);
-  const { employees } = useDirectory(canManage || can("employees:view"), dirVersion);
+  const {
+    employees,
+    loading: dirLoading,
+    error: dirError,
+  } = useDirectory(canManage || can("employees:view"), dirVersion);
+  /** The roster was read, so a member count is a fact — not a "0" standing in for "unknown". */
+  const membersKnown = !dirLoading && !dirError && employees.length > 0;
   const membersByRole = useMemo(() => {
     const m = new Map<string, ApiEmployee[]>();
     for (const e of employees) {
@@ -214,16 +220,96 @@ export function RolesManager() {
         description="Create roles and control what each can access. Changes take effect on the server; a member's own view updates at their next sign-in."
         actions={
           canManage ? (
-            <Button onClick={openCreate}>
+            // From `sm` up only: on a phone the top bar never wraps, and this squeezed its title to
+            // "S…" (UX audit XC-04). The phone gets the same button in the page, just below.
+            <Button onClick={openCreate} className="hidden sm:inline-flex">
               <Plus className="size-4" /> Create role
             </Button>
           ) : undefined
         }
       />
+      {canManage ? (
+        <Button onClick={openCreate} className="w-full sm:hidden">
+          <Plus className="size-4" /> Create role
+        </Button>
+      ) : null}
+
+      {/* Below `sm` a card per role, with its menu inside: the table was clipped by `overflow-hidden`,
+          so on a phone Scope, Members, Permissions and the ⋮ menu were off-screen and unreachable
+          (UX audit PEOPLE-03). The table keeps a scrolling wrapper as a backstop at every width. */}
+      <ul data-tour="roles:list" className="space-y-3 sm:hidden">
+        {roles.map((role) => {
+          const members = membersByRole.get(role.id) ?? [];
+          const expanded = openRole === role.id;
+          return (
+            <li key={role.id} className="overflow-hidden rounded-[1.4rem] bg-card shadow-soft">
+              <div className="flex items-start gap-3 p-4">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <KeyRound className="size-4.5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{role.name}</span>
+                    <RoleKindBadge role={role} />
+                  </div>
+                  {role.description ? (
+                    <p className="mt-0.5 text-xs text-muted-foreground">{role.description}</p>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground">Scope</span>
+                      <Badge variant="outline" className="font-normal capitalize">
+                        {role.scope}
+                      </Badge>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground">Permissions</span>
+                      <span className="font-medium tabular-nums">{permissionLabel(role)}</span>
+                    </span>
+                  </div>
+                </div>
+                {canManage ? (
+                  <RoleActionsMenu
+                    role={role}
+                    onClone={handleClone}
+                    onEdit={openEdit}
+                    onRestore={setRestoreTarget}
+                    onDelete={setDeleteTarget}
+                  />
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between border-t px-4 py-2.5 text-sm font-medium"
+                aria-expanded={expanded}
+                onClick={() => setOpenRole(expanded ? null : role.id)}
+              >
+                <span>
+                  {members.length} {members.length === 1 ? "member" : "members"}
+                </span>
+                <ChevronDown
+                  className={cn("size-4 text-muted-foreground transition-transform", expanded && "rotate-180")}
+                />
+              </button>
+              {expanded ? (
+                <div className="border-t">
+                  <RoleMembers
+                    role={role}
+                    members={members}
+                    roles={roles}
+                    canManage={canManage}
+                    onChanged={refreshMembers}
+                  />
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
 
       <div
         data-tour="roles:list"
-        className="overflow-hidden rounded-[1.4rem] bg-card shadow-soft"
+        className="hidden overflow-x-auto rounded-[1.4rem] bg-card shadow-soft sm:block"
       >
         <table className="w-full caption-bottom text-sm">
           <TableHeader>
@@ -251,15 +337,7 @@ export function RolesManager() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{role.name}</span>
-                        <Badge variant={role.system ? "secondary" : "outline"} className="font-normal">
-                          {role.system ? (
-                            <>
-                              <Lock className="size-3" /> Default
-                            </>
-                          ) : (
-                            "Custom"
-                          )}
-                        </Badge>
+                        <RoleKindBadge role={role} />
                       </div>
                       <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground md:hidden">
                         {role.description}
@@ -307,55 +385,13 @@ export function RolesManager() {
 
                 {canManage && (
                   <TableCell className="py-3 pr-4 text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            aria-label={`Actions for ${role.name}`}
-                          />
-                        }
-                      >
-                        <MoreVertical className="size-4" />
-                      </DropdownMenuTrigger>
-                      {/* `w-auto` overrides the primitive's default `w-(--anchor-width)`, which pins the
-                          menu to the 32px icon trigger and made "Restore to default" wrap onto two
-                          lines. Let it size to its widest item instead, with a sane floor. */}
-                      <DropdownMenuContent align="end" className="w-auto min-w-[10rem]">
-                        {/* Not for Owner: its access is `is_owner`, outside the bitset, so a copy
-                            holds one inert permission and nothing else (WP-321). */}
-                        <DropdownMenuItem
-                          disabled={role.is_owner}
-                          onClick={() => handleClone(role)}
-                        >
-                          <Copy className="size-4" /> Clone
-                        </DropdownMenuItem>
-                        {/* Owner isn't editable — it bypasses every permission check. Admin/Employee
-                            (and custom roles) are. */}
-                        <DropdownMenuItem
-                          disabled={role.is_owner}
-                          onClick={() => openEdit(role)}
-                        >
-                          <Pencil className="size-4" /> Edit
-                        </DropdownMenuItem>
-                        {role.system && !role.is_owner ? (
-                          <DropdownMenuItem onClick={() => setRestoreTarget(role)}>
-                            <RotateCcw className="size-4" /> Restore to default
-                          </DropdownMenuItem>
-                        ) : null}
-                        {/* Set the destructive action apart from the routine ones. */}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          variant="destructive"
-                          disabled={role.system}
-                          onClick={() => setDeleteTarget(role)}
-                        >
-                          <Trash2 className="size-4" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <RoleActionsMenu
+                      role={role}
+                      onClone={handleClone}
+                      onEdit={openEdit}
+                      onRestore={setRestoreTarget}
+                      onDelete={setDeleteTarget}
+                    />
                   </TableCell>
                 )}
               </TableRow>
@@ -386,6 +422,11 @@ export function RolesManager() {
         role={editing}
         catalog={catalog}
         existingRoles={roles}
+        // Who a save would change access for (PEOPLE-06). `null` when the directory can't be read,
+        // so the editor says nothing rather than "0 people".
+        memberCount={
+          editing && membersKnown ? (membersByRole.get(editing.id)?.length ?? 0) : null
+        }
         onCreate={create}
         onUpdate={update}
       />
@@ -419,5 +460,80 @@ export function RolesManager() {
         onConfirm={() => restoreTarget && void handleRestore(restoreTarget)}
       />
     </div>
+  );
+}
+
+function RoleKindBadge({ role }: { role: ApiRole }) {
+  return (
+    <Badge variant={role.system ? "secondary" : "outline"} className="font-normal">
+      {role.system ? (
+        <>
+          <Lock className="size-3" /> Default
+        </>
+      ) : (
+        "Custom"
+      )}
+    </Badge>
+  );
+}
+
+/** One role's ⋮ menu — the same actions in the desktop table row and the phone card. */
+function RoleActionsMenu({
+  role,
+  onClone,
+  onEdit,
+  onRestore,
+  onDelete,
+}: {
+  role: ApiRole;
+  onClone: (role: ApiRole) => void;
+  onEdit: (role: ApiRole) => void;
+  onRestore: (role: ApiRole) => void;
+  onDelete: (role: ApiRole) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 shrink-0"
+            aria-label={`Actions for ${role.name}`}
+          />
+        }
+      >
+        <MoreVertical className="size-4" />
+      </DropdownMenuTrigger>
+      {/* `w-auto` overrides the primitive's default `w-(--anchor-width)`, which pins the
+          menu to the 32px icon trigger and made "Restore to default" wrap onto two
+          lines. Let it size to its widest item instead, with a sane floor. */}
+      <DropdownMenuContent align="end" className="w-auto min-w-[10rem]">
+        {/* Not for Owner: its access is `is_owner`, outside the bitset, so a copy
+            holds one inert permission and nothing else (WP-321). */}
+        <DropdownMenuItem disabled={role.is_owner} onClick={() => onClone(role)}>
+          <Copy className="size-4" /> Clone
+        </DropdownMenuItem>
+        {/* Owner isn't editable — it bypasses every permission check. Admin/Employee
+            (and custom roles) are. */}
+        <DropdownMenuItem disabled={role.is_owner} onClick={() => onEdit(role)}>
+          <Pencil className="size-4" /> Edit
+        </DropdownMenuItem>
+        {role.system && !role.is_owner ? (
+          <DropdownMenuItem onClick={() => onRestore(role)}>
+            <RotateCcw className="size-4" /> Restore to default
+          </DropdownMenuItem>
+        ) : null}
+        {/* Set the destructive action apart from the routine ones. */}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          disabled={role.system}
+          onClick={() => onDelete(role)}
+        >
+          <Trash2 className="size-4" /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

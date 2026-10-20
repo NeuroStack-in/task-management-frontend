@@ -19,6 +19,9 @@ import {
   UserMinus,
   UserX,
   MoreVertical,
+  ArrowDown,
+  ArrowUp,
+  ChevronsUpDown,
 } from "lucide-react";
 import Link from "next/link";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -50,6 +53,15 @@ import { cn } from "@/lib/utils";
 import { useTrackingMode } from "@/hooks/use-features";
 import { Badge } from "@/components/ui/badge";
 import { ApiError } from "@/lib/api";
+import { TablePagination } from "@/components/shared/table-pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useQueryState } from "@/modules/projects/use-query-state";
 import { InviteDialog } from "./invite-dialog";
 import { AddEmployeeDialog } from "./add-employee-dialog";
 import { PendingInvites } from "./pending-invites";
@@ -57,6 +69,22 @@ import { useEmployees, type EmployeeRow } from "../use-employees";
 import { buildPdf, type PdfTextFor } from "../lib/pdf-text";
 import { ReportDoc } from "../lib/report-doc";
 import { toCsv } from "@/lib/csv";
+import {
+  DIRECTORY_SORTS,
+  DIRECTORY_STATUSES,
+  NO_DEPARTMENT,
+  PAGE_SIZES,
+  directoryStats,
+  filterEmployees,
+  hiddenByStatus,
+  nextSort,
+  sortEmployees,
+  sortKeyOf,
+  type DirectorySort,
+  type DirectoryStatus,
+  type PageSize,
+  type SortKey,
+} from "../lib/directory";
 
 export type { EmployeeRow };
 
@@ -74,18 +102,25 @@ export type { EmployeeRow };
  *
  * No "Invited": no roster row can have that status — invitees are listed in their own section below
  * (QA audit 2026-10-08, WP-456).
+ *
+ * **Active is the default** (UX audit PEOPLE-05). "All statuses" was, and it mixed leavers into the
+ * roster with no badge while the Not tracked and Deactivated rosters below listed the same people a
+ * second time. Now the table shows the working roster, the two rosters below hold everyone else, and
+ * a roster is hidden whenever the table's filter already lists its people.
  */
-const STATUSES = ["all", "active", "benched", "deactivated"] as const;
-const STATUS_LABELS: Record<(typeof STATUSES)[number], string> = {
-  all: "All statuses",
+const STATUSES = DIRECTORY_STATUSES;
+const STATUS_LABELS: Record<DirectoryStatus, string> = {
   active: "Active",
   benched: "Not tracked",
   deactivated: "Deactivated",
+  all: "All statuses",
 };
-const PAGE_SIZE = 9;
 
-/** The department filter's value for people with no department (a name can't be empty). */
-const NO_DEPARTMENT = "__none__";
+/**
+ * Rows per page. It was 9 — about 17 pages for a 150-person org — with no way to change it
+ * (UX audit PEOPLE-04).
+ */
+const DEFAULT_PAGE_SIZE: PageSize = "25";
 
 // No Email or Team columns: the directory list carries neither, so they were blank in every row
 // (WP-456). Both are on each person's profile.
@@ -203,7 +238,8 @@ function drawEmployeesReport(text: PdfTextFor, list: EmployeeRow[]) {
         e.roleName,
         e.jobTitle,
         e.department || "—",
-        e.status === "active" ? (e.benched ? "Benched" : "Active") : "Deactivated",
+        // "Not tracked", as on the page — "Benched" was a third word for the same state.
+        e.status === "active" ? (e.benched ? "Not tracked" : "Active") : "Deactivated",
         pct(e.productivityScore),
       ]),
     { empty: "No one to list." },
@@ -251,6 +287,43 @@ function FilterDropdown({
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** A column header that sorts the roster. `aria-sort` tells a screen reader which way. */
+function SortableHead({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: DirectorySort;
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const { key, desc } = sortKeyOf(sort);
+  const active = key === sortKey;
+  const Icon = !active ? ChevronsUpDown : desc ? ArrowDown : ArrowUp;
+  return (
+    <TableHead
+      className={className}
+      aria-sort={active ? (desc ? "descending" : "ascending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          "-ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+          active && "text-foreground",
+        )}
+      >
+        {label}
+        <Icon className={cn("size-3.5", active ? "opacity-100" : "opacity-40")} aria-hidden />
+      </button>
+    </TableHead>
   );
 }
 
@@ -313,10 +386,17 @@ export function EmployeesView() {
     scoreStatus,
     anyAgentReported,
   } = useEmployees({ withScores: can("activity:view") });
-  const [query, setQuery] = useState("");
-  const [dept, setDept] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [page, setPage] = useState(0);
+  // Search, filters, sort, page size and page live in the URL, so Back from a profile, a refresh and
+  // a shared link return to the same view — they all reset on Back before (UX audit PEOPLE-04).
+  const [query, setQuery] = useQueryState<string>("q", "");
+  const [dept, setDept] = useQueryState<string>("dept", "all");
+  const [status, setStatus] = useQueryState<DirectoryStatus>("status", "active", STATUSES);
+  const [sort, setSort] = useQueryState<DirectorySort>("sort", "name", DIRECTORY_SORTS);
+  const [pageSizeParam, setPageSize] = useQueryState<PageSize>("size", DEFAULT_PAGE_SIZE, PAGE_SIZES);
+  const [pageParam, setPageParam] = useQueryState<string>("page", "1");
+  const pageSize = Number(pageSizeParam);
+  const page = Math.max(0, (Number.parseInt(pageParam, 10) || 1) - 1);
+  const setPage = (p: number) => setPageParam(String(p + 1));
   const [inviteOpen, setInviteOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   // Bumped when an invite is created, so the Invited section refetches without a page reload.
@@ -354,15 +434,14 @@ export function EmployeesView() {
   }, [allEmployees]);
 
   const liveStats = useMemo(() => {
-    const total = allEmployees.length;
-    const active = allEmployees.filter((e) => e.status === "active").length;
-    // Benched people are still employees but aren't actively working — so the "Active" tile counts
-    // active-and-not-benched, shown as "N / total" so the bench is visible at a glance.
-    const benched = allEmployees.filter((e) => e.benched).length;
-    const activeWorking = allEmployees.filter((e) => e.status === "active" && !e.benched).length;
-    // Average only over rows that actually have a score. None do yet (productivity needs the agent),
-    // so this is `null` → the stat card shows "—" instead of a fake 0%.
-    const scored = allEmployees.filter((e) => e.productivityScore !== null);
+    // Current people only — leavers are not counted as employees (PEOPLE-05). Benched people are
+    // still employees but aren't tracked, so the "Active" tile counts the tracked ones, shown as
+    // "N / total" so the bench is visible at a glance.
+    const { total, tracked: activeWorking, benched, deactivated } = directoryStats(allEmployees);
+    // Average only over current people with a score — `null` → the card shows "—", not a fake 0%.
+    const scored = allEmployees.filter(
+      (e) => e.status === "active" && e.productivityScore !== null,
+    );
     const avgProductivity = scored.length
       ? Math.round(
           scored.reduce((s, e) => s + (e.productivityScore ?? 0), 0) / scored.length,
@@ -372,41 +451,28 @@ export function EmployeesView() {
     // department and missed the empty ones (WP-111); that count is only the fallback now.
     const departments =
       departmentCount ?? new Set(allEmployees.map((e) => e.department).filter(Boolean)).size;
-    return { total, active, activeWorking, benched, avgProductivity, departments };
+    return { total, activeWorking, benched, deactivated, avgProductivity, departments };
   }, [allEmployees, departmentCount]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return allEmployees.filter((e) => {
-      if (dept === NO_DEPARTMENT ? e.department !== "" : dept !== "all" && e.department !== dept)
-        return false;
-      // "benched" (surfaced as "Inactive") is an orthogonal flag, not a lifecycle status. Filter on
-      // it directly, and keep it out of "Active" so the two filters stay mutually exclusive.
-      if (status === "deactivated") {
-        if (e.status !== "deactivated") return false;
-      } else if (status === "benched") {
-        if (!e.benched) return false;
-      } else if (status === "active") {
-        if (e.status !== "active" || e.benched) return false;
-      }
-      if (
-        q &&
-        !`${e.name} ${e.jobTitle} ${e.empId ?? ""} ${e.id}`
-          .toLowerCase()
-          .includes(q)
-      )
-        return false;
-      return true;
-    });
-  }, [allEmployees, query, dept, status]);
+  // Filtered, then sorted — the export takes this order too. Search covers name, employee ID, title,
+  // department and role; it ignored the last two (PEOPLE-04). See `lib/directory.ts`.
+  const filtered = useMemo(
+    () => sortEmployees(filterEmployees(allEmployees, { query, dept, status }), sort),
+    [allEmployees, query, dept, status, sort],
+  );
+  const hiddenMatches = useMemo(
+    () => hiddenByStatus(allEmployees, { query, dept, status }),
+    [allEmployees, query, dept, status],
+  );
 
   // Publish the directory's on-screen figures + active filters to the assistant, so a question about
   // "these people" resolves against the same roster/counts the user is looking at.
   useAssistantPageContext({
     facts: [
-      { label: "Total employees", value: String(liveStats.total) },
-      { label: "Active (not benched)", value: String(liveStats.activeWorking) },
-      { label: "On bench", value: String(liveStats.benched) },
+      { label: "Total employees (current)", value: String(liveStats.total) },
+      { label: "Active (tracked)", value: String(liveStats.activeWorking) },
+      { label: "Not tracked", value: String(liveStats.benched) },
+      { label: "Deactivated (not counted)", value: String(liveStats.deactivated) },
       { label: "Departments", value: String(liveStats.departments) },
       ...(liveStats.avgProductivity !== null
         ? [{ label: "Avg productivity", value: `${liveStats.avgProductivity}%` }]
@@ -414,7 +480,7 @@ export function EmployeesView() {
       ...(dept !== "all"
         ? [{ label: "Department filter", value: dept === NO_DEPARTMENT ? "No department" : dept }]
         : []),
-      ...(status !== "all" ? [{ label: "Status filter", value: status }] : []),
+      ...(status !== "all" ? [{ label: "Status filter", value: STATUS_LABELS[status] }] : []),
       ...(query.trim() ? [{ label: "Search", value: query.trim() }] : []),
       { label: "Showing (after filters)", value: String(filtered.length) },
     ],
@@ -445,9 +511,15 @@ export function EmployeesView() {
     [allEmployees],
   );
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
-  const rows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const rows = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  /**
+   * The rosters below list only people the table isn't already showing — the bench under Active or
+   * Deactivated, leavers under Active or Not tracked — so nobody appears twice (PEOPLE-05).
+   */
+  const showBenchRoster = status === "active" || status === "deactivated";
+  const showDeactivatedRoster = status === "active" || status === "benched";
 
   const canManage = can("employees:manage");
   const onToggleBench = async (e: EmployeeRow) => {
@@ -465,6 +537,7 @@ export function EmployeesView() {
     setter(v);
     setPage(0);
   };
+  const sortBy = (key: SortKey) => resetPage(setSort)(nextSort(sort, key));
 
   if (loading && employees.length === 0) {
     return (
@@ -496,7 +569,18 @@ export function EmployeesView() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total employees" value={liveStats.total} icon={Users} hint="in this organization" featured />
+        <StatCard
+          label="Total employees"
+          value={liveStats.total}
+          icon={Users}
+          // Leavers are left out of the count, and the hint says how many (PEOPLE-05).
+          hint={
+            liveStats.deactivated > 0
+              ? `${liveStats.deactivated} deactivated not counted`
+              : "in this organization"
+          }
+          featured
+        />
         {/* `delta={4}` used to sit here — a hardcoded "+4%" rendered as a real trend pill beside a
             real count. There is no prior-window comparison to draw it from, so it was invented.
             Dropped rather than seeded, like every other delta on the dashboard. */}
@@ -508,11 +592,8 @@ export function EmployeesView() {
               : liveStats.activeWorking
           }
           icon={UserCheck}
-          hint={
-            liveStats.benched > 0
-              ? `${liveStats.benched} inactive`
-              : "not deactivated"
-          }
+          // "Not tracked", like the filter and the badge: "inactive" is what a leaver gets called.
+          hint={liveStats.benched > 0 ? `${liveStats.benched} not tracked` : "tracked"}
         />
         {/* The hint used to read "pending activity monitoring" unconditionally — it was describing
             the hardcoded null, not the data. Scores are joined in now, so it states the window when
@@ -551,7 +632,7 @@ export function EmployeesView() {
           <Input
             value={query}
             onChange={(e) => resetPage(setQuery)(e.target.value)}
-            placeholder="Search by name, ID, or title…"
+            placeholder="Search name, ID, title, department, role…"
             aria-label="Search employees"
             className="pl-9"
           />
@@ -567,7 +648,7 @@ export function EmployeesView() {
         <FilterDropdown
           label="Status"
           value={status}
-          onChange={resetPage(setStatus)}
+          onChange={(v) => resetPage(setStatus)(v as DirectoryStatus)}
           options={STATUSES.map((s) => ({
             value: s,
             label: STATUS_LABELS[s],
@@ -659,6 +740,23 @@ export function EmployeesView() {
         </div>
       ) : null}
 
+      {hiddenMatches > 0 ? (
+        // A search for someone benched or departed, under the default "Active", used to answer
+        // "No employees match" with them sitting in a roster further down (PEOPLE-05).
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          {hiddenMatches} more {hiddenMatches === 1 ? "person matches" : "people match"} with
+          another status.
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            onClick={() => resetPage(setStatus)("all")}
+          >
+            Show all statuses
+          </Button>
+        </p>
+      ) : null}
+
       <Card>
         <CardContent className="p-0">
           {rows.length === 0 ? (
@@ -673,10 +771,17 @@ export function EmployeesView() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Department</TableHead>
-                    <TableHead className="w-40">Productivity</TableHead>
+                    {/* Sortable columns (PEOPLE-04): a click sorts, a second click reverses. */}
+                    <SortableHead label="Employee" sortKey="name" sort={sort} onSort={sortBy} />
+                    <SortableHead label="Role" sortKey="role" sort={sort} onSort={sortBy} />
+                    <SortableHead label="Department" sortKey="department" sort={sort} onSort={sortBy} />
+                    <SortableHead
+                      label="Productivity"
+                      sortKey="productivity"
+                      sort={sort}
+                      onSort={sortBy}
+                      className="w-40"
+                    />
                     {canManage && <TableHead className="w-10" />}
                   </TableRow>
                 </TableHeader>
@@ -714,13 +819,19 @@ export function EmployeesView() {
                                   Monitored
                                 </Badge>
                               )}
-                              {e.benched && (
+                              {/* Every non-active row says so — leavers sat unlabelled among
+                                  everyone else under "All statuses" (PEOPLE-05). */}
+                              {e.status === "deactivated" ? (
+                                <Badge className="bg-destructive/12 text-destructive shrink-0 text-[10px]">
+                                  Deactivated
+                                </Badge>
+                              ) : e.benched ? (
                                 // "Not tracked", like the status filter: "Inactive" is what the
                                 // profile calls a deactivated leaver — the opposite (WP-233).
                                 <Badge className="bg-warning/15 text-warning shrink-0 text-[10px]">
                                   Not tracked
                                 </Badge>
-                              )}
+                              ) : null}
                             </div>
                             {/* Subtitle: the human employee id (e.g. EMP-0001) is the directory's
                                 stable identifier — lead with it, then the job title. The raw
@@ -755,6 +866,9 @@ export function EmployeesView() {
                           className="text-right"
                           onClick={(ev) => ev.stopPropagation()}
                         >
+                          {/* Tracking is for current people — a leaver shown under "All statuses"
+                              or "Deactivated" has no tracking to stop or start. */}
+                          {e.status === "active" ? (
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               render={
@@ -783,6 +897,7 @@ export function EmployeesView() {
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          ) : null}
                         </TableCell>
                       )}
                     </TableRow>
@@ -794,40 +909,39 @@ export function EmployeesView() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
-      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-        <span>
-          {filtered.length === 0
-            ? "No results"
-            : `${safePage * PAGE_SIZE + 1}–${Math.min(
-                (safePage + 1) * PAGE_SIZE,
-                filtered.length,
-              )} of ${filtered.length}`}
-        </span>
-        <div className="flex gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage === 0}
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
+      {/* Pagination, with a page-size choice (PEOPLE-04). */}
+      <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 sm:justify-between">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          Rows per page
+          <Select
+            value={pageSizeParam}
+            onValueChange={(v) => resetPage(setPageSize)(String(v) as PageSize)}
           >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage >= pageCount - 1}
-            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-          >
-            Next
-          </Button>
-        </div>
+            <SelectTrigger size="sm" className="w-20" aria-label="Rows per page">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZES.map((n) => (
+                <SelectItem key={n} value={n}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <TablePagination
+          page={safePage}
+          pageCount={pageCount}
+          total={filtered.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+        />
       </div>
 
       {/* Inactive — a dedicated roster of inactive (benched) employees. Renders nothing when the
           list is empty; inactive people are excluded from Attendance + Time-Tracking (filtered in
           those hooks). Managers get an inline "Mark active" here without hunting the main table. */}
-      {benchedEmployees.length > 0 && (
+      {showBenchRoster && benchedEmployees.length > 0 && (
         <Card>
           <CardContent className="space-y-3 p-4">
             <div className="flex items-center gap-2">
@@ -882,7 +996,7 @@ export function EmployeesView() {
           deactivated person sat unlabelled in "All statuses" and Reactivate was reachable only by
           knowing their profile URL. Reactivating restores access, so it is a link to the profile
           (where the confirmation lives) rather than an inline one-click. */}
-      {deactivatedEmployees.length > 0 && (
+      {showDeactivatedRoster && deactivatedEmployees.length > 0 && (
         <Card>
           <CardContent className="space-y-3 p-4">
             <div className="flex items-center gap-2">
