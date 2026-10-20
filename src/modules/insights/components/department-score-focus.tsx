@@ -30,6 +30,7 @@ import { AiReportCard, type AiMetric } from "./ai-report-card";
 import { PersonLink } from "./person-link";
 import { deptSummaryProvenance, type Provenance } from "../lib/ai-provenance";
 import { resolvePerson } from "../lib/attention";
+import { LOW_SCORE_BELOW, RANK_MIN_MINUTES_PER_DAY, isLowScore } from "../lib/thresholds";
 
 const ALL = "all";
 
@@ -59,9 +60,17 @@ export function DepartmentScoreFocus({
   from,
   to,
   period,
+  dept: deptProp,
+  onDeptChange,
 }: {
   from: string;
   to: string;
+  /**
+   * The department in view, when the page holds it (the Activity tab keeps it in the URL so it
+   * survives a tab switch — UX audit MON-13). Omitted, the card keeps its own.
+   */
+  dept?: string;
+  onDeptChange?: (id: string) => void;
   /**
    * A phrase for the window that stays true however later it is read ("the week"), so the prose
    * reads well; optional. It reaches the model's brief and the narrative is cached per range for
@@ -70,7 +79,9 @@ export function DepartmentScoreFocus({
   period?: string;
 }) {
   const [depts, setDepts] = useState<Map<string, string>>(new Map());
-  const [dept, setDept] = useState<string>(ALL);
+  const [ownDept, setOwnDept] = useState<string>(ALL);
+  const dept = deptProp ?? ownDept;
+  const setDept = onDeptChange ?? setOwnDept;
   const [data, setData] = useState<DeptSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ message: string; retryable: boolean } | null>(null);
@@ -185,9 +196,22 @@ export function DepartmentScoreFocus({
           value: `${data.metrics.scored_people} / ${data.metrics.total_people}`,
         },
         { label: "Top performer", ...person(data.metrics.top_performer) },
-        { label: "Needs attention", ...person(data.metrics.needs_improvement) },
+        // The server names the period's lowest scorer whatever the score; "Needs attention" means a
+        // score under the one line every Analytics surface uses, so above it they are just the
+        // lowest (UX audit 2026-10-16, MON-18).
+        {
+          label:
+            data.metrics.needs_improvement && !isLowScore(data.metrics.needs_improvement.score)
+              ? "Lowest score"
+              : "Needs attention",
+          ...person(data.metrics.needs_improvement),
+        },
       ]
     : [];
+  /** The rules behind those two names, said where they are used (MON-18). */
+  const footnote = data
+    ? `Top performer and lowest score are picked from people who tracked at least ${RANK_MIN_MINUTES_PER_DAY} minutes a day. Needs attention means a score under ${LOW_SCORE_BELOW}, the line every Analytics page uses.`
+    : null;
 
   const summary =
     loading && !data
@@ -219,6 +243,7 @@ export function DepartmentScoreFocus({
       provenance={provenance}
       summary={summary}
       metrics={metrics}
+      footnote={footnote}
       notice={notice}
       onRetry={error?.retryable ? () => setNonce((n) => n + 1) : undefined}
       action={

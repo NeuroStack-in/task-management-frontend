@@ -38,6 +38,7 @@ import { EmployeeAppUsageCard } from "@/modules/employees/components/employee-ap
 import { EmployeeRecapCard } from "@/modules/employees/components/employee-recap-card";
 import { getUserActivity, type SelfActivity } from "../services/insights.service";
 import { useEmployeeName } from "./employee-scope-bar";
+import { ChartTable } from "./chart-table";
 
 const RANGES = [7, 14, 30] as const;
 type RangeDays = (typeof RANGES)[number];
@@ -196,7 +197,13 @@ export function PersonActivity({ userId }: { userId: string }) {
             <p className="text-xs text-muted-foreground">Empty days had no score — the agent reported nothing.</p>
             <div className="mt-3 h-[260px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chart} margin={CHART_MARGIN_WITH_LEGEND}>
+                {/* Keyboard-reachable tooltips; the table below is the text alternative (MON-16). */}
+                <BarChart
+                  data={chart}
+                  margin={CHART_MARGIN_WITH_LEGEND}
+                  accessibilityLayer
+                  title={`Productivity score by day — ${name}`}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis
                     dataKey="label"
@@ -224,6 +231,12 @@ export function PersonActivity({ userId }: { userId: string }) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            <ChartTable
+              caption={`Productivity score by day — ${name}`}
+              summary={`${scored} of ${chart.length} days scored${avg == null ? "" : `, averaging ${Math.round(avg)}`}.`}
+              columns={["Day", "Score (0–100)"]}
+              rows={chart.map((d) => [d.label, d.score === null ? "not scored" : d.score])}
+            />
           </div>
 
           {totals.categorised > 0 ? (

@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -38,8 +39,10 @@ import { PersonAiReports } from "./person-analytics";
 import { ALERTS_ANCHOR, AttentionPanel } from "./attention-panel";
 import { PersonLink } from "./person-link";
 import { dailyReportProvenance, provenanceLine, type Provenance } from "../lib/ai-provenance";
-import { LOW_SCORE_BELOW, resolvePerson } from "../lib/attention";
+import { resolvePerson } from "../lib/attention";
 import { orgActivityFor } from "../lib/day-reads";
+import { HEALTH_BANDS, LOW_SCORE_BELOW, healthBand, type HealthBand } from "../lib/thresholds";
+import { useInsightsDate } from "../use-insights-params";
 
 /**
  * AI reports — the AI-first executive surface in the preview's layout, fully live:
@@ -96,13 +99,6 @@ function prettyDate(iso: string): string {
   });
 }
 
-function healthBand(score: number) {
-  if (score >= 80) return { label: "Healthy", color: "var(--success)", text: "text-success" };
-  if (score >= 65) return { label: "Stable", color: "var(--primary)", text: "text-primary" };
-  if (score >= 50) return { label: "Watch", color: "var(--warning)", text: "text-warning" };
-  return { label: "At risk", color: "var(--destructive)", text: "text-destructive" };
-}
-
 /* -------------------------------- component ------------------------------- */
 
 /**
@@ -115,11 +111,9 @@ export function ReportsExperimental() {
 }
 
 function OrgReports() {
-  // Default to today; client-side to avoid an SSR date mismatch.
-  const [date, setDate] = useState<string>("");
-  useEffect(() => setDate(isoOf(new Date())), []);
-
-  const today = isoOf(new Date());
+  // The day lives in the URL, shared with every Analytics tab (UX audit 2026-10-16, MON-13) —
+  // today when absent, resolved client-side to avoid an SSR date mismatch.
+  const [date, setDate, today] = useInsightsDate();
   // This surface is day-scoped by design (its date pager steps days), so the daily artifact.
   const aiReport = useAiReport("daily", date);
 
@@ -160,7 +154,7 @@ function OrgReports() {
             size="icon-sm"
             aria-label="Previous day"
             disabled={!date}
-            onClick={() => setDate((d) => (d ? shiftIso(d, -1) : d))}
+            onClick={() => date && setDate(shiftIso(date, -1))}
           >
             <ChevronLeft className="size-4" />
           </Button>
@@ -175,7 +169,7 @@ function OrgReports() {
             size="icon-sm"
             aria-label="Next day"
             disabled={!date || date >= today}
-            onClick={() => setDate((d) => (d && d < today ? shiftIso(d, 1) : d))}
+            onClick={() => date && date < today && setDate(shiftIso(date, 1))}
           >
             <ChevronRight className="size-4" />
           </Button>
@@ -297,6 +291,7 @@ function ExecutiveOverview({
       <div className="grid gap-4 md:grid-cols-2">
         <NamedScoreList
           title={`Top performers · ${weekTitle}`}
+          rule={`Average score ${LOW_SCORE_BELOW} or more over the days they were scored — the top three.`}
           icon={TrendingUp}
           tone="up"
           people={week.topPerformers}
@@ -308,11 +303,12 @@ function ExecutiveOverview({
                 ? thisWeek
                   ? "Nobody has been scored this week yet."
                   : "Nobody was scored that week."
-                : `Nobody scored above the attention threshold ${weekPhrase}.`
+                : `Nobody averaged ${LOW_SCORE_BELOW} or more ${weekPhrase}.`
           }
         />
         <NamedScoreList
           title={`Needs attention · ${weekTitle}`}
+          rule={`Average score under ${LOW_SCORE_BELOW} over the days they were scored — the lowest three.`}
           icon={TrendingDown}
           tone="down"
           people={week.needsAttention}
@@ -324,7 +320,7 @@ function ExecutiveOverview({
                 ? thisWeek
                   ? "Nobody has been scored this week yet."
                   : "Nobody was scored that week."
-                : `Nobody was below the attention threshold ${weekPhrase}.`
+                : `Nobody averaged under ${LOW_SCORE_BELOW} ${weekPhrase}.`
           }
         />
       </div>
@@ -382,6 +378,8 @@ function ReportLocked({ reason }: { reason: AiReportLock }) {
 
   let title: string;
   let description: string;
+  /** Where the viewer can fix it themselves, as a link (UX audit SET-15). */
+  let fix: { label: string; href: string } | null = null;
   if (reason === "permission") {
     title = "Not included in your role";
     description =
@@ -394,21 +392,36 @@ function ReportLocked({ reason }: { reason: AiReportLock }) {
     title = "Requires the AI Reports add-on";
     description = `The AI executive report is part of the AI Reports add-on, which isn't in your organization's plan. ${
       can("billing:view")
-        ? "Upgrade the plan under Settings → Billing to add it."
+        ? "Upgrading the plan adds it."
         : "Ask an owner to upgrade the plan."
     }`;
+    if (can("billing:view")) fix = { label: "View plans", href: "/settings/billing" };
   } else if (loaded && allowed && !switchedOn) {
     title = "The AI Reports add-on is turned off";
     description =
       isOwner || can("entitlements:manage")
-        ? "It's switched off for your organization. Turn it back on under Settings → Features to generate AI briefings."
+        ? "It's switched off for your organization. Turn it back on in Features to generate AI briefings."
         : "Your organization has switched it off. Ask an owner to turn it back on under Settings → Features.";
+    if (isOwner || can("entitlements:manage")) fix = { label: "Open Features", href: "/settings/features" };
   } else {
     title = "Requires the AI Reports add-on";
     description =
       "The AI executive report needs the AI Reports add-on, which isn't active for your organization right now.";
   }
-  return <EmptyState icon={Lock} title={title} description={description} />;
+  return (
+    <EmptyState
+      icon={Lock}
+      title={title}
+      description={description}
+      action={
+        fix ? (
+          <Button variant="outline" size="sm" render={<Link href={fix.href} />} nativeButton={false}>
+            {fix.label}
+          </Button>
+        ) : undefined
+      }
+    />
+  );
 }
 
 /* ------------------------------- AI briefing ------------------------------ */
@@ -473,8 +486,8 @@ function AiBriefing({
 
         {attention.length > 0 ? (
           <div className="mt-5 space-y-2 border-t border-white/15 pt-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-feature-foreground/80">
-              Lowest scores this day
+            <p className="text-xs font-semibold uppercase tracking-wide text-feature-foreground/85">
+              Lowest scores this day · under {LOW_SCORE_BELOW}
             </p>
             {attention.map((a, i) => (
               <div
@@ -561,7 +574,7 @@ function HealthScoreCard({
   band,
 }: {
   report: AiReport;
-  band: { label: string; color: string; text: string };
+  band: HealthBand;
 }) {
   const m = report.metrics;
   const drivers: { label: string; value: string }[] = [
@@ -598,6 +611,19 @@ function HealthScoreCard({
           </p>
         </div>
       </div>
+
+      {/* The bands, where they are used (MON-18). They share the 60 line with "Needs attention",
+          so "At risk" means the same thing one level up. */}
+      <ul aria-label="Health bands" className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        {HEALTH_BANDS.map((b) => (
+          <li key={b.key} className="flex items-center gap-1.5">
+            <span aria-hidden="true" className="size-2 rounded-full" style={{ backgroundColor: b.color }} />
+            <span className={cn(m.avg_score !== null && b.key === band.key && "font-semibold text-foreground")}>
+              {b.label} {b.range}
+            </span>
+          </li>
+        ))}
+      </ul>
 
       <div className="mt-auto grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
         {drivers.map((d) => (
@@ -661,6 +687,7 @@ function RadialScore({
 
 function NamedScoreList({
   title,
+  rule,
   icon: Icon,
   tone,
   people,
@@ -668,6 +695,8 @@ function NamedScoreList({
   emptyText,
 }: {
   title: string;
+  /** Who makes the list, in words — the threshold it applies (MON-18). */
+  rule: string;
   icon: LucideIcon;
   tone: "up" | "down";
   people: RankedPerson[];
@@ -678,9 +707,15 @@ function NamedScoreList({
   const lastDay = weekDays[weekDays.length - 1];
   return (
     <div className="rounded-2xl border border-border bg-card">
-      <div className="flex items-center gap-2 border-b border-border px-5 py-3.5 text-sm font-semibold">
-        <Icon className={cn("size-4", tone === "up" ? "text-success" : "text-warning")} />
-        {title}
+      <div className="border-b border-border px-5 py-3.5">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Icon
+            className={cn("size-4", tone === "up" ? "text-primary" : "text-warning")}
+            aria-hidden="true"
+          />
+          {title}
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">{rule}</p>
       </div>
       {people.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-muted-foreground">{emptyText}</p>
@@ -702,7 +737,9 @@ function NamedScoreList({
                     </p>
                   ) : null}
                 </div>
-                <Badge className={cn("shrink-0", tone === "up" ? "bg-success/12 text-success" : "bg-warning/15 text-warning")}>
+                {/* Indigo and amber, not green and red — a pair colour-blind readers can tell
+                    apart (MON-16); the list title says which is which anyway. */}
+                <Badge className={cn("shrink-0", tone === "up" ? "bg-primary/10 text-primary" : "bg-warning/15 text-warning")}>
                   score {Math.round(p.score)}
                 </Badge>
               </div>

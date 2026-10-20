@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import {
   AlertTriangle,
@@ -58,6 +58,8 @@ import { cn } from "@/lib/utils";
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { PageActions } from "@/components/shared/page-actions";
 import { LiveMap, type MapMarker } from "./live-map";
+import { replaceSearch, useInsightsDate, useInsightsDept } from "@/modules/insights/use-insights-params";
+import { EMP_PARAM } from "@/modules/insights/lib/employee-scope";
 import { EmployeeLocationView } from "./employee-location";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
@@ -97,16 +99,15 @@ const toGeoPoint = (p: { lat: number; lon: number }): GeoPoint => ({
  */
 export function LocationsView() {
   const [selected, setSelected] = useState<OversightPersonLocation | null>(null);
-  const [date, setDate] = useState<string>("");
-  useEffect(() => setDate(isoOf(new Date())), []);
+  // The day lives in the URL, shared with every Analytics tab, so switching tabs keeps it
+  // (UX audit 2026-10-16, MON-13). Today when absent, resolved after mount.
+  const [date, setDate] = useInsightsDate();
   // `?emp=<user_id>` — the Analytics hub scoped to one employee (the profile's Analytics button).
   // Read in a Suspense-wrapped child so the page itself never bails out of static rendering over a
   // query string.
   const [deepLink, setDeepLink] = useState<string | null>(null);
   /** The scoped person had no location row for the day, so there was no one to open. */
   const [missing, setMissing] = useState(false);
-  const router = useRouter();
-  const pathname = usePathname();
   // Dropping the scope ("Whole organization" in the scope bar) closes the person it opened.
   useEffect(() => {
     if (!deepLink) setSelected(null);
@@ -127,8 +128,9 @@ export function LocationsView() {
           onBack={() => {
             setSelected(null);
             // Leaving a scoped person leaves the scope: the board would otherwise re-read the deep
-            // link on remount and open the same person again, so Back never left them.
-            if (deepLink) router.replace(pathname);
+            // link on remount and open the same person again, so Back never left them. The day and
+            // department stay (MON-13).
+            if (deepLink) replaceSearch({ [EMP_PARAM]: null });
           }}
         />
       ) : (
@@ -225,7 +227,8 @@ function LocationsBoard({
   const [booted, setBooted] = useState(false);
 
   const [query, setQuery] = useState("");
-  const [dept, setDept] = useState("all");
+  // Shared with the other Analytics tabs through the URL (MON-13).
+  const [dept, setDept] = useInsightsDept();
   const [status, setStatus] = useState<StatusFilter>("all");
   const [mode, setMode] = useState<"all" | WorkMode>("all");
 
@@ -331,10 +334,13 @@ function LocationsBoard({
     [rows, inScope],
   );
 
-  const departments = useMemo(
-    () => Array.from(new Set(scoped.map((p) => p.department_id))).sort(),
-    [scoped],
-  );
+  // …plus the one in the URL, when another tab picked a department nobody here is in: the filter
+  // must name what it is filtering by rather than read "All departments" over an empty list (MON-13).
+  const departments = useMemo(() => {
+    const present = new Set(scoped.map((p) => p.department_id));
+    if (dept !== "all") present.add(dept);
+    return Array.from(present).sort();
+  }, [scoped, dept]);
   // `unassigned` is the server's sentinel for someone not yet filed under a department.
   const deptLabel = (id: string) =>
     id === "unassigned"

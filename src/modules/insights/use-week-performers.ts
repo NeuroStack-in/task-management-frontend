@@ -35,14 +35,16 @@ import type {
 } from "@/modules/insights/services/insights.service";
 import { meanBreakdown, scoreDrivers, type ScoreDriver } from "./lib/attention";
 import { orgActivityFor } from "./lib/day-reads";
+import { LOW_SCORE_BELOW } from "./lib/thresholds";
 
 /**
- * The line between the two lists — the same cut the daily report uses.
+ * The line between the two lists — the same cut the daily report uses, from the one place every
+ * Analytics surface reads it (`lib/thresholds`, UX audit MON-18). It was a second private `60` here.
  *
  * It is a *threshold*, not a ranking position: below it you need attention, at or above it you are
  * performing. That is what keeps the lists disjoint no matter how few people reported.
  */
-const ATTENTION_BELOW = 60;
+const ATTENTION_BELOW = LOW_SCORE_BELOW;
 const TOP_N = 3;
 
 /**

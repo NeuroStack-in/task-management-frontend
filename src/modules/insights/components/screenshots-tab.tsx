@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useAssistantPageContext } from "@/stores/page-context.store";
-import { AlertTriangle, Camera, ChevronLeft, ChevronRight, EyeOff, Flag, ImageOff, Loader2, Search, ShieldOff, Sparkles, Trash2, Users, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, EyeOff, Flag, ImageOff, Loader2, Search, ShieldOff, Sparkles, Trash2, Users, X } from "lucide-react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,8 @@ import { CaptureNowButton } from "@/modules/agents/components/capture-now-button
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { PageActions } from "@/components/shared/page-actions";
 import { getTrackingPolicy } from "@/modules/agents/services/fleet.service";
-import { personName, UNKNOWN_DEPARTMENT } from "@/lib/format";
+import { usePermissions } from "@/hooks/use-permissions";
+import { formatDate, formatDateTime, personName, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
@@ -39,16 +40,23 @@ import {
 } from "../services/insights.service";
 import { EMP_PARAM } from "../lib/employee-scope";
 import { AiReportCard } from "./ai-report-card";
-import { DATE_PARAM } from "./person-link";
-import { screenshotSummaryProvenance, type Provenance } from "../lib/ai-provenance";
+import { CaptureEmptyState } from "./capture-empty-state";
+import {
+  formatGeneratedAt,
+  screenshotSummaryProvenance,
+  type Provenance,
+} from "../lib/ai-provenance";
+import { replaceSearch, useInsightsDate, useInsightsDept } from "../use-insights-params";
+import {
+  captureCountOf,
+  counterLabel,
+  framePositions,
+  nextFlaggedIndex,
+  sortGroupsByOpenFlags,
+} from "../lib/gallery";
 
 /** `?show=review` opens the gallery on "Needs review" — where the attention panel's link lands. */
 const SHOW_PARAM = "show";
-
-/** A `?date=` worth honouring: a real `YYYY-MM-DD` that isn't in the future. */
-function validDateParam(v: string | null, today: string): v is string {
-  return !!v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00`)) && v <= today;
-}
 
 /**
  * Screenshot gallery — the preview's polished monitoring surface (AI screenshot-report hero,
@@ -73,25 +81,12 @@ function shiftIso(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   return isoOf(new Date(y, m - 1, d + days));
 }
+/** The one date notation (UX audit XC-06), `""` for an unset day. */
 function dateLabel(iso: string): string {
-  if (!iso) return "";
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return iso ? formatDate(iso) : "";
 }
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-function formatDateTime(ms: number): string {
-  return new Date(ms).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 /**
  * What to show when the directory has no name for a capture's owner.
@@ -199,14 +194,10 @@ export function ScreenshotsTab() {
   // Default to today; client-side to avoid an SSR date mismatch. A `?date=` opens that day instead —
   // the attention panel and the AI cards link a person's screenshots *for the day they are about*
   // (UX audit 2026-10-16, MON-04), which a tab that always opened on today could not honour.
+  //
+  // The day and the department live in the URL, shared by every Analytics tab (MON-13).
   const searchParams = useSearchParams();
-  const dateParam = searchParams.get(DATE_PARAM);
-  const [date, setDate] = useState<string>("");
-  const today = isoOf(new Date());
-  useEffect(() => {
-    const t = isoOf(new Date());
-    setDate((d) => (validDateParam(dateParam, t) ? dateParam : d || t));
-  }, [dateParam]);
+  const [date, setDate, today] = useInsightsDate();
 
   /**
    * The org's screenshot retention, so this page can say what happened to older days rather than
@@ -244,7 +235,7 @@ export function ScreenshotsTab() {
     ) > retentionDays;
 
   const [query, setQuery] = useState("");
-  const [dept, setDept] = useState<string>(ALL_DEPTS);
+  const [dept, setDept] = useInsightsDept();
   const [flag, setFlag] = useState<"all" | "flagged">(
     searchParams.get(SHOW_PARAM) === "review" ? "flagged" : "all",
   );
@@ -260,8 +251,6 @@ export function ScreenshotsTab() {
   // land straight on that person's day rather than the whole-org gallery. It follows the parameter
   // both ways — "Whole organization" in the scope bar drops it, and this closes the person — while a
   // tile clicked in the gallery opens a person without scoping the other tabs.
-  const router = useRouter();
-  const pathname = usePathname();
   const deepLinkedUser = searchParams.get(EMP_PARAM);
   useEffect(() => {
     setOpenUser(deepLinkedUser);
@@ -475,7 +464,8 @@ export function ScreenshotsTab() {
     });
   }, [shots, flag, dept, q, dirById]);
 
-  // One tile per employee, grouped by user_id in first-seen order (the server's person order).
+  // One tile per employee, grouped by user_id — people with flags awaiting review first, most first,
+  // then the server's person order (UX audit 2026-10-16, MON-11).
   const groups = useMemo<EmployeeGroup[]>(() => {
     const map = new Map<string, ShotRow[]>();
     for (const s of filteredShots) {
@@ -483,7 +473,7 @@ export function ScreenshotsTab() {
       if (list) list.push(s);
       else map.set(s.user_id, [s]);
     }
-    return [...map.entries()].map(([userId, list]) => ({ userId, shots: list }));
+    return sortGroupsByOpenFlags([...map.entries()].map(([userId, list]) => ({ userId, shots: list })));
   }, [filteredShots]);
 
   const withheld = useMemo(
@@ -587,8 +577,9 @@ export function ScreenshotsTab() {
         nameOf={nameOf}
         onBack={() => {
           setOpenUser(null);
-          // Leaving a scoped person leaves the scope too, or the other tabs would stay on them.
-          if (deepLinkedUser) router.replace(pathname);
+          // Leaving a scoped person leaves the scope too, or the other tabs would stay on them — but
+          // keeps the day and department (MON-13).
+          if (deepLinkedUser) replaceSearch({ [EMP_PARAM]: null });
           // The person's view may have taken new captures; show them in the roster too.
           reloadDay();
         }}
@@ -662,6 +653,19 @@ export function ScreenshotsTab() {
             value: countsUnknown ? "—" : needsReview,
             // Says how much of the day the count covers (MON-01).
             hint: countsUnknown ? undefined : `AI-checked ${analysed.toLocaleString()} of ${total.toLocaleString()}`,
+            // The headline figure is the filter (MON-11): pressing it narrows the gallery to those
+            // captures, the same as "Show: Needs review" below — and pressing again shows everyone.
+            toggle:
+              countsUnknown || (needsReview === 0 && flag === "all")
+                ? undefined
+                : {
+                    pressed: flag === "flagged",
+                    onToggle: () => setFlag((f) => (f === "flagged" ? "all" : "flagged")),
+                    label:
+                      flag === "flagged"
+                        ? `Needs review: ${needsReview}. Showing only these — press to show every capture`
+                        : `Needs review: ${needsReview}. Press to show only these`,
+                  },
           },
           {
             label: "On-task",
@@ -696,7 +700,7 @@ export function ScreenshotsTab() {
               size="icon-sm"
               aria-label="Previous day"
               disabled={!date}
-              onClick={() => setDate((d) => (d ? shiftIso(d, -1) : d))}
+              onClick={() => date && setDate(shiftIso(date, -1))}
             >
               <ChevronLeft className="size-4" />
             </Button>
@@ -712,7 +716,7 @@ export function ScreenshotsTab() {
               size="icon-sm"
               aria-label="Next day"
               disabled={!date || date >= today}
-              onClick={() => setDate((d) => (d && d < today ? shiftIso(d, 1) : d))}
+              onClick={() => date && date < today && setDate(shiftIso(date, 1))}
             >
               <ChevronRight className="size-4" />
             </Button>
@@ -813,11 +817,9 @@ export function ScreenshotsTab() {
           description={`${dateLabel(date)} is older than this organization's ${retentionDays}-day retention window, so any screenshots from that day have been permanently deleted. Pick a more recent date to see captures.`}
         />
       ) : shots.length === 0 ? (
-        <EmptyState
-          icon={Camera}
-          title="No screenshots for this day"
-          description="Screenshots appear here once the desktop agent captures them. Nothing was reported for the selected day."
-        />
+        // Says why — switched off, no agent, agents silent since when, or nothing while they ran —
+        // with the page that fixes it (MON-10). It read the same in every one of those cases.
+        <CaptureEmptyState date={date} today={today} />
       ) : flag === "flagged" && filteredShots.length === 0 ? (
         <EmptyState
           icon={Flag}
@@ -850,7 +852,7 @@ export function ScreenshotsTab() {
                   name={personName(emp?.name, OUT_OF_SCOPE)}
                   dept={deptId ? deptLabel(deptId) : "—"}
                   cover={cover}
-                  count={g.shots.length}
+                  count={captureCountOf(g.shots)}
                   flaggedCount={g.shots.filter(awaitsReview).length}
                   onOpen={() => setOpenUser(g.userId)}
                   onImageError={onTileImageError}
@@ -880,11 +882,15 @@ export function ScreenshotsTab() {
 /**
  * Employee tile — the preview's gallery card: a cover screenshot (the latest capture) with the real
  * app label and capture time, over the person's name + department + avatar (initials fallback, no
- * uploaded picture on the lean roster), and a red badge counting the person's captures flagged for
- * review (`ShotRow.flagged`). A withheld cover shows the privacy placeholder rather than an image.
+ * uploaded picture on the lean roster), and a badge with the person's flags awaiting review. A
+ * withheld cover shows the privacy placeholder rather than an image.
  *
  * A real button for the keyboard: this tile is the only way into a person's captures, and as a
  * click-only `<div>` it could not be reached or opened without a mouse (QA audit 2026-10-08, WP-489).
+ *
+ * The badge says "3 to review" in words, and the tile's accessible name says it too (UX audit
+ * 2026-10-16, MON-11): it was a bare red "3" that a screen reader never heard and a sighted reader
+ * had to guess at. `count` is capture **moments**, not monitor frames (MON-12).
  */
 function EmployeeCard({
   userId,
@@ -908,11 +914,13 @@ function EmployeeCard({
   onImageError?: () => void;
 }) {
   const withheld = cover.redacted || !cover.url;
+  const captures = `${count} ${count === 1 ? "capture" : "captures"}`;
+  const review = flaggedCount > 0 ? `, ${flaggedCount} to review` : "";
   return (
     <Card
       role="button"
       tabIndex={0}
-      aria-label={`Open ${name}'s captures — ${count} ${count === 1 ? "shot" : "shots"}`}
+      aria-label={`Open ${name}'s captures — ${captures}${review}`}
       className="group cursor-pointer gap-0 overflow-hidden p-0 transition hover:ring-1 hover:ring-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       onClick={onOpen}
       onKeyDown={(e) => {
@@ -943,9 +951,10 @@ function EmployeeCard({
           {cover.app || "Unknown app"}
         </div>
         {flaggedCount > 0 ? (
-          <Badge className="absolute right-2 top-2 gap-1 border-transparent bg-destructive text-destructive-foreground shadow-sm">
-            <Flag className="size-3" />
-            {flaggedCount}
+          // Amber ink on the page surface, not white on red: 11 px white on the red token is 3.7:1.
+          <Badge className="absolute right-2 top-2 gap-1 border-transparent bg-background/95 font-semibold text-warning shadow-sm ring-1 ring-warning/50">
+            <Flag className="size-3" aria-hidden="true" />
+            {flaggedCount} to review
           </Badge>
         ) : withheld ? (
           <Badge className="absolute right-2 top-2 border-transparent bg-muted text-muted-foreground shadow-sm">
@@ -953,7 +962,7 @@ function EmployeeCard({
           </Badge>
         ) : null}
         <span className="absolute bottom-2 left-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
-          {count} {count === 1 ? "shot" : "shots"}
+          {captures}
         </span>
         <span className="absolute bottom-2 right-2 rounded-full bg-background/85 px-2 py-0.5 font-mono text-[11px] tabular-nums backdrop-blur-sm">
           {formatTime(cover.captured_at)}
@@ -1007,13 +1016,23 @@ function Field({
 
 /**
  * Fullscreen viewer — the image fills its own letterboxed pane, metadata sits in a distinct section
- * below, and the per-frame AI read (`ShotAiReport`) hangs under the metadata. Prev/next arrows step
- * across every loaded shot (also ←/→), clamped at the ends. Withheld shots show the privacy
- * placeholder in the pane rather than an image (and no AI read — a withheld frame never reached the
- * model).
+ * below, and the per-frame AI read (`ShotAiReport`) hangs under the metadata. Withheld shots show the
+ * privacy placeholder in the pane rather than an image (and no AI read — a withheld frame never
+ * reached the model).
+ *
+ * **It walks the whole filtered day** (UX audit 2026-10-16, MON-12). It used to walk only the tiles
+ * on screen, so the arrows stopped after the first 60 captures, and its counter counted monitor
+ * frames ("7 / 120" on a day of 60 two-monitor captures). Now:
+ *  - ←/→ (and the side buttons) step frame by frame through every capture that matches the filters,
+ *    each capture's monitors in turn; Home/End jump to the first and last; a horizontal swipe steps
+ *    on a touch screen;
+ *  - "Previous flagged" / "Next flagged" jump between captures still awaiting review;
+ *  - nearing the end of what has loaded asks the server for the next page (`onLoadMore`), so the walk
+ *    doesn't stop at the loader's automatic budget;
+ *  - the counter counts **captures** — "Capture 12 of 340 · monitor 1 of 2".
  */
 function Lightbox({
-  shots,
+  captures,
   index,
   date,
   nameOf,
@@ -1021,8 +1040,13 @@ function Lightbox({
   onClose,
   onImageError,
   onReviewed,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
 }: {
-  shots: ShotRow[];
+  /** The filtered captures, newest first — the same list the grid shows. */
+  captures: Capture[];
+  /** Index into the captures' frames, flattened (each capture's monitors in turn). */
   index: number | null;
   /** The day being reviewed — needed to fetch/generate the per-frame AI report. */
   date: string;
@@ -1033,16 +1057,46 @@ function Lightbox({
   onImageError?: () => void;
   /** A reviewer confirmed or dismissed this frame's flag — the caller updates its counts. */
   onReviewed?: (shotId: string, outcome: "confirmed" | "dismissed") => void;
+  /** The server has more of the day than has loaded. */
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  /** Fetch the next page of the day. */
+  onLoadMore?: () => void;
 }) {
+  const shots = useMemo(() => captures.flatMap((c) => c.monitors), [captures]);
+  const positions = useMemo(() => framePositions(captures), [captures]);
   const count = shots.length;
   const shot = index !== null ? (shots[index] ?? null) : null;
+  const pos = index !== null ? (positions[index] ?? null) : null;
   const open = shot !== null;
+
+  /** The first frame of capture `ci` — its cover (the flagged monitor) when `cover` is set. */
+  const frameOf = useCallback(
+    (ci: number, cover = false) => {
+      const first = positions.findIndex((p) => p.capture === ci);
+      if (first < 0 || !cover) return first;
+      const c = captures[ci];
+      const offset = Math.max(0, c.monitors.indexOf(c.cover));
+      return first + offset;
+    },
+    [positions, captures],
+  );
+
+  const prevFlagged = pos ? nextFlaggedIndex(captures, pos.capture, -1) : null;
+  const nextFlagged = pos ? nextFlaggedIndex(captures, pos.capture, 1) : null;
+  const anyFlagged = captures.some((c) => c.awaitsReview);
+
+  // Load the next page as the walk nears the end of what has loaded, not only at the very end.
+  useEffect(() => {
+    if (!open || index === null || !hasMore || loadingMore || !onLoadMore) return;
+    if (index >= count - 3) onLoadMore();
+  }, [open, index, count, hasMore, loadingMore, onLoadMore]);
 
   useEffect(() => {
     if (!open || index === null) return;
     const onKey = (e: KeyboardEvent) => {
-      // Never steal keys from a field. Nothing in the viewer takes text today, but the AI panel is
-      // the obvious place a note box lands later, and arrows must keep moving the caret there.
+      // Never steal keys from a field — the flag note box takes text, and arrows/Home/End must keep
+      // moving the caret there.
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))
         return;
@@ -1052,6 +1106,12 @@ function Lightbox({
       } else if (e.key === "ArrowLeft" && index > 0) {
         e.preventDefault();
         onIndexChange(index - 1);
+      } else if (e.key === "Home" && index > 0) {
+        e.preventDefault();
+        onIndexChange(0);
+      } else if (e.key === "End" && index < count - 1) {
+        e.preventDefault();
+        onIndexChange(count - 1);
       }
     };
     // **Capture phase, deliberately.** This viewer is a Base UI `Dialog`, which traps focus and
@@ -1063,13 +1123,30 @@ function Lightbox({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open, index, count, onIndexChange]);
 
+  // A horizontal swipe on a touch screen steps like the arrows. Pointer events, so a mouse drag
+  // (selecting, or dragging the image) never pages.
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const onPointerDown = (e: React.PointerEvent) => {
+    swipe.current = e.pointerType === "mouse" ? null : { x: e.clientX, y: e.clientY };
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    const start = swipe.current;
+    swipe.current = null;
+    if (!start || index === null) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < 0 && index < count - 1) onIndexChange(index + 1);
+    else if (dx > 0 && index > 0) onIndexChange(index - 1);
+  };
+
   const atStart = index === 0;
   const atEnd = index !== null && index === count - 1;
   const withheld = shot ? shot.redacted || !shot.url : false;
   // How many monitors this one moment was photographed on — frames of a capture share `captured_at`.
-  const monitorsInCapture = shot
-    ? shots.filter((s) => s.captured_at === shot.captured_at).length
-    : 0;
+  const monitorsInCapture = pos?.monitors ?? 0;
+  const navButton =
+    "inline-flex h-8 items-center gap-1 rounded-full bg-white/10 px-3 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -1080,16 +1157,25 @@ function Lightbox({
         <DialogHeader className="sr-only">
           <DialogTitle>Screenshot viewer</DialogTitle>
           <DialogDescription>
-            {shot ? `${shot.app || "Unknown app"} — ${nameOf(shot.user_id)}` : ""}
+            {shot ? `${shot.app || "Unknown app"} — ${nameOf(shot.user_id)}. ` : ""}
+            The left and right arrow keys step through the captures; Home and End jump to the first
+            and the last.
           </DialogDescription>
         </DialogHeader>
 
-        {shot ? (
+        {shot && pos ? (
           <>
             {/* Image pane */}
-            <div className="group relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black">
+            <div
+              className="group relative flex min-h-0 flex-1 touch-pan-y items-center justify-center overflow-hidden bg-black"
+              onPointerDown={onPointerDown}
+              onPointerUp={onPointerUp}
+              onPointerCancel={() => {
+                swipe.current = null;
+              }}
+            >
               {withheld ? (
-                <div className="flex flex-col items-center gap-3 text-center text-white/70">
+                <div className="flex flex-col items-center gap-3 text-center text-white/75">
                   <EyeOff className="size-8" />
                   <p className="text-sm font-medium">Withheld by privacy policy</p>
                 </div>
@@ -1135,14 +1221,41 @@ function Lightbox({
                 </>
               ) : null}
 
-              <span className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium tabular-nums text-white/80 backdrop-blur-sm">
-                {(index ?? 0) + 1} / {count}
-              </span>
+              {/* Where you are, in captures (not frames), and the jumps between flags. */}
+              <div className="absolute inset-x-0 bottom-3 z-10 flex flex-wrap items-center justify-center gap-2 px-3">
+                {anyFlagged ? (
+                  <button
+                    type="button"
+                    className={navButton}
+                    disabled={prevFlagged === null}
+                    onClick={() => prevFlagged !== null && onIndexChange(frameOf(prevFlagged, true))}
+                  >
+                    <ChevronsLeft className="size-3.5" aria-hidden="true" /> Previous flagged
+                  </button>
+                ) : null}
+                <span
+                  className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium tabular-nums text-white/90 backdrop-blur-sm"
+                  aria-live="polite"
+                >
+                  {counterLabel(pos, captures.length, hasMore)}
+                  {loadingMore && atEnd ? " · loading more…" : ""}
+                </span>
+                {anyFlagged ? (
+                  <button
+                    type="button"
+                    className={navButton}
+                    disabled={nextFlagged === null}
+                    onClick={() => nextFlagged !== null && onIndexChange(frameOf(nextFlagged, true))}
+                  >
+                    Next flagged <ChevronsRight className="size-3.5" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             {/* Metadata section */}
             <div className="shrink-0 border-t border-white/10 bg-[#0d0e13]">
-              <div className="mx-auto flex w-full max-w-7xl flex-wrap items-start gap-x-10 gap-y-4 px-6 py-5 sm:px-8">
+              <dl className="mx-auto flex w-full max-w-7xl flex-wrap items-start gap-x-10 gap-y-4 px-6 py-5 sm:px-8">
                 <PanelDetail label="Application" value={shot.app || "Unknown app"} />
                 <PanelDetail label="Person" value={nameOf(shot.user_id)} />
                 <PanelDetail label="Captured" value={formatDateTime(shot.captured_at)} />
@@ -1167,10 +1280,10 @@ function Lightbox({
                   <PanelDetail
                     label="Status"
                     value="Redacted by privacy policy"
-                    className="text-destructive"
+                    className="text-red-300"
                   />
                 ) : null}
-              </div>
+              </dl>
               {/* The vision model's read of this frame. A withheld frame was never sent to the model,
                   so there's nothing to show. */}
               {!withheld ? (
@@ -1212,7 +1325,8 @@ function PanelDetail({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-medium uppercase tracking-wide text-white/45">{label}</dt>
+      {/* White at 65% on the panel is 8.4:1 — at 45% the labels sat on the 4.5:1 line (MON-14). */}
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-white/65">{label}</dt>
       <dd className={cn("mt-1 break-words font-medium text-white", className)}>{value}</dd>
     </div>
   );
@@ -1221,10 +1335,12 @@ function PanelDetail({
 /**
  * The vision model's read of one screenshot (`vision_map`), fetched on demand when the frame opens.
  *
- * The model runs per-day (not on capture), so a just-captured frame legitimately has no report yet —
- * that's a 404, surfaced as "not analyzed" with a Generate action, not an error. Generating runs the
- * day's map (spends the org's AI budget, needs `monitoring:manage`); the server enforces it, so a
- * viewer who lacks the permission gets a clear message instead of a silent no-op.
+ * Frames are graded as they arrive (the `insights-vision` stream worker, with an hourly catch-up), so
+ * a just-captured frame legitimately has no report yet — that's a 404, surfaced as "not analyzed",
+ * not an error. Running it now (`POST /v1/insights/screenshots/reports`) spends the org's AI budget
+ * and needs **Manage Monitoring Settings** (`monitoring:manage`, server `MonitoringManage`), so the
+ * Generate button is offered only to a role that holds it (UX audit 2026-10-16, MON-14); anyone else
+ * is told the analysis runs on its own and who can run it sooner. The server still enforces it.
  */
 type AiState =
   | { kind: "loading" }
@@ -1248,6 +1364,7 @@ function ShotAiReport({
 }) {
   const [state, setState] = useState<AiState>({ kind: "loading" });
   const [running, setRunning] = useState(false);
+  const canRun = usePermissions().can("monitoring:manage");
 
   // Returns the next state rather than setting it, so `generate` can inspect the result (did the run
   // actually produce a report?) without racing an async setState.
@@ -1310,12 +1427,12 @@ function ShotAiReport({
 
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-white/45">
-        <Sparkles className="size-3.5" /> AI read
+      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-white/65">
+        <Sparkles className="size-3.5" aria-hidden="true" /> AI read
       </div>
 
       {state.kind === "loading" && (
-        <p className="mt-2 flex items-center gap-2 text-sm text-white/60">
+        <p className="mt-2 flex items-center gap-2 text-sm text-white/70">
           <Loader2 className="size-4 animate-spin" /> Loading the AI read…
         </p>
       )}
@@ -1326,28 +1443,36 @@ function ShotAiReport({
 
       {state.kind === "none" && (
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <p className="text-sm text-white/60">This frame hasn&apos;t been analyzed yet.</p>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={running}
-            onClick={generate}
-            className="border-white/20 bg-white/5 text-white hover:bg-white/15 hover:text-white"
-          >
-            {running ? (
-              <>
-                <Loader2 className="size-4 animate-spin" /> Analyzing…
-              </>
-            ) : (
-              <>
-                <Sparkles className="size-4" /> Generate AI report
-              </>
-            )}
-          </Button>
+          <p className="text-sm text-white/75">
+            This frame hasn&apos;t been analyzed yet.
+            {canRun
+              ? ""
+              : " Analysis normally runs on its own, usually within the hour. Someone with the Manage Monitoring Settings permission can run it now."}
+          </p>
+          {canRun ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={running}
+              onClick={generate}
+              className="border-white/20 bg-white/5 text-white hover:bg-white/15 hover:text-white"
+            >
+              {running ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Analyzing…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="size-4" /> Generate AI report
+                </>
+              )}
+            </Button>
+          ) : null}
         </div>
       )}
 
-      {state.kind === "error" && <p className="mt-2 text-sm text-destructive">{state.message}</p>}
+      {/* Light red on the always-dark panel: the page's red ink is darkened for light surfaces. */}
+      {state.kind === "error" && <p className="mt-2 text-sm text-red-300">{state.message}</p>}
     </div>
   );
 }
@@ -1369,12 +1494,10 @@ function AiReadBody({
   rowFlagged: boolean;
   humanReview?: "confirmed" | "dismissed";
 }) {
-  const catTone =
-    report.category === "distracting"
-      ? "bg-destructive/20 text-destructive"
-      : report.category === "productive"
-        ? "bg-success/20 text-success"
-        : "bg-white/10 text-white/70";
+  // One neutral chip whatever the category — the word carries it. It was a red/green pair, which
+  // colour-blind readers can't tell apart, in page inks too dark for this panel (MON-14 / MON-16).
+  const generated = formatGeneratedAt(report.generated_at);
+  const confidence = report.confidence > 0 ? Math.round(report.confidence * 100) : null;
   return (
     <div className="mt-2 space-y-2">
       <p className="max-w-3xl text-sm leading-relaxed text-white/90">{report.description}</p>
@@ -1384,28 +1507,39 @@ function AiReadBody({
         <p className="max-w-3xl text-[13px] leading-relaxed text-white/75">{report.assessment}</p>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        <span className={cn("rounded-sm px-2 py-0.5 text-[11px] font-medium capitalize", catTone)}>
+        <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium capitalize text-white/90">
           {report.category}
         </span>
-        <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/70">
+        <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/90">
           {report.work_related ? "Work-related" : "Not work-related"}
         </span>
         {rowFlagged && !humanReview ? (
-          <span className="inline-flex items-center gap-1 rounded-sm bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive">
-            <Flag className="size-3" /> Needs review
+          <span className="inline-flex items-center gap-1 rounded-sm bg-amber-300/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100 ring-1 ring-amber-300/40">
+            <Flag className="size-3" aria-hidden="true" /> Needs review
           </span>
         ) : rowFlagged && humanReview ? (
-          <span className="inline-flex items-center gap-1 rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">
-            <Flag className="size-3" /> {humanReview === "confirmed" ? "Flag confirmed" : "Flag dismissed"}
+          <span className="inline-flex items-center gap-1 rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/90">
+            <Flag className="size-3" aria-hidden="true" /> {humanReview === "confirmed" ? "Flag confirmed" : "Flag dismissed"}
           </span>
         ) : null}
       </div>
       {rowFlagged && report.flag_reason ? (
-        <p className="text-[13px] text-destructive/90">{report.flag_reason}</p>
+        <p className="text-[13px] text-amber-100">
+          <span className="font-medium">Why it was flagged:</span> {report.flag_reason}
+        </p>
       ) : null}
-      <p className="text-[11px] text-white/35">
-        AI analysis
-        {report.confidence > 0 ? ` · ${Math.round(report.confidence * 100)}% confidence` : ""}
+      {/* Who wrote it and when, at a readable contrast — the line was white at 35% (3.2:1) and
+          named neither the model nor the time (MON-14). */}
+      <p className="text-xs text-white/75">
+        {["AI analysis", report.model?.trim() || null, generated ? `analyzed ${generated}` : null]
+          .filter(Boolean)
+          .join(" · ")}
+        {confidence !== null ? ` · ${confidence}% confidence` : ""}
+      </p>
+      <p className="max-w-3xl text-xs text-white/75">
+        {confidence !== null
+          ? "Confidence is how sure the model said it was — not a check that it's right. The AI can be wrong, so a person makes the call."
+          : "The AI can be wrong, so a person makes the call."}
       </p>
     </div>
   );
@@ -1643,6 +1777,9 @@ function EmployeeCapturesLoader({
       error={error}
       onImageError={onImageError}
       onReviewed={(shotId, outcome) => setDecided((d) => ({ ...d, [shotId]: outcome }))}
+      // Past the automatic budget the viewer and the grid can still ask for the next page (MON-12).
+      hasMore={hasMore}
+      onLoadMore={loadMore}
     />
   );
 }
@@ -1676,6 +1813,8 @@ function EmployeeCaptures({
   error = null,
   onImageError,
   onReviewed,
+  hasMore = false,
+  onLoadMore,
 }: {
   /** Whose captures these are — the target for an on-demand capture (device resolved from it). */
   userId: string;
@@ -1702,6 +1841,10 @@ function EmployeeCaptures({
   onImageError?: () => void;
   /** A flag was confirmed or dismissed in the viewer (MON-02). */
   onReviewed?: (shotId: string, outcome: "confirmed" | "dismissed") => void;
+  /** The server has more of this person's day than has loaded. */
+  hasMore?: boolean;
+  /** Fetch the next page of it. */
+  onLoadMore?: () => void;
 }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -1738,19 +1881,26 @@ function EmployeeCaptures({
   useEffect(() => setVisible(DETAIL_PAGE), [from, to, flag, userId]);
   const shown = useMemo(() => captures.slice(0, visible), [captures, visible]);
 
-  // The viewer walks every monitor of every **shown** capture in grid order (newest first), so the
-  // arrow keys move through the day exactly as it reads rather than skipping second monitors — and
-  // never into a capture that isn't on screen yet.
-  const flat = useMemo(() => shown.flatMap((c) => c.monitors), [shown]);
+  // The viewer walks every monitor of **every capture that matches the filters**, in grid order
+  // (newest first) — not only the tiles on screen, where it stopped after the first 60 (MON-12).
   const firstIndexOfCapture = useMemo(() => {
     const m = new Map<string, number>();
     let i = 0;
-    for (const c of shown) {
+    for (const c of captures) {
       m.set(c.key, i);
       i += c.monitors.length;
     }
     return m;
-  }, [shown]);
+  }, [captures]);
+  // Walking past the tiles on screen reveals them, so closing the viewer lands where it left off.
+  const positions = useMemo(() => framePositions(captures), [captures]);
+  useEffect(() => {
+    if (viewerIdx === null) return;
+    const ci = positions[viewerIdx]?.capture;
+    if (ci !== undefined && ci >= visible) {
+      setVisible(Math.ceil((ci + 1) / DETAIL_PAGE) * DETAIL_PAGE);
+    }
+  }, [viewerIdx, positions, visible]);
 
   const monitorCount = useMemo(
     () => new Set(shots.map((s) => s.display ?? 0)).size,
@@ -1913,24 +2063,20 @@ function EmployeeCaptures({
             </Button>
           }
         />
+      ) : captures.length === 0 && !dirty && shots.length === 0 ? (
+        // A whole empty day says why, with its fix — their agent missing, silent since when,
+        // switched off (MON-10).
+        <CaptureEmptyState date={date} today={today} userId={userId} name={name} />
       ) : captures.length === 0 ? (
         <EmptyState
-          icon={flag === "flagged" ? Flag : Camera}
-          title={
-            flag === "flagged"
-              ? "Nothing waiting for review"
-              : dirty
-                ? "No captures in this range"
-                : "No captures on this day"
-          }
+          icon={flag === "flagged" ? Flag : Users}
+          title={flag === "flagged" ? "Nothing waiting for review" : "No captures in this range"}
           description={
             flag === "flagged"
               ? uncheckedCount > 0
                 ? `Nothing flagged so far — ${uncheckedCount} of this employee's captures haven't been checked by the AI yet.`
                 : "The AI has checked all of this employee's captures on this day, and nothing is waiting for review."
-              : dirty
-                ? "Try widening the time range."
-                : `No screenshots were captured for ${name} on ${dateLabel(date)}.`
+              : "Try widening the time range."
           }
         />
       ) : (
@@ -1956,7 +2102,19 @@ function EmployeeCaptures({
                 Load more
               </Button>
               <p className="text-xs text-muted-foreground">
-                Showing {shown.length} of {captures.length} captures
+                Showing {shown.length} of {captures.length}
+                {hasMore ? "+" : ""} captures
+              </p>
+            </div>
+          ) : hasMore && !loadingMore && onLoadMore ? (
+            // Past the automatic paging budget — a very long day. The rest is one press away rather
+            // than silently missing (MON-12).
+            <div className="flex flex-col items-center gap-1.5 pt-1">
+              <Button variant="outline" onClick={onLoadMore}>
+                Load more from this day
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {captures.length} captures loaded — this day has more.
               </p>
             </div>
           ) : null}
@@ -1978,7 +2136,7 @@ function EmployeeCaptures({
       ) : null}
 
       <Lightbox
-        shots={flat}
+        captures={captures}
         index={viewerIdx}
         date={date}
         nameOf={nameOf}
@@ -1986,6 +2144,9 @@ function EmployeeCaptures({
         onClose={() => setViewerIdx(null)}
         onImageError={onImageError}
         onReviewed={onReviewed}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+        onLoadMore={onLoadMore}
       />
     </div>
   );
@@ -2030,7 +2191,7 @@ function CaptureCard({
       onClick={onOpen}
       className={cn(
         "group overflow-hidden rounded-2xl bg-card text-left shadow-soft transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-        capture.awaitsReview && "ring-1 ring-destructive/40",
+        capture.awaitsReview && "ring-2 ring-warning/60",
       )}
     >
       <div className="relative aspect-video w-full overflow-hidden bg-muted">
@@ -2058,8 +2219,8 @@ function CaptureCard({
           decides nothing. An unanalysed frame carries no badge; its detail panel says so.
         */}
         {capture.awaitsReview ? (
-          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-medium text-white">
-            <Flag className="size-3" /> Needs review
+          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-background/95 px-1.5 py-0.5 text-[11px] font-semibold text-warning ring-1 ring-warning/50">
+            <Flag className="size-3" aria-hidden="true" /> Needs review
           </span>
         ) : capture.humanReview ? (
           // Handled by a reviewer (MON-02) — still marked, no longer asking.

@@ -24,13 +24,15 @@ import type {
   ShotRow,
 } from "../services/insights.service";
 import { awaitsReview } from "../services/insights.service";
+import { LOW_SCORE_BELOW } from "./thresholds";
 
 /**
  * Below this a day's score needs attention. It is the server's own cut — the attention list's
  * weight (`attention_list::attention_weight`) and the executive report's "needs attention" both use
- * 60 — so the hub cannot disagree with them about who is low.
+ * 60 — so the hub cannot disagree with them about who is low. Defined once, in `lib/thresholds`
+ * (UX audit MON-18); re-exported here for the callers that already import it from this module.
  */
-export const LOW_SCORE_BELOW = 60;
+export { LOW_SCORE_BELOW };
 
 // ── severity ─────────────────────────────────────────────────────────────────────────────────────
 

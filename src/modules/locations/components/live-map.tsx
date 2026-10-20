@@ -458,10 +458,12 @@ export function LiveMap({
     // it had before — it sizes itself from them, and moving them here left MapLibre with a container
     // it could not measure, so nothing rendered.
     <div className="relative">
+      {/* At least 280 px tall: at 5:2 a phone-width map was ~127 px, too short to read or pan
+          (UX audit 2026-10-16, MON-19). Wider screens keep the 5:2 shape. */}
       <div
         ref={containerRef}
         className={cn(
-          "relative z-0 aspect-[5/2] w-full overflow-hidden rounded-2xl border",
+          "relative z-0 aspect-[5/2] min-h-[280px] w-full overflow-hidden rounded-2xl border",
           className,
         )}
       />
@@ -477,14 +479,15 @@ export function LiveMap({
         </div>
       ) : null}
 
-      {/* Bottom-left: clear of the zoom buttons (top-right) and the attribution (bottom-right). */}
+      {/* Top-left: clear of the zoom buttons (top-right) and of the map data attribution, which
+          spans the bottom edge on a narrow map and covered this button there (MON-19). */}
       <Button
         type="button"
         size="sm"
         variant={unlocked ? "default" : "secondary"}
         onClick={() => setUnlocked((v) => !v)}
         aria-pressed={unlocked}
-        className="absolute bottom-3 left-3 z-10 gap-1.5 shadow-md"
+        className="absolute top-3 left-3 z-10 gap-1.5 shadow-md"
         title={
           unlocked
             ? "Lock the map so the page scrolls normally over it"

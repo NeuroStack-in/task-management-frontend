@@ -1,5 +1,8 @@
 "use client";
 
+import { useId } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +27,12 @@ export const GRANULARITIES: { key: Granularity; label: string }[] = [
  * It is the **anchor**, not the start: the period is the one *containing* this date. Daily is the
  * day itself; Weekly is that date's working week; Monthly is its calendar month. The label changes
  * with the granularity so the field never just says "Date" while selecting a month.
+ *
+ * ## Stepping (optional)
+ *
+ * Pass `onStep` for previous/next arrows beside the date — a day, week or month at a time, by the
+ * granularity (UX audit 2026-10-16, MON-13: the Activity tab was the one Analytics tab without day
+ * arrows). Without it the control renders exactly as before.
  */
 export function PeriodFilter({
   granularity,
@@ -34,6 +43,8 @@ export function PeriodFilter({
   className,
   /** Hide the pills when a surface has only one meaningful period. */
   showGranularity = true,
+  onStep,
+  canStepForward = true,
 }: {
   granularity: Granularity;
   onGranularityChange: (g: Granularity) => void;
@@ -43,9 +54,15 @@ export function PeriodFilter({
   max?: string;
   className?: string;
   showGranularity?: boolean;
+  /** Step the period back (`-1`) or forward (`1`); shows the arrows. The caller does the date math. */
+  onStep?: (dir: -1 | 1) => void;
+  /** `false` disables the forward arrow — e.g. the period already contains today. */
+  canStepForward?: boolean;
 }) {
   const dateLabel =
     granularity === "daily" ? "Date" : granularity === "weekly" ? "Week of" : "Month of";
+  const unit = granularity === "daily" ? "day" : granularity === "weekly" ? "week" : "month";
+  const pickerId = useId();
 
   return (
     <div
@@ -80,10 +97,39 @@ export function PeriodFilter({
       ) : (
         <span />
       )}
-      <label className="text-muted-foreground flex items-center gap-2 text-sm">
-        {dateLabel}
-        <DatePicker value={date} max={max} onChange={onDateChange} />
-      </label>
+      {onStep ? (
+        <div className="flex items-center gap-2">
+          <label htmlFor={pickerId} className="text-muted-foreground text-sm">
+            {dateLabel}
+          </label>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label={`Previous ${unit}`}
+              disabled={!date}
+              onClick={() => onStep(-1)}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <DatePicker id={pickerId} value={date} max={max} onChange={onDateChange} />
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label={`Next ${unit}`}
+              disabled={!date || !canStepForward}
+              onClick={() => onStep(1)}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <label className="text-muted-foreground flex items-center gap-2 text-sm">
+          {dateLabel}
+          <DatePicker value={date} max={max} onChange={onDateChange} />
+        </label>
+      )}
     </div>
   );
 }

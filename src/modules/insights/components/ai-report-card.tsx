@@ -33,6 +33,12 @@ export interface AiMetric {
   delta?: number;
   /** Small qualifier shown next to the value, e.g. "live". */
   hint?: string;
+  /**
+   * Make the figure a filter (UX audit 2026-10-16, MON-11): a button that toggles what the page
+   * shows — "Needs review 3" narrows the gallery to those three. `aria-pressed` says whether it is on;
+   * `label` is the button's full accessible name ("Show only captures needing review").
+   */
+  toggle?: { pressed: boolean; onToggle: () => void; label: string };
 }
 
 const ToneIcon: Record<AiTone, typeof TrendingUp> = {
@@ -62,6 +68,7 @@ export function AiReportCard({
   onRetry,
   notice,
   provenance,
+  footnote,
 }: {
   title?: string;
   summary: string;
@@ -85,6 +92,8 @@ export function AiReportCard({
   notice?: string | null;
   /** Who wrote `summary` — see `lib/ai-provenance`. Omit to keep the card's original look. */
   provenance?: Provenance;
+  /** A small note under the figures — e.g. the thresholds behind them (UX audit MON-18). */
+  footnote?: React.ReactNode;
 }) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   // The floating assistant's own gate — a button it can't answer is a button that does nothing.
@@ -115,7 +124,7 @@ export function AiReportCard({
           <p className="text-xs text-feature-foreground/85">{provenanceLine(provenance)}</p>
         ) : null}
         {notice ? (
-          <p className="text-xs text-feature-foreground/75" role="status">
+          <p className="text-xs text-feature-foreground/85" role="status">
             {notice}
           </p>
         ) : null}
@@ -124,14 +133,14 @@ export function AiReportCard({
           <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-white/15 pt-3">
             {metrics.map((m) => {
               const up = (m.delta ?? 0) >= 0;
-              return (
-                <div key={m.label}>
+              const body = (
+                <>
                   <div className="flex items-baseline gap-1.5">
                     <span className="font-display text-2xl font-semibold tabular-nums">
                       {m.value}
                     </span>
                     {m.hint ? (
-                      <span className="text-xs text-feature-foreground/70">
+                      <span className="text-xs text-feature-foreground/85">
                         {m.hint}
                       </span>
                     ) : null}
@@ -151,14 +160,37 @@ export function AiReportCard({
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-0.5 text-xs text-feature-foreground/75">
+                  <p className="mt-0.5 text-xs text-feature-foreground/85">
                     {m.label}
+                    {m.toggle ? (
+                      <span className="ml-1 text-feature-foreground/90">
+                        {m.toggle.pressed ? "· showing only these" : "· show only these"}
+                      </span>
+                    ) : null}
                   </p>
-                </div>
+                </>
+              );
+              return m.toggle ? (
+                <button
+                  key={m.label}
+                  type="button"
+                  aria-pressed={m.toggle.pressed}
+                  aria-label={m.toggle.label}
+                  onClick={m.toggle.onToggle}
+                  className={cn(
+                    "-mx-2 -my-1 rounded-lg px-2 py-1 text-left transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none",
+                    m.toggle.pressed && "bg-white/15 ring-1 ring-white/40",
+                  )}
+                >
+                  {body}
+                </button>
+              ) : (
+                <div key={m.label}>{body}</div>
               );
             })}
           </div>
         ) : null}
+        {footnote ? <p className="text-xs text-feature-foreground/85">{footnote}</p> : null}
 
         {signals.length ? (
           <div className="flex flex-wrap gap-2">

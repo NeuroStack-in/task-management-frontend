@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   Activity,
   CalendarCheck,
@@ -165,10 +165,12 @@ export function ReportsLibrary({ date }: { date: string }) {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
               <label className="flex cursor-pointer items-center gap-2 select-none">
+                {/* 24 px, the minimum target size (UX audit MON-15). */}
                 <Checkbox
                   checked={allFilteredSelected}
                   onCheckedChange={toggleSelectAll}
                   aria-label="Select all reports"
+                  className="size-6 rounded-md"
                 />
                 Select all
               </label>
@@ -310,23 +312,20 @@ function ReportCard({
 }) {
   const Icon = CATEGORY_ICON[report.category];
   const empty = report.rows.length === 0;
+  const titleId = useId();
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onPreview}
-      onKeyDown={(e) => {
-        // Only keys pressed **on the card**. The export button inside it bubbled its Enter up here,
-        // where `preventDefault()` cancelled the button's own click — so the preview opened instead
-        // of the download menu (QA audit 2026-10-08, WP-489).
-        if (e.target !== e.currentTarget) return;
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onPreview();
-        }
-      }}
+    /*
+     * A plain container, not a button (UX audit 2026-10-16, MON-15). The card was `role="button"`
+     * holding a checkbox and a download button — interactive controls nested in another, which a
+     * screen reader can't present (axe nested-interactive on every card). Now its three controls sit
+     * side by side: the checkbox, the download menu, and "View report", whose stretched hit area
+     * (`after:inset-0`) still makes the whole card open the report with a click. The checkbox and the
+     * menu sit above that area (`relative z-10`), so they never open it.
+     */
+    <article
+      aria-labelledby={titleId}
       className={cn(
-        "group flex cursor-pointer flex-col rounded-[1.4rem] p-5 shadow-soft transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "group relative flex flex-col rounded-[1.4rem] p-5 shadow-soft transition-all hover:shadow-md has-[[data-view]:focus-visible]:ring-2 has-[[data-view]:focus-visible]:ring-ring/50",
         selected
           ? "bg-primary/[0.03] ring-2 ring-primary"
           : "bg-card ring-1 ring-transparent",
@@ -334,26 +333,25 @@ function ReportCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          {/* Wrapper isolates the checkbox so selecting never triggers the
-              card's preview-on-click. */}
-          <span
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            <Checkbox
-              checked={selected}
-              onCheckedChange={onToggleSelect}
-              aria-label={`Select ${report.name}`}
-            />
-          </span>
+          {/* 24 px, the minimum target size (MON-15) — it was 16 px inside a button. */}
+          <Checkbox
+            checked={selected}
+            onCheckedChange={onToggleSelect}
+            aria-label={`Select ${report.name}`}
+            className="relative z-10 size-6 rounded-md"
+          />
           <span className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
-            <Icon className="size-5" />
+            <Icon className="size-5" aria-hidden="true" />
           </span>
         </div>
-        <ExportMenu report={report} canExport={canExport} />
+        <div className="relative z-10">
+          <ExportMenu report={report} canExport={canExport} />
+        </div>
       </div>
 
-      <h3 className="mt-3 font-heading text-base font-semibold">{report.name}</h3>
+      <h3 id={titleId} className="mt-3 font-heading text-base font-semibold">
+        {report.name}
+      </h3>
       <p className="mt-0.5 text-xs text-muted-foreground">
         {REPORT_CATEGORY_LABEL[report.category]}
         {report.timeframe ? ` · ${report.timeframe}` : ""}
@@ -370,6 +368,7 @@ function ReportCard({
       ) : (
         <div className="mt-4 overflow-hidden rounded-xl border">
           <table className="w-full caption-bottom text-sm">
+            <caption className="sr-only">First rows of {report.name}</caption>
             <TableHeader>
               <TableRow>
                 {report.columns.slice(0, 3).map((c) => (
@@ -394,15 +393,23 @@ function ReportCard({
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span>
           {report.rows.length} rows · {report.columns.length} columns
         </span>
-        <span className="font-medium text-primary transition-transform group-hover:translate-x-0.5">
-          View report →
-        </span>
+        <button
+          type="button"
+          data-view
+          onClick={onPreview}
+          aria-label={`View ${report.name}`}
+          // No transform on the button itself: a transformed element becomes the containing block
+          // of its `::after`, which would shrink the card-wide hit area to the button on hover.
+          className="inline-flex min-h-6 items-center font-medium text-primary outline-none after:absolute after:inset-0 after:rounded-[1.4rem] after:content-['']"
+        >
+          <span className="transition-transform group-hover:translate-x-0.5">View report →</span>
+        </button>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -425,7 +432,6 @@ function ExportMenu({
             disabled={disabled}
             aria-label={`Download ${report.name}`}
             title="Download"
-            onClick={(e) => e.stopPropagation()}
           />
         }
       >

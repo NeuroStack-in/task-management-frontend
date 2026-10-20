@@ -5,9 +5,10 @@ import { Camera } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
 import { EMP_PARAM } from "../lib/employee-scope";
+import { DATE_PARAM } from "../lib/url-params";
 
-/** `?date=` on the Screenshots tab opens that day (see `screenshots-tab`). */
-export const DATE_PARAM = "date";
+/** `?date=` opens that day on every Analytics tab (see `lib/url-params`, UX audit MON-13). */
+export { DATE_PARAM };
 
 /** That person's Activity view — the hub scoped to them (`?emp=`). */
 export function personActivityHref(userId: string): string {

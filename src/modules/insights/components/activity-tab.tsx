@@ -48,6 +48,9 @@ import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 // The org's own week, not a Monday one (QA audit 2026-10-08, WP-487).
 import { weekStartIso, weekStartOf, weekWorkdays } from "../lib/week";
+import { useInsightsDate, useInsightsDept } from "../use-insights-params";
+import { CaptureEmptyState } from "./capture-empty-state";
+import { ChartTable } from "./chart-table";
 
 /**
  * Activity — the preview's Analytics layout (granularity toggle · AI report card · activity area
@@ -169,14 +172,12 @@ export function ActivityTab() {
 
 function OrgActivityTab() {
   const [granularity, setGranularity] = useState<Granularity>("daily");
-  const [date, setDate] = useState("");
+  // The day — and the summary's department — live in the URL, shared with every Analytics tab, so
+  // switching tabs keeps them (UX audit 2026-10-16, MON-13). Today when absent, resolved after
+  // mount (no SSR/client date mismatch). Today may read partial until the overnight close scores it.
+  const [date, setDate, today] = useInsightsDate();
+  const [dept, setDept] = useInsightsDept();
   const [showUsage, setShowUsage] = useState(false);
-
-  // Default to today; set client-side to avoid an SSR/client date mismatch. (Today may read partial
-  // until the day accrues data and the overnight close cron scores it — use the picker for a
-  // completed prior day.)
-  useEffect(() => setDate(isoOf(new Date())), []);
-  const today = isoOf(new Date());
   const anchor = date || today;
 
   // Only Daily reads the single-day rollup; Weekly/Monthly aggregate their own range below, so
@@ -186,6 +187,27 @@ function OrgActivityTab() {
   // rendered; `DepartmentScoreFocus` now owns the page's one summary and fetches its own. Leaving
   // this call would keep paying for a second generation nothing displays.
   const workdays = useWorkdays();
+
+  /**
+   * The arrows beside the date step by the granularity — a day, a week, a month — and never past
+   * today (MON-13: this was the one Analytics tab without them).
+   */
+  const step = (dir: -1 | 1) => {
+    if (!date) return;
+    const d = parseIso(date);
+    if (granularity === "daily") d.setDate(d.getDate() + dir);
+    else if (granularity === "weekly") d.setDate(d.getDate() + 7 * dir);
+    else d.setMonth(d.getMonth() + dir, 1);
+    const next = isoOf(d);
+    setDate(next > today ? today : next);
+  };
+  const weekStart = weekStartOf(workdays);
+  const periodHoldsToday =
+    granularity === "daily"
+      ? anchor >= today
+      : granularity === "weekly"
+        ? weekStartIso(anchor, weekStart) >= weekStartIso(today, weekStart)
+        : anchor.slice(0, 7) >= today.slice(0, 7);
 
   // Hour-by-hour comes from the day's captures (see the hook) — only fetched on the Daily tab,
   // which is the only place an hourly curve is shown.
@@ -277,6 +299,24 @@ function OrgActivityTab() {
   }, [granularity, range.points, workdays]);
 
   const hasTrend = trendData.some((d) => d.active !== null);
+
+  /** One sentence per chart, for the table toggle's description (MON-16). */
+  const hourlySummary = useMemo(() => {
+    const busiest = hourlyData.reduce<(typeof hourlyData)[number] | null>(
+      (best, b) => (b.total > (best?.total ?? 0) ? b : best),
+      null,
+    );
+    if (!busiest) return undefined;
+    const flagged = hourlyData.reduce((s, b) => s + b.flagged, 0);
+    return `${hourly.captures} captures. Busiest hour ${busiest.label}, with ${busiest.total}. ${flagged} flagged by the AI.`;
+  }, [hourlyData, hourly.captures]);
+  const trendSummary = useMemo(() => {
+    const scored = trendData.filter((d) => d.active !== null) as { label: string; active: number }[];
+    if (scored.length === 0) return undefined;
+    const hi = scored.reduce((a, b) => (b.active > a.active ? b : a));
+    const lo = scored.reduce((a, b) => (b.active < a.active ? b : a));
+    return `${scored.length} of ${trendData.length} scored. Highest ${hi.label} at ${hi.active}, lowest ${lo.label} at ${lo.active}.`;
+  }, [trendData]);
 
   /**
    * Whether the selected period's figures are still on their way, or failed outright.
@@ -464,6 +504,8 @@ function OrgActivityTab() {
           date={date}
           onDateChange={setDate}
           max={today}
+          onStep={step}
+          canStepForward={!periodHoldsToday}
         />
         {/* Refetch every panel on this tab in place — no page reload. Placed in the top-navbar
             action slot (via PageActions) so Refresh sits in the same spot as every other page. */}
@@ -488,6 +530,8 @@ function OrgActivityTab() {
         <DepartmentScoreFocus
           from={usageRange.from}
           to={usageRange.to}
+          dept={dept}
+          onDeptChange={setDept}
           // A phrase that stays true whenever it is read. "today" was sent for *any* picked day,
           // and the narrative is cached per range for everyone, so 1 Oct viewed on 8 Oct was
           // briefed — and stored — as "today" (QA audit 2026-10-08, WP-487). A single day needs no
@@ -585,17 +629,27 @@ function OrgActivityTab() {
                 }
               />
             ) : hourly.captures === 0 ? (
-              <EmptyState
+              // Says why there were no captures, with the fix (UX audit MON-10).
+              <CaptureEmptyState
+                date={date}
+                today={today}
                 icon={Activity}
                 title="No hour-by-hour data yet"
-                description="Hour-by-hour activity is drawn from the day's screenshot captures. None were recorded for this date — it appears here once the desktop agent reports."
+                lead="Hour-by-hour activity is drawn from the day's screenshot captures."
                 className="border-0"
               />
             ) : (
               <>
                 <div className="h-[260px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={hourlyData} margin={CHART_MARGIN_WITH_LEGEND}>
+                    {/* `accessibilityLayer`: focusable, and the arrow keys move the tooltip — the
+                        values were hover-only (MON-16). The table below is the text alternative. */}
+                    <AreaChart
+                      data={hourlyData}
+                      margin={CHART_MARGIN_WITH_LEGEND}
+                      accessibilityLayer
+                      title="Captures per hour, by the AI's check of each screenshot"
+                    >
                       <defs>
                         {activeCategories.map((c) => (
                           <linearGradient
@@ -680,6 +734,14 @@ function OrgActivityTab() {
                     so the cap drops whole people, not the oldest frames: it used to claim "the
                     most recent captures only" over a curve of two or three people's whole day,
                     captioned as the team's (QA audit 2026-10-08, WP-275). */}
+                <ChartTable
+                  caption="Captures per hour, by the AI's check of each screenshot"
+                  summary={hourlySummary}
+                  columns={["Hour", ...HOUR_VERDICTS.map((c) => c.label), "Total"]}
+                  rows={hourlyData
+                    .filter((b) => b.total > 0)
+                    .map((b) => [b.label, ...HOUR_VERDICTS.map((c) => b[c.key]), b.total])}
+                />
                 <p className="text-muted-foreground mt-2 text-xs">
                   {hourly.truncated ? (
                     <>
@@ -724,9 +786,15 @@ function OrgActivityTab() {
               className="border-0"
             />
           ) : (
+            <>
             <div className="h-[260px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={CHART_MARGIN}>
+                <AreaChart
+                  data={trendData}
+                  margin={CHART_MARGIN}
+                  accessibilityLayer
+                  title={CHART_TITLE[granularity]}
+                >
                   <defs>
                     <linearGradient id="fillActiveHr" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.4} />
@@ -773,6 +841,13 @@ function OrgActivityTab() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+            <ChartTable
+              caption={CHART_TITLE[granularity]}
+              summary={trendSummary}
+              columns={[granularity === "weekly" ? "Day" : "Week", "Productivity score (0–100)"]}
+              rows={trendData.map((d) => [d.label, d.active === null ? "not scored" : d.active])}
+            />
+            </>
           )}
           {granularity !== "daily" && !periodError && rangeFailedDays > 0 ? (
             <p className="text-muted-foreground mt-2 text-xs">
@@ -911,13 +986,17 @@ function OrgActivityTab() {
       </div>
 
       <div className="space-y-4">
+        {/* A disclosure, said as one: `aria-expanded` + `aria-controls` (MON-16). */}
         <button
           type="button"
           onClick={() => setShowUsage((v) => !v)}
-          className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-sm font-medium transition-colors"
+          aria-expanded={showUsage}
+          aria-controls="activity-usage-breakdown"
+          className="text-muted-foreground hover:text-foreground flex min-h-6 items-center gap-1.5 text-sm font-medium transition-colors"
         >
           <ChevronDown
             className={cn("size-4 transition-transform", showUsage && "rotate-180")}
+            aria-hidden="true"
           />
           {showUsage ? "Hide" : "Show"} app &amp; website breakdown
         </button>
@@ -940,7 +1019,7 @@ function OrgActivityTab() {
           </p>
         ) : null}
         {showUsage ? (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div id="activity-usage-breakdown" className="grid gap-4 lg:grid-cols-2">
             <UsageList
               title="Top applications"
               description={`Time spent per application across the team${usageRange ? `, ${usageRange.from === usageRange.to ? `on ${usageRange.from}` : `${usageRange.from} to ${usageRange.to}`}` : ""}`}

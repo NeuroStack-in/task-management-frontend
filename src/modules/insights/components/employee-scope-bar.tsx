@@ -7,6 +7,7 @@ import { UserRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getEmployeeProfile } from "@/modules/employees/services/employees.service";
 import { EMP_PARAM } from "../lib/employee-scope";
+import { nextSearch } from "../lib/url-params";
 
 /** Names already read this session, so switching tabs doesn't re-fetch the same profile. */
 const names = new Map<string, string>();
@@ -59,10 +60,13 @@ export function useScopedEmployee(): string | null {
  * organization one click away.
  */
 export function EmployeeScopeBar() {
-  const emp = useScopedEmployee();
+  const searchParams = useSearchParams();
+  const emp = searchParams.get(EMP_PARAM);
   const pathname = usePathname();
   const name = useEmployeeName(emp);
   if (!emp) return null;
+  // Leaving the person keeps the day and department the reader picked (UX audit MON-13).
+  const orgHref = `${pathname}${nextSearch(searchParams.toString(), { [EMP_PARAM]: null })}`;
 
   return (
     <section
@@ -88,7 +92,7 @@ export function EmployeeScopeBar() {
           Open profile
         </Button>
         {/* Same tab, no `?emp=` — every tab then shows the organization again. */}
-        <Button variant="ghost" size="sm" render={<Link href={pathname} />} nativeButton={false}>
+        <Button variant="ghost" size="sm" render={<Link href={orgHref} />} nativeButton={false}>
           <X className="size-4" aria-hidden="true" /> Whole organization
         </Button>
       </div>

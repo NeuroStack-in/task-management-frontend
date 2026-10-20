@@ -51,6 +51,12 @@ export function useScreenshots(date: string, userId?: string): ScreenshotsState 
   const runId = useRef(0);
   /** The (date, user) the current list belongs to — a reload of the same one keeps it on screen. */
   const loadedFor = useRef<string | null>(null);
+  /**
+   * A next-page read is in flight. State alone can't guard it: the auto-pager and the viewer's
+   * "load as you walk" (UX audit MON-12) can both call `loadMore` in one commit, before
+   * `loadingMore` re-renders, and the same page would be fetched — and appended — twice.
+   */
+  const pageInFlight = useRef(false);
 
   // First page — resets whenever the query (date/userId) or reload nonce changes.
   useEffect(() => {
@@ -85,8 +91,9 @@ export function useScreenshots(date: string, userId?: string): ScreenshotsState 
   }, [date, userId, nonce]);
 
   const loadMore = useCallback(() => {
-    if (!date || !cursor || loading || loadingMore) return;
+    if (!date || !cursor || loading || loadingMore || pageInFlight.current) return;
     const id = runId.current; // stay bound to the current query
+    pageInFlight.current = true;
     setLoadingMore(true);
     getScreenshots(date, { userId, cursor, limit: PAGE_SIZE })
       .then((g) => {
@@ -99,6 +106,7 @@ export function useScreenshots(date: string, userId?: string): ScreenshotsState 
         setError(messageOf(e));
       })
       .finally(() => {
+        pageInFlight.current = false;
         if (runId.current === id) setLoadingMore(false);
       });
   }, [date, userId, cursor, loading, loadingMore]);
