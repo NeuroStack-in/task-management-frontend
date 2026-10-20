@@ -3,10 +3,8 @@
 /**
  * The organization's primary timezone — a searchable picker (UX audit 2026-10-16, SET-16).
  *
- * It was a plain select of fifteen zones. Every zone the server can resolve is offered now, with its
- * current UTC offset, searchable by city, zone or offset, plus a one-click "use this browser's zone".
- * Why it is the server's zones and not every IANA name — and what a search for any other zone says —
- * is in `lib/timezones.ts`.
+ * It was a plain select of fifteen zones. Every IANA zone is offered now, with its current UTC offset,
+ * searchable by city, zone or offset, plus a one-click "use this browser's zone" (`lib/timezones.ts`).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -156,29 +154,17 @@ export function TimezonePicker({
                       No timezone matches “{query}”.
                     </li>
                   ) : (
-                    results.map((o, i) => {
-                      const selected = o.supported && canonicalZone(current) === o.id;
-                      const firstUnsupported = !o.supported && (i === 0 || results[i - 1].supported);
+                    results.map((o) => {
+                      const selected = canonicalZone(current) === o.id;
                       return (
                         <li key={o.id}>
-                          {firstUnsupported ? (
-                            <p className="text-muted-foreground px-2 pt-2 pb-1 text-xs">
-                              Not supported yet — times there would use UTC. Choose a city on the
-                              same time instead.
-                            </p>
-                          ) : null}
                           <button
                             type="button"
-                            disabled={!o.supported}
                             aria-pressed={selected}
                             onClick={() => pick(o.id)}
                             className={cn(
                               "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                              selected
-                                ? "bg-primary text-primary-foreground"
-                                : o.supported
-                                  ? "hover:bg-muted"
-                                  : "text-muted-foreground cursor-not-allowed",
+                              selected ? "bg-primary text-primary-foreground" : "hover:bg-muted",
                             )}
                           >
                             <span className="min-w-0 flex-1">

@@ -1,27 +1,17 @@
 /**
  * The organization timezone picker's data (UX audit 2026-10-16, SET-16).
  *
- * ## Why this is not simply every IANA zone
- *
- * The finding asked for the full IANA list. The browser has it (`Intl.supportedValuesOf`), but **the
- * server does not**: `wp_platform::tz::offset_minutes` resolves an IANA name from a hand-kept table
- * and treats any other name as unknown — the org's day then silently closes on **UTC**, so attendance,
- * lateness and every per-day report would be filed against the wrong day with nothing on screen to
- * say so. Offering a zone the server ignores is a promise the product can't keep, so the picker
- * offers {@link SERVER_ZONES} — a mirror of that table — and a search that finds any other zone says
- * plainly that it isn't supported yet instead of pretending to save it.
- *
- * When the server resolves every IANA zone (a full tz database instead of the table), return the
- * whole `Intl.supportedValuesOf("timeZone")` list from {@link pickerZones} and delete the mirror.
+ * The picker offers **every IANA zone the browser knows** (`Intl.supportedValuesOf("timeZone")`). The
+ * server reads the full IANA database too (`wp_platform::tz`, chrono-tz), old names and any letter
+ * case included. Until 2026-10-20 it read a hand-kept table of ~80 zones and treated any other name as
+ * UTC, so this module mirrored that table and the picker offered only those. A browser without
+ * `Intl.supportedValuesOf` still gets {@link COMMON_ZONES}.
  *
  * Not a `"use client"` module: pure, so it is unit-tested directly.
  */
 
-/**
- * The IANA zones `wp_platform::tz::ZONES` resolves — **keep in step with that table** (canonical
- * names only; the aliases it also reads are in {@link ALIASES}).
- */
-export const SERVER_ZONES: readonly string[] = [
+/** What the picker offers where the browser can't list its zones — the zones most orgs choose. */
+export const COMMON_ZONES: readonly string[] = [
   "UTC",
   "Europe/London",
   "Europe/Dublin",
@@ -95,18 +85,59 @@ export const SERVER_ZONES: readonly string[] = [
   "Pacific/Honolulu",
 ];
 
-/** Older or alternative names a browser may report, mapped to the zone the picker lists. */
+/**
+ * Older names a browser may report — Chrome lists `Asia/Calcutta`, not `Asia/Kolkata` — mapped to
+ * today's name, so the picker shows one entry per zone under the name people know. The server reads
+ * both spellings, so a stored old name still works.
+ */
 const ALIASES: Record<string, string> = {
   "Etc/UTC": "UTC",
   "Etc/GMT": "UTC",
   GMT: "UTC",
   "Asia/Calcutta": "Asia/Kolkata",
+  "Asia/Katmandu": "Asia/Kathmandu",
+  "Asia/Saigon": "Asia/Ho_Chi_Minh",
+  "Asia/Rangoon": "Asia/Yangon",
   "Europe/Kiev": "Europe/Kyiv",
+  "Atlantic/Faeroe": "Atlantic/Faroe",
+  "America/Godthab": "America/Nuuk",
   "America/Buenos_Aires": "America/Argentina/Buenos_Aires",
+  "America/Catamarca": "America/Argentina/Catamarca",
+  "America/Cordoba": "America/Argentina/Cordoba",
+  "America/Jujuy": "America/Argentina/Jujuy",
+  "America/Mendoza": "America/Argentina/Mendoza",
+  "America/Indianapolis": "America/Indiana/Indianapolis",
+  "America/Louisville": "America/Kentucky/Louisville",
+  "Pacific/Truk": "Pacific/Chuuk",
+  "Pacific/Ponape": "Pacific/Pohnpei",
+  "Pacific/Enderbury": "Pacific/Kanton",
   "Australia/Canberra": "Australia/Sydney",
 };
 
-const SERVER_SET = new Set<string>([...SERVER_ZONES, ...Object.keys(ALIASES)]);
+/** Names known without asking the browser — for a runtime whose `Intl` can't check a zone. */
+const KNOWN = new Set<string>([...COMMON_ZONES, ...Object.keys(ALIASES)]);
+
+const zoneCheck = new Map<string, boolean>();
+
+/**
+ * Whether `tz` names an IANA zone. The browser's own database answers (any letter case, old names
+ * included — as the server's does); an invalid name makes `Intl.DateTimeFormat` throw.
+ */
+function isIanaZone(tz: string): boolean {
+  if (KNOWN.has(tz)) return true;
+  const hit = zoneCheck.get(tz);
+  if (hit !== undefined) return hit;
+  let ok: boolean;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    // Newer engines also take a bare offset (`+05:30`); the fixed-offset check covers those.
+    ok = /^[A-Za-z]/.test(tz);
+  } catch {
+    ok = false;
+  }
+  zoneCheck.set(tz, ok);
+  return ok;
+}
 
 /** The zone the picker lists for `tz` — an alias folds onto its canonical name. */
 export function canonicalZone(tz: string): string {
@@ -122,12 +153,12 @@ const FIXED_OFFSET = /(?:^|\b(?:GMT|UTC)\s*)([+\-−–])\s*(\d{1,2})(?::?(\d{2}
 
 /**
  * Whether the server turns this stored label into a real offset. `false` means attendance, lateness
- * and reports use **UTC** for the org — the unset case, and a name the server's table doesn't hold.
+ * and reports use **UTC** for the org — the unset case, and a name that isn't a timezone at all.
  */
 export function serverResolves(label: string): boolean {
   const v = label.trim();
   if (!v) return false;
-  if (SERVER_SET.has(v)) return true;
+  if (isIanaZone(v)) return true;
   if (/^\(?\s*(GMT|UTC)\s*\)?(\s|$)/i.test(v) && !/[+\-−–]\s*\d/.test(v)) return true;
   const m = FIXED_OFFSET.exec(v);
   if (!m) return false;
@@ -136,9 +167,18 @@ export function serverResolves(label: string): boolean {
   return hh <= 14 && mm < 60;
 }
 
-/** The zones the picker offers. See the module comment for why this is not every IANA zone. */
+let zones: readonly string[] | null = null;
+
+/**
+ * The zones the picker offers: every zone the browser knows, old names folded onto today's (one entry
+ * each), or {@link COMMON_ZONES} where the browser can't list them.
+ */
 export function pickerZones(): readonly string[] {
-  return SERVER_ZONES;
+  if (!zones) {
+    const all = browserZones();
+    zones = all.length ? [...new Set(["UTC", ...all.map(canonicalZone)])] : COMMON_ZONES;
+  }
+  return zones;
 }
 
 /** Every IANA zone the browser knows, or `[]` where `Intl.supportedValuesOf` is missing. */
@@ -210,29 +250,22 @@ export interface ZoneOption {
   city: string;
   region: string;
   offset: number | null;
-  /** `false` — the server can't resolve it yet; listed only so a search can say so. */
-  supported: boolean;
 }
 
-function option(id: string, supported: boolean, now: Date): ZoneOption {
-  return { id, ...zoneParts(id), offset: currentOffsetMinutes(id, now), supported };
+function option(id: string, now: Date): ZoneOption {
+  return { id, ...zoneParts(id), offset: currentOffsetMinutes(id, now) };
 }
 
 const byOffsetThenCity = (a: ZoneOption, b: ZoneOption) =>
   (a.offset ?? 0) - (b.offset ?? 0) || a.city.localeCompare(b.city);
 
 /**
- * What the picker lists for `query`: the supported zones that match, by offset, then — only while
- * searching — any other browser-known zone that matches, flagged unsupported. Matches the zone id, the
- * city ("buenos"), and the offset ("+5:30", "utc-8").
+ * What the picker lists for `query`: the zones that match, by offset, then city. Matches the zone id,
+ * the city ("buenos"), and the offset ("+5:30", "utc-8").
  */
 export function searchZones(
   query: string,
-  {
-    now = new Date(),
-    all = browserZones(),
-    supported = pickerZones(),
-  }: { now?: Date; all?: readonly string[]; supported?: readonly string[] } = {},
+  { now = new Date(), zones = pickerZones() }: { now?: Date; zones?: readonly string[] } = {},
 ): ZoneOption[] {
   const q = query.trim().toLowerCase().replace(/−/g, "-");
   const matches = (o: ZoneOption) => {
@@ -244,13 +277,8 @@ export function searchZones(
       (offset !== "" && (offset.includes(q) || offset.replace("utc", "gmt").includes(q)))
     );
   };
-  const ok = supported.map((z) => option(z, true, now)).filter(matches).sort(byOffsetThenCity);
-  if (!q) return ok;
-  const known = new Set(supported.map(canonicalZone));
-  const others = all
-    .filter((z) => !known.has(canonicalZone(z)) && !SERVER_SET.has(z))
-    .map((z) => option(z, false, now))
+  return zones
+    .map((z) => option(z, now))
     .filter(matches)
     .sort(byOffsetThenCity);
-  return [...ok, ...others];
 }

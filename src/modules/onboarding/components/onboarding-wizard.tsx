@@ -8,9 +8,8 @@
  * had just come through. It now renders inside the same split frame (`OnboardingExperience` puts it
  * in `AuthFrame`) on the same field primitives: an H1 for the page, an H2 per step, the step
  * indicator sign-up uses, labelled fields, and the organization timezone picker Settings uses
- * (searchable; every zone the server can resolve, and a search for any other zone says it isn't
- * supported rather than saving something the server would read as UTC). Where a step points at a
- * Settings page the owner can open, it's a link (SET-15).
+ * (searchable, every IANA zone). Where a step points at a Settings page the owner can open, it's a
+ * link (SET-15).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -141,7 +140,7 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
       .then((org) => {
         if (!alive) return;
         setOrgName((v) => v || org.name || "");
-        // No zone on the org: start from this browser's, when the server can resolve it.
+        // No zone on the org: start from this browser's.
         const mine = browserZone();
         const fallback = mine && pickerZones().includes(mine) ? mine : "";
         setTimezone((v) => v || org.timezone || fallback);

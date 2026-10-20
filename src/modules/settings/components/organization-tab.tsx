@@ -344,8 +344,8 @@ export function OrganizationTab() {
     : tz
       ? `WorkPulse doesn't recognise “${tz}”, so it uses UTC. Choose a timezone from the list.`
       : "No timezone set, so WorkPulse uses UTC. Attendance, lateness and reports decide which day something happened — and who was late — in this timezone."
-  // Offered in the warning: the browser's own zone, when the server can resolve it. Read after
-  // mount (the server render has no browser zone).
+  // Offered in the warning: the browser's own zone. Read after mount (the server render has no
+  // browser zone).
   const [browserTz, setBrowserTz] = useState<string | null>(null)
   useEffect(() => setBrowserTz(browserZone()), [])
   const suggestedZone = browserTz && pickerZones().includes(browserTz) ? browserTz : null
