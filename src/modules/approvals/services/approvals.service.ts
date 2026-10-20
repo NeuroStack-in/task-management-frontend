@@ -46,6 +46,12 @@ export interface ApiApprovalRow {
    * file via `getLeaveDocumentUrl`, so nothing here is a live link that could be shared on.
    */
   attachments?: ApiLeaveAttachment[];
+  /**
+   * On a pending row: the requester's balance per year the request touches, and what approving
+   * charges it (working days for a full day, re-costed as the server will). Absent from older
+   * servers, which the page then covers from the org ledger if it can read it.
+   */
+  balances?: { year: string; allowance: number; used: number; charge: number }[];
 }
 
 interface QueueResponse {
@@ -86,9 +92,8 @@ export interface DecideInput {
   /** `approve` | `reject`. */
   decision: "approve" | "reject";
   /**
-   * Mirrors `DecideRequest.reason`. The server stores it on the request (`decision_reason`) but no
-   * route returns it and no notification carries it, so the UI does not ask for one — a reason
-   * nobody can ever read would be a promise the product can't keep.
+   * Mirrors `DecideRequest.reason`. Stored as `decision_reason`, shown to the requester on their
+   * request, and carried by the "leave not approved" notification (UX audit TIME-10).
    */
   reason?: string;
 }

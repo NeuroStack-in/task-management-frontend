@@ -435,6 +435,11 @@ function EmployeeLeaveView() {
                     {r.reason ? (
                       <p className="line-clamp-2 text-sm break-words">{r.reason}</p>
                     ) : null}
+                    {r.status === "rejected" && r.decision_reason ? (
+                      <p className="text-destructive line-clamp-2 text-sm break-words">
+                        Not approved: {r.decision_reason}
+                      </p>
+                    ) : null}
                     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                       <span className="tabular-nums">Sent {fmtSubmitted(r.created_at)}</span>
                       {r.attachments?.length ? (
@@ -497,6 +502,11 @@ function EmployeeLeaveView() {
                           <span className="line-clamp-2 break-words" title={r.reason ?? undefined}>
                             {r.reason ?? "—"}
                           </span>
+                          {r.status === "rejected" && r.decision_reason ? (
+                            <span className="text-destructive mt-1 line-clamp-2 block break-words text-xs">
+                              Not approved: {r.decision_reason}
+                            </span>
+                          ) : null}
                         </TableCell>
                         {/* A count, not the filename. The full list — with view and download — is in
                             the dialog this row opens; a name like
@@ -552,6 +562,8 @@ function EmployeeLeaveView() {
                 fromTime: selected.from_time,
                 toTime: selected.to_time,
                 reason: selected.reason ?? undefined,
+                decisionReason:
+                  selected.status === "rejected" ? selected.decision_reason : undefined,
                 attachments: selected.attachments ?? [],
                 resolveUrl: (id) =>
                   getLeaveDocumentUrl(myUserId, selected.request_id, id).then((x) => x.url),

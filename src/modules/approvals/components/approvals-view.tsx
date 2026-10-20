@@ -134,6 +134,8 @@ export function ApprovalsView() {
    * click: it is the expected outcome, and the employee can still cancel leave that hasn't started.
    */
   const [rejectTarget, setRejectTarget] = useState<ApprovalItem | null>(null);
+  /** Optional note for the requester — shown on their request and in the notification. */
+  const [rejectReason, setRejectReason] = useState("");
   /** Requests ticked for bulk approval (TIME-10), by id. */
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -186,10 +188,14 @@ export function ApprovalsView() {
         ],
   });
 
-  const runDecide = async (item: ApprovalItem, decision: "approve" | "reject") => {
+  const runDecide = async (
+    item: ApprovalItem,
+    decision: "approve" | "reject",
+    reason?: string,
+  ) => {
     setDeciding((s) => new Set(s).add(item.requestId));
     try {
-      await decide(item, decision);
+      await decide(item, decision, reason);
       setSelectedId(null);
       toast.success(decision === "approve" ? "Request approved" : "Request rejected", {
         description: `${item.typeName} · ${item.requesterName}`,
@@ -612,11 +618,16 @@ export function ApprovalsView() {
 
       <ConfirmDialog
         open={rejectTarget !== null}
-        onOpenChange={(o) => !o && setRejectTarget(null)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRejectTarget(null);
+            setRejectReason("");
+          }
+        }}
         title={`Reject ${rejectTarget?.requesterName ?? "this"}'s request?`}
         description={
           rejectTarget
-            ? `${rejectTarget.typeName}, ${fmtRange(rejectTarget.from, rejectTarget.to)} · ${requestValue(rejectTarget)}. A rejected request can't be reopened — they would have to ask again.`
+            ? `${rejectTarget.typeName}, ${fmtRange(rejectTarget.from, rejectTarget.to)} · ${requestValue(rejectTarget)}. A rejected request can't be reopened — they would have to ask again. They're notified, with your note if you add one.`
             : ""
         }
         confirmLabel="Reject request"
@@ -625,10 +636,22 @@ export function ApprovalsView() {
         onConfirm={async () => {
           if (!rejectTarget) return;
           const t = rejectTarget;
-          await runDecide(t, "reject");
+          await runDecide(t, "reject", rejectReason);
           setRejectTarget(null);
+          setRejectReason("");
         }}
-      />
+      >
+        {/* The reason reaches them now — on their request and in the notification (TIME-10). */}
+        <textarea
+          value={rejectReason}
+          onChange={(e) => setRejectReason(e.target.value)}
+          rows={2}
+          maxLength={500}
+          aria-label="Note for the employee (optional)"
+          placeholder="Note for them (optional) — e.g. two others are already off that week."
+          className="border-input bg-background placeholder:text-muted-foreground focus:ring-ring w-full resize-none rounded-lg border px-3 py-2 text-sm focus:ring-2 focus:outline-none"
+        />
+      </ConfirmDialog>
 
       {/* Bulk approve, confirmed with the count and the list (TIME-10). Each one goes through the
           same decide route as a single click, one after another, and failures are reported per

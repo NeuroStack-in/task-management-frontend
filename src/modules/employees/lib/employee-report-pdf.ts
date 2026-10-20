@@ -129,7 +129,7 @@ function drawEmployeeReport(r: EmployeeReportData, text: PdfTextFor): jsPDF {
       ["Sessions", String(t.entry_count)],
       ["Status", t.on_leave ? "On leave" : t.running ? "Working" : t.status ? title(t.status) : "Open"],
       ["Late", t.late ? "Yes" : "No"],
-      ["Permission", t.permission_minutes ? `${t.permission_minutes} min approved` : dash],
+      ["Hours off", t.permission_minutes ? `${t.permission_minutes} min approved` : dash],
       ["", ""],
     ]);
   }

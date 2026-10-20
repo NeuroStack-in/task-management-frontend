@@ -40,6 +40,8 @@ export interface LeaveDetail {
   fromTime?: string;
   toTime?: string;
   reason?: string;
+  /** The approver's note on a rejection — what the requester needs to act on (TIME-10). */
+  decisionReason?: string;
   attachments: ApiLeaveAttachment[];
   resolveUrl: (documentId: string) => Promise<string>;
 }
@@ -113,6 +115,15 @@ export function LeaveDetailDialog({
             {/* `break-words` — a reason can be one unbroken run of characters, which otherwise
                 widened the dialog past the viewport. */}
             <p className="text-sm leading-relaxed break-words">{detail.reason}</p>
+          </div>
+        ) : null}
+
+        {detail.decisionReason ? (
+          <div className="border-destructive/25 bg-destructive/[0.05] space-y-1.5 rounded-lg border p-3">
+            <p className="text-destructive text-xs font-medium tracking-wide uppercase">
+              Approver&apos;s note
+            </p>
+            <p className="text-sm leading-relaxed break-words">{detail.decisionReason}</p>
           </div>
         ) : null}
 

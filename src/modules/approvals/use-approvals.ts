@@ -12,11 +12,11 @@
  * switching a tab is instant — four GSI2 queries on an admin screen, not a hot path. (Cancelled used
  * to be left out, so "All" was not all: a withdrawn request vanished from the approver's view.)
  *
- * **Balances (UX audit 2026-10-16, TIME-10).** With `withBalances`, the org ledger
- * (`GET /v1/leave/balances?year=`, `leave:manage`) is read for each year the pending requests touch,
- * so a request can show what it leaves the person with. The queue route itself carries no balance and
- * the ledger needs `leave:manage`, which the `leave:approve` bit alone doesn't grant — so an approver
- * without it sees "balance not available", never a guess.
+ * **Balances (UX audit 2026-10-16, TIME-10).** Each pending row of the queue carries the
+ * requester's balance and what approving charges it (`balances`), so any approver sees what a
+ * request leaves the person with. Against an older server without them, and with `withBalances`, the
+ * org ledger (`GET /v1/leave/balances?year=`, `leave:manage`) stands in — and an approver without
+ * that bit sees "balance not available", never a guess.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -64,6 +64,8 @@ export interface ApprovalItem {
   reason?: string;
   status: string;
   createdAt?: number;
+  /** The queue's own balance figures for a pending request (see `ApiApprovalRow.balances`). */
+  serverBalances?: { year: string; allowance: number; used: number; charge: number }[];
   /** Documents the requester attached. Metadata only; the URL is fetched per file on demand. */
   attachments: ApiLeaveAttachment[];
 }
@@ -90,7 +92,8 @@ export interface ApprovalsData {
    * Approve/reject one. Resolves once the server has recorded the decision — the row shows the new
    * status from that moment, and the queue re-reads in the background.
    */
-  decide: (item: ApprovalItem, decision: "approve" | "reject") => Promise<void>;
+  /** `reason` goes with a rejection — the requester sees it (TIME-10). */
+  decide: (item: ApprovalItem, decision: "approve" | "reject", reason?: string) => Promise<void>;
   /**
    * Approve several, **one at a time** over the same decide route (no burst, so no throttle), and
    * report which failed and why. Never throws; re-reads the queue once at the end.
@@ -184,7 +187,10 @@ export function useApprovals({
           // Names are a nicety: a `leave:approve` holder can usually read the directory, but if
           // they can't, the rows fall back to short ids rather than failing the whole queue.
           readRoster().catch(() => null),
-          withBalances && years.size > 0
+          // Only when some pending row lacks the queue's own balances (an older server).
+          withBalances &&
+          years.size > 0 &&
+          merged.some((r) => r.status === "pending" && !r.balances?.length)
             ? Promise.all(
                 [...years].map((y) => getOrgBalances(y).then((b) => [y, b] as const)),
               )
@@ -256,6 +262,7 @@ export function useApprovals({
         status:
           r.status === "pending" ? (decided.get(r.request_id) ?? r.status) : r.status,
         createdAt: r.created_at,
+        serverBalances: r.balances,
       })),
     );
   }, [rows, typeName, people, decided]);
@@ -286,7 +293,7 @@ export function useApprovals({
 
   const balanceFor = useCallback(
     (item: ApprovalItem): (BalanceAfter | null)[] | null => {
-      if (balanceAvailability !== "ok" || item.status !== "pending") return null;
+      if (item.status !== "pending") return null;
       const others = items.filter(
         (o) =>
           o.status === "pending" &&
@@ -294,6 +301,27 @@ export function useApprovals({
           o.typeId === item.typeId &&
           o.requestId !== item.requestId,
       );
+      // The queue's own figures, when the server sends them — the same charge `decide` will make.
+      if (item.serverBalances?.length) {
+        const byYear = new Map(item.serverBalances.map((b) => [b.year, b]));
+        return balanceAfter(
+          item.serverBalances.map((b) => [b.year, b.charge] as [string, number]),
+          (year) => {
+            const b = byYear.get(year);
+            return b ? { allowance: b.allowance, used: b.used } : null;
+          },
+          (year) =>
+            others.reduce(
+              (sum, o) =>
+                sum +
+                (o.serverBalances?.find((b) => b.year === year)?.charge ??
+                  chargedPortions(o, calendar).find(([y]) => y === year)?.[1] ??
+                  0),
+              0,
+            ),
+        );
+      }
+      if (balanceAvailability !== "ok") return null;
       return balanceAfter(
         chargedPortions(item, calendar),
         (year) => standing(year, item.userId, item.typeId),
@@ -311,11 +339,12 @@ export function useApprovals({
   const alsoOffFor = useCallback((item: ApprovalItem) => alsoOff(item, items), [items]);
 
   const decide = useCallback(
-    async (item: ApprovalItem, decision: "approve" | "reject") => {
+    async (item: ApprovalItem, decision: "approve" | "reject", reason?: string) => {
       const input: DecideInput = {
         user_id: item.userId,
         request_id: item.requestId,
         decision,
+        ...(reason?.trim() ? { reason: reason.trim() } : {}),
       };
       const result = await api.decide(input);
       setDecided((m) => new Map(m).set(item.requestId, result.status));
@@ -360,7 +389,11 @@ export function useApprovals({
     decide,
     approveMany,
     balanceFor,
-    balanceAvailability,
+    // The queue's own balances make them available to every approver; the ledger state only
+    // matters against an older server.
+    balanceAvailability: items.some((i) => i.status === "pending" && i.serverBalances?.length)
+      ? "ok"
+      : balanceAvailability,
     alsoOffFor,
   };
 }

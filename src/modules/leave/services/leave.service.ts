@@ -72,6 +72,10 @@ export interface ApiLeaveRequest {
   reason?: string;
   /** Epoch ms. */
   created_at?: number;
+  /** The approver's note on the decision — on a rejection, why (UX audit TIME-10). */
+  decision_reason?: string;
+  /** Epoch ms of the decision. */
+  decided_at?: number;
   /** Documents attached at request time, so the requester can confirm what went with it. */
   attachments?: ApiLeaveAttachment[];
 }
