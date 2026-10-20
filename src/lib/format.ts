@@ -161,3 +161,54 @@ export function formatHours(hours: number): string {
 export function formatMinutes(minutes: number): string {
   return formatDuration(minutes * 60);
 }
+
+/** `YYYY-MM-DD` → a local `Date` at midnight (never UTC, so no day shifts west of Greenwich). */
+function localDay(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+
+function asDate(value: string | number | Date): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "number") return Number.isFinite(value) ? new Date(value) : null;
+  return localDay(value) ?? (Number.isNaN(Date.parse(value)) ? null : new Date(value));
+}
+
+/**
+ * **The one date notation** (UX audit XC-06): "16 Oct 2026", or "Fri, 16 Oct 2026" with `weekday`,
+ * in the viewer's locale (an en-US browser reads "Oct 16, 2026" — consistent for that viewer). Pages
+ * used three styles at once ("Friday, 16 October 2026", "Oct 15, 2026", "2026-10-15").
+ *
+ * Takes a `YYYY-MM-DD` day (read as that calendar day, never shifted by time zone), epoch ms or a
+ * `Date`. `year: false` drops the year for dates in the current year where space is tight.
+ */
+export function formatDate(
+  value: string | number | Date,
+  opts: { weekday?: boolean; year?: boolean } = {},
+): string {
+  const d = asDate(value);
+  if (!d) return "—";
+  return d.toLocaleDateString(undefined, {
+    ...(opts.weekday ? { weekday: "short" as const } : {}),
+    day: "numeric",
+    month: "short",
+    ...(opts.year === false ? {} : { year: "numeric" as const }),
+  });
+}
+
+/** "16 Oct 2026, 14:05" — a moment, in the viewer's locale and clock. */
+export function formatDateTime(value: number | Date): string {
+  const d = asDate(value);
+  if (!d) return "—";
+  return `${formatDate(d)}, ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** "16 – 20 Oct 2026" / "28 Oct – 2 Nov 2026" / one day → that day. Inclusive `YYYY-MM-DD` bounds. */
+export function formatDateRange(from: string, to: string): string {
+  const a = localDay(from);
+  const b = localDay(to);
+  if (!a || !b) return "—";
+  if (from === to) return formatDate(a);
+  const sameYear = a.getFullYear() === b.getFullYear();
+  return `${formatDate(a, { year: !sameYear })} – ${formatDate(b)}`;
+}
