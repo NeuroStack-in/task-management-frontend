@@ -54,12 +54,12 @@ export interface TimesheetSession {
    * join against, which is why this is served rather than looked up.
    */
   taskTitle: string;
-  /** Local `HH:MM`. */
+  /** Local start time, in the viewer's clock (`clockOf`) — display only. */
   start: string;
   /** Epoch ms the session began — what a **running** row ticks from (`useRunningSeconds`).
    *  `start` is already formatted for display and cannot be subtracted from `Date.now()`. */
   startMs: number;
-  /** Local `HH:MM`, or null while the session is still running. */
+  /** Local end time in the viewer's clock, or null while the session is still running. */
   end: string | null;
   billable: boolean;
   /** No `end` yet — shown as a state, never as a zero duration. */

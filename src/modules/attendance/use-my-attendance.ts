@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
+import { formatTimeOfDay } from "./lib/clock";
 import {
   getMyAttendance,
   type AttendanceStatus,
@@ -20,7 +21,7 @@ import {
 } from "./services/attendance.service";
 
 /**
- * One day as the view reads it. `clockIn`/`clockOut` are local `HH:MM` (the working window), or
+ * One day as the view reads it. `clockIn`/`clockOut` are the viewer's clock (the working window), or
  * empty when the day had no session / a session is still running.
  */
 export interface DayRecord {
@@ -32,14 +33,14 @@ export interface DayRecord {
   clockOut: string;
 }
 
-/** Epoch ms → local `HH:MM` (24h), or `""` when absent. Client-only, so it uses the viewer's tz. */
+/**
+ * Epoch ms → the viewer's clock ("14:30" / "02:30 PM"), or `""` when absent. Client-only, so it uses
+ * the viewer's tz. Not a forced 24-hour clock any more: the leave pages beside this one forced a
+ * 12-hour clock, so one product read "14:30" here and "2:30 pm" there (UX audit 2026-10-16, TIME-14).
+ */
 function hhmm(ms?: number): string {
   if (!ms) return "";
-  return new Date(ms).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return formatTimeOfDay(ms);
 }
 
 export interface MyAttendanceRange {

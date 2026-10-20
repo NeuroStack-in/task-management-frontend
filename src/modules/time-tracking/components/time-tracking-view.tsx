@@ -7,18 +7,20 @@ import {
   MonitorSmartphone,
   TriangleAlert,
   ShieldAlert,
+  Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useDataScope } from "@/hooks/use-data-scope";
 import { useIsFeatureOn } from "@/hooks/use-features";
 import { cn } from "@/lib/utils";
 import { useTeamTimesheet, type Period } from "../use-team-timesheet";
 import { PersonalTimeView } from "./personal-time-view";
+import { PayslipsLink } from "./payroll-widget";
 import { TeamTimeView } from "./team-time-view";
 
 type View = "team" | "personal";
@@ -85,37 +87,43 @@ export function TimeTrackingView() {
       : "Track your time, review today's timesheet, and monitor your weekly hours.";
 
   return (
-    // Bottom room for the floating assistant button (UX audit 2026-10-16, TIME-12 / XC-03).
-    <div className="flex flex-col gap-5 pb-20">
+    // No bottom padding of its own: the shell reserves the assistant button's room (XC-03).
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Time Tracking"
         description={description}
         actions={
-          view === "team" || showToggle ? (
-            <div className="flex items-center gap-2">
-              {/* Refetch the team roll-up in place. Personal view carries its own refresh inside
-                  PersonalTimeView, whose hook owns that data. */}
-              {view === "team" ? (
-                <RefreshButton onRefresh={reload} refreshing={loading} />
-              ) : null}
-              {showToggle ? (
-                <div className="bg-card shadow-soft flex rounded-full border p-0.5">
-                  <ToggleButton
-                    active={view === "personal"}
-                    onClick={() => setView("personal")}
-                    icon={UserRound}
-                    label="My time"
-                  />
-                  <ToggleButton
-                    active={view === "team"}
-                    onClick={() => setView("team")}
-                    icon={Users}
-                    label="Team"
-                  />
-                </div>
-              ) : null}
-            </div>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {/* Payslips sit at the foot of this page, under everything else — and /payroll, where
+                people look for them, is an admin page. A way there from the top (UX audit
+                2026-10-16, TIME-19). In-page, so it needs no route or permission of its own. */}
+            {view === "personal" ? (
+              <PayslipsLink className={buttonVariants({ variant: "outline", size: "sm" })}>
+                <Wallet className="size-4" /> My payslips
+              </PayslipsLink>
+            ) : null}
+            {/* Refetch the team roll-up in place. Personal view carries its own refresh inside
+                PersonalTimeView, whose hook owns that data. */}
+            {view === "team" ? (
+              <RefreshButton onRefresh={reload} refreshing={loading} />
+            ) : null}
+            {showToggle ? (
+              <div className="bg-card shadow-soft flex rounded-full border p-0.5">
+                <ToggleButton
+                  active={view === "personal"}
+                  onClick={() => setView("personal")}
+                  icon={UserRound}
+                  label="My time"
+                />
+                <ToggleButton
+                  active={view === "team"}
+                  onClick={() => setView("team")}
+                  icon={Users}
+                  label="Team"
+                />
+              </div>
+            ) : null}
+          </div>
         }
       />
 

@@ -9,41 +9,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { formatDate } from "@/lib/format";
 import { formatHours, type TimesheetDayEntry, type TimesheetStatus } from "../types";
 import type { Period } from "../use-team-timesheet";
 import { formatHMS, useRunningSeconds } from "@/hooks/use-live-refresh";
 import { cn } from "@/lib/utils";
 
-const STATUS_META: Record<TimesheetStatus, { label: string; className: string }> = {
-  "on-track": { label: "On track", className: "bg-success/12 text-success" },
-  flagged: { label: "Flagged", className: "bg-destructive/12 text-destructive" },
-};
-
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 
 /** `YYYY-MM-DD` → weekday index with **Monday = 0**, matching `DAY_LABELS`. */
 function weekdayIndex(iso: string): number {
   return (new Date(`${iso}T00:00:00`).getDay() + 6) % 7;
 }
 
-/** `YYYY-MM-DD` → `Wed, Aug 5` — the hover label on a bar. */
+/** `YYYY-MM-DD` → "Wed, 5 Aug" — a bar's label, in the shared date notation (XC-06 / TIME-14). */
 function barTitle(iso: string): string {
-  const [, m, d] = iso.split("-").map(Number);
-  return `${DAY_LABELS[weekdayIndex(iso)]}, ${MONTHS[m - 1]} ${d}`;
+  return formatDate(iso, { weekday: true, year: false });
 }
 
 /* ----------------------------- view model -----------------------------
@@ -53,20 +34,31 @@ function barTitle(iso: string): string {
  * %, task pools, or progress bars — those had no honest source.
  */
 
+/** What both drill-downs carry about the row they were opened from. */
+interface ActivityRowFacts {
+  rowId: string;
+  name: string;
+  subtitle: string;
+  isProject: boolean;
+  status: TimesheetStatus;
+  /**
+   * The row's average activity score for the period (0–100), or null when unscored — what a
+   * `flagged` status is *about*, so the dialog can say so (UX audit 2026-10-16, TIME-16).
+   */
+  activity?: number | null;
+  /** The period that average covers ("12 – 18 Oct 2026"), which may be wider than the day open. */
+  periodLabel?: string;
+}
+
 export type ActivityView =
-  | {
+  | (ActivityRowFacts & {
       kind: "day";
-      rowId: string;
-      name: string;
-      subtitle: string;
-      isProject: boolean;
-      status: TimesheetStatus;
       dateLabel: string;
       hours: number;
       /** Real entries logged on this day (`label` = project or contributor, `hours` real). */
       entries: TimesheetDayEntry[];
-    }
-  | {
+    })
+  | (ActivityRowFacts & {
       /**
        * The whole selected range — a **week or a month**.
        *
@@ -76,11 +68,6 @@ export type ActivityView =
        * this dialog and got seven weekday names followed by twenty-four blanks.
        */
       kind: "range";
-      rowId: string;
-      name: string;
-      subtitle: string;
-      isProject: boolean;
-      status: TimesheetStatus;
       /** Human label for the range, e.g. `Aug 1 – 31, 2026`. */
       rangeLabel: string;
       /** Which span this is — decides the wording and how the chart is laid out. */
@@ -97,7 +84,7 @@ export type ActivityView =
       days: number[];
       /** Real entries per day, aligned to `dates`. */
       entriesByDay: TimesheetDayEntry[][];
-    };
+    });
 
 /** Sum entry hours by label, biggest first. Used for the day and week entry lists. */
 function rollUp(entries: TimesheetDayEntry[]): TimesheetDayEntry[] {
@@ -119,7 +106,6 @@ export function ActivityDialog({
   view: ActivityView | null;
   onClose: () => void;
 }) {
-  const meta = view ? STATUS_META[view.status] : null;
   const isMonth = view?.kind === "range" && view.period === "month";
 
   return (
@@ -136,10 +122,15 @@ export function ActivityDialog({
         {view ? (
           <>
             <DialogHeader className="border-b p-5 pr-12 text-left">
-              <div className="flex items-center gap-2">
-                {/* "On track" is the norm — only surface the badge when flagged. */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Neutral and named for what it is (UX audit 2026-10-16, TIME-16). This was a red
+                    "Flagged" with no reason given — for a low activity score, and on any project
+                    with no hours — which read as a verdict on the person. It is a prompt to look. */}
                 {view.status === "flagged" ? (
-                  <Badge className={meta!.className}>{meta!.label}</Badge>
+                  <Badge variant="secondary" className="font-medium">
+                    Low activity
+                    {typeof view.activity === "number" ? ` · avg ${view.activity}%` : ""}
+                  </Badge>
                 ) : null}
                 <span className="text-muted-foreground text-xs">
                   {view.kind === "day"
@@ -151,6 +142,12 @@ export function ActivityDialog({
               </div>
               <DialogTitle className="mt-1 text-lg">{view.name}</DialogTitle>
               <DialogDescription>{view.subtitle}</DialogDescription>
+              {view.status === "flagged" ? (
+                <p className="text-muted-foreground mt-2 text-xs">
+                  {lowActivityReason(view)} It covers the whole period, not only this day, and says
+                  nothing on its own about why — the entries below show what the time went to.
+                </p>
+              ) : null}
             </DialogHeader>
 
             <div className="space-y-6 p-5">
@@ -165,6 +162,14 @@ export function ActivityDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Why a row is marked: the score, the line it fell under, and the period it covers (TIME-16). */
+function lowActivityReason(view: ActivityView): string {
+  const period = view.periodLabel ? ` for ${view.periodLabel}` : "";
+  return typeof view.activity === "number"
+    ? `Their average activity score${period} is ${view.activity}%, under 50%, so the row is marked for a look.`
+    : `Their average activity score${period} is under 50%, so the row is marked for a look.`;
 }
 
 function DayDetail({ view }: { view: Extract<ActivityView, { kind: "day" }> }) {
@@ -396,6 +401,13 @@ function RangeDetail({ view }: { view: Extract<ActivityView, { kind: "range" }> 
                   // is an answer, and a bar of zero height cannot be pointed at.
                   title={iso ? `${barTitle(iso)} · ${h > 0 ? formatHours(h) : "no time tracked"}` : undefined}
                 >
+                  {/* A month's per-day figures were in that tooltip alone, out of reach of a screen
+                      reader (TIME-15). The grid's day cells carry the same figures by keyboard. */}
+                  {iso ? (
+                    <span className="sr-only">
+                      {barTitle(iso)}: {h > 0 ? formatHours(h) : "no time tracked"}
+                    </span>
+                  ) : null}
                   {h > 0 ? (
                     <div className="bg-primary w-full" style={{ height: `${(h / max) * 100}%` }} />
                   ) : null}

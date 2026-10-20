@@ -8,37 +8,24 @@ import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { cn } from "@/lib/utils";
 import { formatHoursOff } from "@/modules/leave/lib/days";
+import { formatDate, formatDateRange } from "@/lib/format";
+import { formatWallClock } from "../lib/clock";
 import { useUpcomingLeave, type UpcomingLeaveItem } from "../use-upcoming-leave";
 
-/** `2026-09-01` → `Sept 1, 2026`. */
-function fmtDay(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-/** `14:30` → `2:30 pm`. */
-function fmt12(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
-  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
-}
-
 /**
- * "Kishore M is on leave on Sept 1, 2026" — said as a sentence, because that is the form the
+ * "Kishore M is on leave on 1 Sept 2026" — said as a sentence, because that is the form the
  * question is asked in. A date range and a fraction in separate columns is the same information
  * the roster already shows and would need reassembling in the reader's head.
+ *
+ * Dates and times in the product's one notation, in the viewer's locale (UX audit XC-06 / TIME-14):
+ * this printed "Sept 1, 2026" and a forced 12-hour "2:30 pm" while the roster above used 24 hours.
  */
 function sentence(i: UpcomingLeaveItem): string {
-  const when =
-    i.from === i.to ? `on ${fmtDay(i.from)}` : `from ${fmtDay(i.from)} to ${fmtDay(i.to)}`;
+  // "on 1 Sep 2026" for one day; "1 – 3 Sep 2026" for a span.
+  const when = i.from === i.to ? `on ${formatDate(i.from)}` : formatDateRange(i.from, i.to);
   // A few hours off, not "on permission" — HR jargon (UX audit 2026-10-16, TIME-08).
   if (i.permissionMinutes > 0 && i.fromTime && i.toTime) {
-    return `taking ${formatHoursOff(i.permissionMinutes)} ${when}, ${fmt12(i.fromTime)} to ${fmt12(i.toTime)}`;
+    return `taking ${formatHoursOff(i.permissionMinutes)} ${when}, ${formatWallClock(i.fromTime)} to ${formatWallClock(i.toTime)}`;
   }
   return `on leave ${when}`;
 }

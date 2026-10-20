@@ -34,6 +34,7 @@ import { AttendanceCalendar } from "./attendance-calendar";
 import { AttendanceLog } from "./attendance-log";
 import { UpcomingLeave } from "./upcoming-leave";
 import { PeopleAttentionCard } from "@/modules/insights/components/people-attention";
+import { formatWallClock } from "../lib/clock";
 
 export function AttendanceView() {
   // The roster reads `GET /v1/attendance/day` (`AttendanceReadTeam`/`Org` → `attendance:manage`),
@@ -118,7 +119,7 @@ function OversightAttendance() {
           : (live.counts.notInYet ?? 0) > 0
             ? // Before "Late after" a percentage reads as an attendance verdict the day hasn't
               // reached yet — "0 % clocked in" at 08:00 (UX audit 2026-10-16, TIME-11).
-              `Today · ${live.counts.present} of ${live.counts.total} in so far · late after ${live.lateAfter}`
+              `Today · ${live.counts.present} of ${live.counts.total} in so far · late after ${formatWallClock(live.lateAfter)}`
             : `Today · ${livePct}% of the team clocked in`;
 
   // The calendar shows the selected date's month, fed by the real month fan-out — fetched only while
@@ -159,8 +160,8 @@ function OversightAttendance() {
       : null;
 
   return (
-    // Bottom room for the floating assistant button (UX audit 2026-10-16, TIME-12 / XC-03).
-    <div className="space-y-5 pt-1 pb-20">
+    // No bottom padding of its own: the shell reserves the assistant button's room (XC-03).
+    <div className="space-y-5 pt-1">
       <PageHeader
         title="Attendance"
         description={liveDescription}
@@ -199,7 +200,8 @@ function OversightAttendance() {
           loading={data.loading}
           error={data.error}
           note={data.note}
-          lateAfter={data.lateAfter}
+          // The org's "Late after" in the viewer's clock, like every other time here (TIME-14).
+          lateAfter={data.lateAfter ? formatWallClock(data.lateAfter) : undefined}
         />
       </div>
 

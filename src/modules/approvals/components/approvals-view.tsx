@@ -37,7 +37,8 @@ import {
   type BulkFailure,
 } from "../use-approvals";
 import { decisionError, startsLabel, type BalanceAfter } from "../lib/queue";
-import { todayIso } from "@/lib/format";
+import { formatDate, formatDateRange, todayIso } from "@/lib/format";
+import { formatWallClock } from "@/modules/attendance/lib/clock";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
@@ -48,29 +49,13 @@ const STATUS_BADGE: Record<string, string> = {
   cancelled: "bg-muted text-muted-foreground",
 };
 
-const SHORT_MONTH = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-const fmtDay = (iso: string) => {
-  const [, m, d] = iso.split("-").map(Number);
-  return `${SHORT_MONTH[m - 1]} ${d}`;
-};
-const fmtRange = (from: string, to: string) =>
-  from === to ? `${fmtDay(from)}, ${from.slice(0, 4)}` : `${fmtDay(from)} – ${fmtDay(to)}, ${to.slice(0, 4)}`;
-const fmtSubmitted = (ms?: number) => {
-  if (!ms) return "—";
-  const d = new Date(ms);
-  return `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`;
-};
-/** `14:30` → `2:30 pm`. The stored form is 24h; the sentence an approver reads is not. */
-function fmt12(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
-  const period = h < 12 ? "am" : "pm";
-  const hour = h % 12 === 0 ? 12 : h % 12;
-  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
-}
+/**
+ * Dates and times in the product's one notation, in the viewer's locale (UX audit XC-06 / TIME-14):
+ * "13 – 15 Nov 2026", "Sent 20 Jul 2026", and the viewer's own clock — this page hand-built
+ * "Nov 13 – Nov 15, 2026", a year-less "Jul 20" and a forced 12-hour "2:30 pm".
+ */
+const fmtRange = formatDateRange;
+const fmtSubmitted = (ms?: number) => (ms ? formatDate(ms) : "—");
 
 /**
  * The big figure: "2 h off" for a few hours (the API's `permission` kind), "3 days" otherwise. It
@@ -82,14 +67,14 @@ function requestValue(r: { days: number; permissionMinutes?: number }): string {
   return daysPhrase(r.days);
 }
 
-/** "10:30 am to 12:30 pm" — what the approver is actually being asked to allow. */
+/** "10:30 to 12:30" (the viewer's clock) — what the approver is actually being asked to allow. */
 function hoursWindow(r: {
   permissionMinutes?: number;
   fromTime?: string;
   toTime?: string;
 }): string | null {
   if ((r.permissionMinutes ?? 0) <= 0 || !r.fromTime || !r.toTime) return null;
-  return `${fmt12(r.fromTime)} to ${fmt12(r.toTime)}`;
+  return `${formatWallClock(r.fromTime)} to ${formatWallClock(r.toTime)}`;
 }
 
 type Filter = "pending" | "approved" | "rejected" | "cancelled" | "all";
@@ -250,8 +235,8 @@ export function ApprovalsView() {
   );
 
   return (
-    // Bottom room for the floating assistant button (UX audit 2026-10-16, TIME-12 / XC-03).
-    <div className="space-y-5 pb-20">
+    // No bottom padding of its own: the shell reserves the assistant button's room (XC-03).
+    <div className="space-y-5">
       <PageHeader
         title="Approvals"
         description={
@@ -798,18 +783,20 @@ function AlsoOffLine({ others, req }: { others: ApprovalItem[]; req: ApprovalIte
     ? others.filter((o) => o.department === req.department).length
     : 0;
   const shown = names.slice(0, 2).join(", ");
+  const full = others.map((o) => `${o.requesterName} · ${fmtRange(o.from, o.to)} (${o.status})`);
   return (
-    <p
-      className="text-muted-foreground flex items-start gap-1 text-xs"
-      title={others
-        .map((o) => `${o.requesterName} · ${fmtRange(o.from, o.to)} (${o.status})`)
-        .join("\n")}
-    >
+    <p className="text-muted-foreground flex items-start gap-1 text-xs" title={full.join("\n")}>
       <Users className="mt-px size-3 shrink-0" />
-      <span>
+      {/* The "+2" hid its names, and every date, in the tooltip alone. A screen reader gets the full
+          list (TIME-15); the request's dialog spells it out for everyone. */}
+      <span aria-hidden="true">
         Also off: {shown}
         {names.length > 2 ? ` +${names.length - 2}` : ""}
         {sameDept > 0 ? ` · ${sameDept} in ${req.department}` : ""}
+      </span>
+      <span className="sr-only">
+        Also off: {full.join("; ")}
+        {sameDept > 0 ? `. ${sameDept} in ${req.department}` : ""}
       </span>
     </p>
   );
@@ -1001,10 +988,20 @@ function ApprovalDialog({
                 </div>
               ) : canApprove ? (
                 <>
-                  <Button variant="outline" disabled={busy} onClick={() => onDecide(req, "reject")}>
+                  {/* Named for the person, like the list's buttons (UX audit 2026-10-16, TIME-15). */}
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => onDecide(req, "reject")}
+                    aria-label={`Reject ${req.requesterName}'s ${req.typeName} request`}
+                  >
                     <X className="size-4" /> Reject
                   </Button>
-                  <Button disabled={busy} onClick={() => onDecide(req, "approve")}>
+                  <Button
+                    disabled={busy}
+                    onClick={() => onDecide(req, "approve")}
+                    aria-label={`Approve ${req.requesterName}'s ${req.typeName} request`}
+                  >
                     <Check className="size-4" /> Approve
                   </Button>
                 </>

@@ -15,24 +15,19 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { DocumentList } from "@/components/shared/document-list";
 import { cn } from "@/lib/utils";
 import type { ApiLeaveAttachment } from "@/modules/leave/services/leave.service";
+import { formatWallClock } from "@/modules/attendance/lib/clock";
 
-/** `14:30` → `2:30 pm`. Stored 24-hour; nobody reads a leave request that way. */
-export function fmt12(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
-  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
-}
 
 export interface LeaveDetail {
   /** Leave type — the dialog's title. */
   typeName: string;
   status: string;
   statusClass: string;
-  /** "Submitted Aug 29". */
+  /** "Submitted 29 Aug 2026". */
   submittedLabel: string;
   /** Shown only when the reader isn't the requester (the approver's view). */
   person?: { userId: string; name: string };
-  /** "Aug 31, 2026" or "Aug 19 – Aug 21, 2026". */
+  /** "31 Aug 2026" or "19 – 21 Aug 2026" — `formatDate` / `formatDateRange`. */
   dateLabel: string;
   /** The figure: "1 day" / "2 h off". */
   valueLabel: string;
@@ -69,7 +64,8 @@ export function LeaveDetailDialog({
   if (!detail) return null;
   const window =
     detail.fromTime && detail.toTime
-      ? `${fmt12(detail.fromTime)} to ${fmt12(detail.toTime)}`
+      ? // The viewer's clock, not a forced "2:30 pm" (UX audit 2026-10-16, TIME-14).
+        `${formatWallClock(detail.fromTime)} to ${formatWallClock(detail.toTime)}`
       : null;
 
   return (

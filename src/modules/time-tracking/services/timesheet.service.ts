@@ -26,6 +26,7 @@
  * user's timezone, so "today" is a question only the client can answer (see `todayLocal`).
  */
 import { apiFetch } from "@/lib/api";
+import { formatTimeOfDay } from "@/modules/attendance/lib/clock";
 
 /** Mirrors `time_attendance::shared::entry::EntryRow`. Optional fields are `skip_serializing_if`. */
 export interface ApiEntryRow {
@@ -162,9 +163,12 @@ export function getUserTimesheet(
   );
 }
 
-/** Epoch ms → local `HH:MM`, matching how the entry's own day was resolved. */
+/**
+ * Epoch ms → the viewer's clock ("14:30" / "02:30 PM"), local time, matching how the entry's own day
+ * was resolved. A display string only — never parsed back (the correction dialog reads `startMs`).
+ * It was a hand-built 24-hour `HH:MM` while the leave pages forced a 12-hour clock (UX audit
+ * 2026-10-16, TIME-14).
+ */
 export function clockOf(ms: number): string {
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return formatTimeOfDay(ms);
 }

@@ -30,6 +30,9 @@ export function HolidayBadge({
     >
       {showIcon ? <PartyPopper className="size-2.5 shrink-0" /> : null}
       Holiday
+      {/* The name was only in the `title` tooltip, which neither a keyboard nor a screen reader
+          reaches (UX audit 2026-10-16, TIME-15). Visually unchanged. */}
+      <span className="sr-only">: {name}</span>
     </span>
   );
 }

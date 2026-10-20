@@ -23,7 +23,7 @@ import { useLeave } from "../use-leave";
 import { daysPhrase, formatDays, formatHoursOff } from "../lib/days";
 import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
-import { todayIso } from "@/lib/format";
+import { formatDate, formatDateRange, todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   RequestLeaveDialog,
@@ -34,11 +34,13 @@ import { useWorkCalendar } from "../use-work-calendar";
 import { RecordLeaveButton } from "./record-leave-button";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { LeaveTypesManager } from "./leave-types-manager";
-import { LeaveDetailDialog, fmt12 } from "./leave-detail-dialog";
+import { LeaveDetailDialog } from "./leave-detail-dialog";
+import { formatWallClock } from "@/modules/attendance/lib/clock";
 import { useAuthStore } from "@/stores/auth.store";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { getLeaveDocumentUrl, type ApiLeaveRequest } from "../services/leave.service";
 import { OrgBalancesTable } from "./org-balances-table";
+import { PendingRequestsLink } from "./pending-requests-link";
 
 /** The server's request states (LLD §8): pending → approved, or pending/approved → cancelled. */
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -48,25 +50,14 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   rejected: { label: "Rejected", cls: "bg-destructive/12 text-destructive" },
 };
 
-const SHORT_MONTH = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-const fmtDay = (iso: string) => {
-  const [, m, d] = iso.split("-").map(Number);
-  return `${SHORT_MONTH[m - 1]} ${d}`;
-};
-const fmtRange = (start: string, end: string) =>
-  start === end
-    ? `${fmtDay(start)}, ${start.slice(0, 4)}`
-    : `${fmtDay(start)} – ${fmtDay(end)}, ${end.slice(0, 4)}`;
+/**
+ * Dates in the product's one notation (UX audit XC-06 / TIME-14): "13 – 15 Nov 2026", "20 Jul 2026".
+ * This page hand-built "Nov 13 – Nov 15, 2026" and a year-less "Jul 20" beside each other.
+ */
+const fmtRange = formatDateRange;
 
-/** Epoch ms → "Jul 20", or "—" when the server didn't stamp a created_at. */
-const fmtSubmitted = (ms?: number) => {
-  if (!ms) return "—";
-  const d = new Date(ms);
-  return `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`;
-};
+/** Epoch ms → the shared date, or "—" when the server didn't stamp a created_at. */
+const fmtSubmitted = (ms?: number) => (ms ? formatDate(ms) : "—");
 
 /** Minutes of a few-hours request (the API's `permission` kind), else 0 for a full day. */
 const hoursOffMinutes = (r: ApiLeaveRequest) => r.permission_minutes ?? 0;
@@ -78,11 +69,11 @@ const hoursOffMinutes = (r: ApiLeaveRequest) => r.permission_minutes ?? 0;
 const requestAmount = (r: ApiLeaveRequest) =>
   hoursOffMinutes(r) > 0 ? formatHoursOff(hoursOffMinutes(r)) : daysPhrase(r.days);
 
-/** "Nov 13, 2026 · 2 h off · 10:30 am – 12:30 pm", or "Nov 13 – Nov 15, 2026 · 3 days". */
+/** "13 Nov 2026 · 2 h off · 10:30 – 12:30" (the viewer's clock), or "13 – 15 Nov 2026 · 3 days". */
 const requestWhen = (r: ApiLeaveRequest) => {
   const window =
     hoursOffMinutes(r) > 0 && r.from_time && r.to_time
-      ? ` · ${fmt12(r.from_time)} – ${fmt12(r.to_time)}`
+      ? ` · ${formatWallClock(r.from_time)} – ${formatWallClock(r.to_time)}`
       : "";
   return `${fmtRange(r.from, r.to)} · ${requestAmount(r)}${window}`;
 };
@@ -149,22 +140,24 @@ export function LeaveRequestsView() {
   return <EmployeeLeaveView />;
 }
 
-/** Sections 1–3: the type catalog, the org ledger, and per-person adjustments. */
+/** Sections 1–3: the type catalog, the org ledger, and per-person adjustments — plus the way to
+ *  the requests waiting in Approvals. */
 function AdminLeaveView() {
   // A catalog save rewrites this year's balances and can add or archive a column, so the ledger
   // below remounts (and reloads) after one. It loaded once and kept showing "/ 20" after Annual
   // was raised to 25, until a full page reload (QA audit 2026-10-08, WP-266).
   const [ledgerKey, setLedgerKey] = useState(0);
   return (
-    // Bottom room for the floating assistant button, so it never sits on the last control
-    // (UX audit 2026-10-16, TIME-12 / XC-03).
-    <div className="flex min-h-full flex-col gap-5 pb-20">
+    // No bottom padding of its own: the shell reserves the assistant button's room (XC-03).
+    <div className="flex min-h-full flex-col gap-5">
       <PageHeader
         title="Leave"
         description="Leave types and allowances, and every employee's balance."
         // Record leave someone reported — including a sick day already past (TIME-04).
         actions={<RecordLeaveButton />}
       />
+      {/* The requests themselves live in Approvals; this is the way there, with the count (TIME-17). */}
+      <PendingRequestsLink />
       {/* 1 — the catalog: types and how many days a year each carries. Editing an allowance here
           applies to everyone's current-year balance, except figures an admin has hand-set. */}
       <LeaveTypesManager onCatalogChanged={() => setLedgerKey((k) => k + 1)} />
@@ -310,8 +303,8 @@ function EmployeeLeaveView() {
     ) : null;
 
   return (
-    // Bottom room for the floating assistant button (UX audit 2026-10-16, TIME-12 / XC-03).
-    <div className="flex min-h-full flex-col gap-5 pb-20">
+    // No bottom padding of its own: the shell reserves the assistant button's room (XC-03).
+    <div className="flex min-h-full flex-col gap-5">
       <PageHeader
         title="Leave"
         description="Request time off and track the status of your leave."
@@ -456,7 +449,7 @@ function EmployeeLeaveView() {
             </ul>
 
             <div className="hidden sm:block">
-              <Table>
+              <Table scrollLabel="My leave requests">
                 <TableHeader>
                   <TableRow>
                     {/* Five columns, not eight. Type/Dates/Days answered one question — "what was

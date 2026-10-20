@@ -18,26 +18,12 @@ import type {
   TimesheetDayEntry,
   TimesheetStatus,
 } from "../types";
-import { formatHours } from "@/lib/format";
+import { formatDate, formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Period } from "../use-team-timesheet";
 import { ActivityDialog, type ActivityView } from "./timesheet-detail";
 import { toCsv } from "@/lib/csv";
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 /**
@@ -101,15 +87,6 @@ function columnHeading(iso: string, period: Period): { top: string; sub: string 
     ? { top: String(d), sub: DAY_LABELS[dow][0] }
     : { top: DAY_LABELS[dow], sub: String(d) };
 }
-const DAY_FULL = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
 
 type GroupBy = "person" | "project";
 
@@ -127,15 +104,11 @@ interface GridRow {
   dayEntries: TimesheetDayEntry[][];
   total: number;
   status: TimesheetStatus;
+  /** Average activity score for the period (0–100), or null — explains a low-activity mark. */
+  activity: number | null;
 }
 
 /* ------------------------------ date utils ------------------------------ */
-
-/** `YYYY-MM-DD` → its calendar parts (month is 0-based). */
-function parseIso(iso: string): { y: number; m: number; d: number } {
-  const [y, m, d] = iso.split("-").map(Number);
-  return { y, m: m - 1, d };
-}
 
 /** Decimal hours → `HH:MM:SS` (or em dash for zero — an untracked cell is blank, not `00:00:00`). */
 function fmtHM(hours: number): string {
@@ -228,6 +201,7 @@ export function TimesheetGrid({
         dayEntries: r.dayEntries,
         total: r.trackedHrs,
         status: r.status,
+        activity: r.activity,
       }));
     }
     return projectRows.map((p) => ({
@@ -241,6 +215,7 @@ export function TimesheetGrid({
       dayEntries: p.dayEntries,
       total: p.trackedHrs,
       status: p.status,
+      activity: null,
     }));
   }, [group, personRows, projectRows]);
 
@@ -368,17 +343,19 @@ export function TimesheetGrid({
       subtitle: row.subtitle,
       isProject: row.isProject,
       status: row.status,
+      activity: row.activity,
+      // The period the activity average covers — the mark is about the range, not one day.
+      periodLabel: weekRange,
     };
     if (selection.kind === "day") {
-      const d = parseIso(dates[selection.dayIndex]);
       return {
         ...base,
         kind: "day",
         hours: row.days[selection.dayIndex],
         entries: row.dayEntries[selection.dayIndex] ?? [],
-        // Weekday from the actual date, not `dayIndex` — the index is a weekday only for a week; in a
-        // month it's the day-of-month (0..30), which would read the wrong name (or `undefined`).
-        dateLabel: `${DAY_FULL[(new Date(d.y, d.m, d.d).getDay() + 6) % 7]}, ${MONTHS[d.m]} ${d.d}`,
+        // From the actual date, never `dayIndex` (a weekday only in a week), and in the shared date
+        // notation (UX audit XC-06 / TIME-14) — it was a hand-built "Tuesday, Oct 13".
+        dateLabel: formatDate(dates[selection.dayIndex], { weekday: true }),
       };
     }
     return {
@@ -572,8 +549,14 @@ export function TimesheetGrid({
         ) : null}
       </div>
 
-      {/* Grid */}
-      <div className="overflow-x-auto">
+      {/* Grid. A named, focusable scroll region: a month's columns run past the edge, and someone
+          who can't swipe or scroll with a pointer needs a way to them (UX audit 2026-10-16, TIME-15). */}
+      <div
+        className="overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+        role="region"
+        aria-label={`Timesheet ${group === "person" ? "by employee" : "by project"}, ${weekRange}`}
+        tabIndex={0}
+      >
         {/* A month is 28-31 day columns, which cannot fit a laptop viewport — the wrapper above
               scrolls horizontally and the Employee column is sticky, so who a row belongs to stays
               visible while you scroll the dates. */}
@@ -594,6 +577,7 @@ export function TimesheetGrid({
           <thead>
             <tr className="bg-muted/30 border-b">
               <th
+                scope="col"
                 className={cn(
                   STICKY_COL,
                   STICKY_HEAD,
@@ -611,6 +595,7 @@ export function TimesheetGrid({
                 return (
                   <th
                     key={iso}
+                    scope="col"
                     className={cn(
                       "text-muted-foreground px-2 py-2.5 text-center align-middle text-xs font-semibold tracking-wide",
                       period === "month" && MONTH_DIVIDER,
@@ -627,12 +612,17 @@ export function TimesheetGrid({
                     {holidayName ? (
                       <span className="text-primary mt-0.5 block text-[0.6rem] font-medium normal-case">
                         Holiday
+                        {/* The name was in the `title` alone (TIME-15). */}
+                        <span className="sr-only">: {holidayName}</span>
                       </span>
                     ) : null}
                   </th>
                 );
               })}
-              <th className="text-muted-foreground px-3 py-2.5 text-center align-middle text-xs font-semibold tracking-wide uppercase">
+              <th
+                scope="col"
+                className="text-muted-foreground px-3 py-2.5 text-center align-middle text-xs font-semibold tracking-wide uppercase"
+              >
                 Total
               </th>
             </tr>
@@ -723,6 +713,11 @@ export function TimesheetGrid({
                           })
                         }
                         title="View daily activity"
+                        // "—" or "06:48:00" alone named nothing: whose, which day, and what the
+                        // figure is (UX audit 2026-10-16, TIME-15).
+                        aria-label={`${r.name}, ${formatDate(dates[i], { weekday: true })}: ${
+                          h > 0 ? `${formatHours(h)} tracked` : "no time tracked"
+                        }. View daily activity`}
                         className={cn(
                           "hover:bg-primary/10 hover:text-primary w-full px-2 py-2.5 font-mono tabular-nums transition-colors",
                           h <= 0 ? "text-muted-foreground/40" : "text-foreground",
@@ -739,6 +734,9 @@ export function TimesheetGrid({
                       type="button"
                       onClick={() => setSelection({ rowId: r.id, kind: "range" })}
                       title={`View ${period === "month" ? "monthly" : "weekly"} activity`}
+                      aria-label={`${r.name}, ${weekRange}: ${
+                        r.total > 0 ? `${formatHours(r.total)} tracked in total` : "no time tracked"
+                      }. View ${period === "month" ? "monthly" : "weekly"} activity`}
                       className="hover:bg-primary/10 hover:text-primary w-full px-3 py-2.5 text-center font-mono font-semibold tabular-nums transition-colors"
                     >
                       {fmtHM(r.total)}

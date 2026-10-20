@@ -26,9 +26,20 @@ import { formatCurrency } from "@/lib/currency";
 import { useOrgCurrency } from "@/hooks/use-org";
 import type { ApiDeduction } from "../services/payroll.service";
 
+/**
+ * A rule as the run applies it (`payroll_runs::employee_totals`): a percent comes off **each
+ * employee's gross**; a flat amount comes off **each employee's pay, once per run** — runs are
+ * monthly. "Flat" alone left it open whether 500 was per person or split across the run (UX audit
+ * 2026-10-16, TIME-20).
+ */
 function deductionLabel(kind: string, value: number, currency?: string): string {
-  return kind === "percent" ? `${value}%` : formatCurrency(value, currency);
+  return kind === "percent"
+    ? `${value}% of gross`
+    : `${formatCurrency(value, currency)} per employee`;
 }
+
+/** The kind's name in the editor — the same wording as the read view. */
+const KIND_LABELS = { percent: "% of gross", flat: "Flat per employee" } as const;
 
 /** Editor row: `value` stays a string while typing; parsed + validated on save. */
 interface DraftRule {
@@ -118,7 +129,7 @@ export function DeductionsCard({
       await onSave(result.rules);
       setEditing(false);
       toast.success("Deduction rules saved", {
-        description: `${result.rules.length} rule${result.rules.length === 1 ? "" : "s"} — drafts pick them up on the next run.`,
+        description: `${result.rules.length} rule${result.rules.length === 1 ? "" : "s"} — used from the next draft or redraft. Finalized runs keep their figures.`,
       });
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
@@ -135,10 +146,25 @@ export function DeductionsCard({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Deduction rules</CardTitle>
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div className="space-y-1">
+          <CardTitle>Deduction rules</CardTitle>
+          {/* What a rule does, and what this list is — today's rules, not a run's (TIME-20). A run
+              stores its totals and each person's line, but not the rules it was computed with, so
+              an older run may have used different ones. */}
+          <p className="text-muted-foreground text-xs">
+            Applied per employee when a run is drafted: a percentage comes off their gross pay, and
+            a flat amount comes off their pay once per run (each run is one month). Deductions never
+            take anyone&apos;s pay below zero.
+          </p>
+          <p className="text-muted-foreground text-xs">
+            These are the current rules. Runs don&apos;t record the rules they were computed with,
+            so a run drafted before a change may have used different ones — its totals and pay per
+            employee above are what it actually used.
+          </p>
+        </div>
         {showEditor && !editing ? (
-          <Button variant="outline" size="sm" onClick={startEdit}>
+          <Button variant="outline" size="sm" onClick={startEdit} className="shrink-0">
             <Pencil className="size-4" /> Edit
           </Button>
         ) : null}
@@ -171,7 +197,7 @@ export function DeductionsCard({
                       </Badge>
                     ) : null}
                   </span>
-                  <span className="font-mono tabular-nums">{deductionLabel(d.kind, d.value, currency)}</span>
+                  <span className="tabular-nums">{deductionLabel(d.kind, d.value, currency)}</span>
                 </li>
               ))}
             </ul>
@@ -194,14 +220,14 @@ export function DeductionsCard({
                     <Select
                       value={row.kind}
                       onValueChange={(v) => patchRow(i, { kind: v as DraftRule["kind"] })}
-                      items={{ percent: "Percent", flat: "Flat" }}
+                      items={KIND_LABELS}
                     >
-                      <SelectTrigger className="w-28" aria-label="Rule kind">
+                      <SelectTrigger className="w-44" aria-label="Rule kind">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="percent">Percent</SelectItem>
-                        <SelectItem value="flat">Flat</SelectItem>
+                        <SelectItem value="percent">{KIND_LABELS.percent}</SelectItem>
+                        <SelectItem value="flat">{KIND_LABELS.flat}</SelectItem>
                       </SelectContent>
                     </Select>
                     <Input
@@ -210,7 +236,11 @@ export function DeductionsCard({
                       inputMode="decimal"
                       placeholder={row.kind === "percent" ? "%" : "amount"}
                       className="w-24 text-right tabular-nums"
-                      aria-label="Rule value"
+                      aria-label={
+                        row.kind === "percent"
+                          ? "Percent of gross"
+                          : `Amount per employee${currency ? ` (${currency})` : ""}`
+                      }
                     />
                     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Switch

@@ -26,6 +26,7 @@ import { ApiError } from "@/lib/api";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { adjustBalance, getOrgBalances, type ApiOrgBalances, type ApiTypeBalance } from "../services/leave.service";
 import { formatDays } from "../lib/days";
+import { balanceCell } from "../lib/balance-cell";
 
 /** Which person + type the editor is open on. */
 interface EditTarget {
@@ -112,12 +113,15 @@ export function OrgBalancesTable() {
           <div>
             <CardTitle>Employee balances</CardTitle>
             <CardDescription>
-              Consumed and remaining for {data?.year}. Click a figure to grant or reduce that
-              person&apos;s allowance.
+              Remaining of each allowance for {data?.year}. Click a figure to grant or reduce that
+              person&apos;s allowance. &ldquo;Not started&rdquo;: that balance is created, at the
+              figure shown, the next time they use Leave.
             </CardDescription>
           </div>
           <Input
             placeholder="Search name or ID…"
+            // A placeholder is not a label (UX audit 2026-10-16, TIME-15).
+            aria-label="Search employee balances by name or ID"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full sm:w-56"
@@ -169,6 +173,7 @@ export function OrgBalancesTable() {
                               {b ? (
                                 <BalanceButton
                                   balance={b}
+                                  typeAllowance={t.annual_allowance}
                                   typeName={t.name}
                                   personName={emp.name}
                                   year={data?.year}
@@ -236,6 +241,7 @@ export function OrgBalancesTable() {
                             <TableCell key={t.type_id} className="text-right">
                               <BalanceButton
                                 balance={b}
+                                typeAllowance={t.annual_allowance}
                                 typeName={t.name}
                                 personName={emp.name}
                                 year={data?.year}
@@ -277,39 +283,58 @@ export function OrgBalancesTable() {
 /** One person's figure for one type — opens the allowance editor. Shared by the table and the cards. */
 function BalanceButton({
   balance: b,
+  typeAllowance,
   typeName,
   personName,
   year,
   onClick,
 }: {
   balance: ApiTypeBalance;
+  /** The type's catalog allowance — what a not-yet-started balance will be seeded at. */
+  typeAllowance: number;
   typeName: string;
   personName: string;
   year?: string;
   onClick: () => void;
 }) {
+  const c = balanceCell(b, typeAllowance);
+  const said = c.noLimit
+    ? `no limit${c.used > 0 ? `, ${formatDays(c.used)} taken` : ""}`
+    : `${formatDays(c.remaining)} of ${formatDays(c.allowance)} days left`;
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 tabular-nums transition-colors hover:bg-muted"
-      aria-label={`Adjust ${typeName} for ${personName}`}
+      // Wraps between the figure and its badges, never inside a figure: in a phone's two-column
+      // card "No limit" and "10 / 10" broke across lines.
+      className="group inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-md px-1.5 py-1 text-left tabular-nums transition-colors hover:bg-muted"
+      aria-label={`Adjust ${typeName} for ${personName}: ${said}${c.notStarted ? ", not started yet" : ""}`}
       title={
-        b.seeded
-          ? undefined
-          : `Not granted for ${year ?? "this year"} yet — they receive the ${typeName} allowance the first time they open Leave, or when you set one here.`
+        c.notStarted
+          ? `Not started for ${year ?? "this year"} — ${personName} receives this ${typeName} allowance the next time they use Leave, unless you set another here.`
+          : undefined
       }
     >
-      {/* No balance row is not a balance of 0 — it printed "0 / 0", the same as a real zero
-          allowance (QA audit 2026-10-08, WP-479). */}
-      {b.seeded ? (
-        <>
-          <span className="font-medium">{formatDays(b.remaining)}</span>
-          <span className="text-xs text-muted-foreground">/ {formatDays(b.allowance)}</span>
-        </>
+      {c.noLimit ? (
+        <span className="whitespace-nowrap">
+          <span className="font-medium">No limit</span>
+          {c.used > 0 ? (
+            <span className="text-xs text-muted-foreground"> · {formatDays(c.used)} taken</span>
+          ) : null}
+        </span>
       ) : (
-        <span className="text-xs text-muted-foreground">Not granted</span>
+        <span className="whitespace-nowrap">
+          <span className={c.notStarted ? "text-muted-foreground" : "font-medium"}>
+            {formatDays(c.remaining)}
+          </span>
+          <span className="text-xs text-muted-foreground"> / {formatDays(c.allowance)}</span>
+        </span>
       )}
+      {c.notStarted ? (
+        <Badge variant="outline" className="px-1 py-0 text-[0.6rem] font-normal text-muted-foreground">
+          not started
+        </Badge>
+      ) : null}
       {b.adjusted ? (
         <Badge
           className="bg-primary/12 px-1 py-0 text-[0.6rem] text-primary"
@@ -398,14 +423,25 @@ function AdjustDialog({
         <div className="space-y-3">
           {balance.seeded ? (
             <div className="grid grid-cols-3 gap-2 text-center text-sm">
-              <Stat label="Allowance" value={formatDays(balance.allowance)} />
+              <Stat
+                label="Allowance"
+                value={balance.allowance > 0 ? formatDays(balance.allowance) : "No limit"}
+              />
               <Stat label="Used" value={formatDays(balance.used)} />
-              <Stat label="Remaining" value={formatDays(balance.remaining)} />
+              <Stat
+                label="Remaining"
+                value={balance.allowance > 0 ? formatDays(balance.remaining) : "—"}
+              />
             </div>
           ) : (
+            // Said as the server does it (TIME-17): the first use seeds the catalog allowance.
             <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-              No {balance.name} has been granted to {target.name} for {year} yet. Saving grants
-              this allowance.
+              {target.name}&apos;s {balance.name} for {year} hasn&apos;t started yet. They&apos;ll
+              receive{" "}
+              {target.typeAllowance > 0
+                ? `the catalog allowance of ${formatDays(target.typeAllowance)} days`
+                : "no limit (the catalog sets none)"}{" "}
+              the next time they use Leave. Saving sets the figure below instead.
             </p>
           )}
 
@@ -420,6 +456,13 @@ function AdjustDialog({
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
+            {/* `0` is a real setting with a real meaning server-side (`balance_allows`): no limit,
+                never "none left". Say it before someone types it to mean "take it all away". */}
+            {!tooLow && !notWhole && !tooHigh ? (
+              <p className="text-xs text-muted-foreground">
+                0 means no limit — requests are never refused for balance.
+              </p>
+            ) : null}
             {tooLow ? (
               <p className="text-xs text-destructive">
                 {target.name} has already used {formatDays(balance.used)} day

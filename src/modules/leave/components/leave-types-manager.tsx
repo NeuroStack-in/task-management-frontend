@@ -218,7 +218,7 @@ export function LeaveTypesManager({ onCatalogChanged }: { onCatalogChanged?: () 
             </Button>
           </div>
         ) : (
-          <Table>
+          <Table scrollLabel="Leave types">
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-5">Type</TableHead>
@@ -236,7 +236,13 @@ export function LeaveTypesManager({ onCatalogChanged }: { onCatalogChanged?: () 
                     <span className="text-xs text-muted-foreground">({t.type_id})</span>
                   </TableCell>
                   <TableCell className="tabular-nums">
-                    {t.annual_allowance > 0 ? `${t.annual_allowance} days / yr` : "—"}
+                    {/* "No limit", not a dash: 0 is a setting — the server never refuses a request
+                        against it — and a dash read as "not configured" (TIME-17). */}
+                    {t.annual_allowance > 0 ? (
+                      `${t.annual_allowance} days / yr`
+                    ) : (
+                      <span className="text-muted-foreground">No limit</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{t.paid ? "Paid" : "Unpaid"}</TableCell>
                   <TableCell>
@@ -384,7 +390,7 @@ function TypeEditDialog({
               {...register("annual_allowance")}
             />
             <p className="text-xs text-muted-foreground">
-              0 = no fixed allowance (e.g. unpaid leave).
+              0 = no limit (e.g. unpaid leave) — requests are never refused for balance.
             </p>
             {errors.annual_allowance ? (
               <p className="text-xs text-destructive">{errors.annual_allowance.message}</p>

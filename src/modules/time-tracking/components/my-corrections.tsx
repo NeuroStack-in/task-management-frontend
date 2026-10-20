@@ -17,6 +17,8 @@ import {
   listMyCorrections,
   type ApiCorrection,
 } from "../services/time-corrections.service";
+import { formatDate } from "@/lib/format";
+import { formatTimeOfDay } from "@/modules/attendance/lib/clock";
 
 const STATUS: Record<ApiCorrection["status"], { label: string; tone: string }> = {
   pending: { label: "Waiting for approval", tone: "bg-warning/15 text-warning" },
@@ -25,14 +27,9 @@ const STATUS: Record<ApiCorrection["status"], { label: string; tone: string }> =
   cancelled: { label: "Withdrawn", tone: "bg-muted text-muted-foreground" },
 };
 
-const clock = (ms: number) =>
-  new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const day = (iso: string) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString([], {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+/** The viewer's clock and the shared date notation, like every other time page (TIME-14). */
+const clock = (ms: number) => formatTimeOfDay(ms);
+const day = (iso: string) => formatDate(iso, { weekday: true });
 
 /** `refreshKey` changes when a new request is filed, so the list re-reads. */
 export function MyCorrections({ refreshKey = 0 }: { refreshKey?: number }) {

@@ -94,7 +94,14 @@ export function RunLinesCard({
             below, then draft it again.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <div
+              // A named, focusable scroll region, so the columns past the edge are reachable without
+              // a pointer (UX audit 2026-10-16, TIME-15).
+              className="overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+              role="region"
+              aria-label="Pay per employee"
+              tabIndex={0}
+            >
             <table className="w-full text-sm">
               <TableHeader>
                 <TableRow>

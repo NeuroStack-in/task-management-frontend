@@ -12,7 +12,11 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { formatDate } from "@/lib/format";
 import { ActivityDialog, type ActivityView } from "./timesheet-detail";
+
+/** A bar's date as the shared helper prints it in this environment's locale ("Sat, Aug 1" in en-US). */
+const bar = (iso: string) => formatDate(iso, { weekday: true, year: false });
 
 const AUG_2026 = Array.from(
   { length: 31 },
@@ -53,9 +57,11 @@ describe("ActivityDialog · month range", () => {
       el.getAttribute("title"),
     );
     expect(titles).toHaveLength(31);
-    expect(titles[0]).toBe("Sat, Aug 1 · 04:48:00");
-    expect(titles[2]).toBe("Mon, Aug 3 · 04:48:00");
-    expect(titles[30]).toBe("Mon, Aug 31 · 04:48:00");
+    expect(titles[0]).toBe(`${bar("2026-08-01")} · 04:48:00`);
+    expect(titles[0]).toMatch(/^Sat/);
+    expect(titles[2]).toBe(`${bar("2026-08-03")} · 04:48:00`);
+    expect(titles[2]).toMatch(/^Mon/);
+    expect(titles[30]).toBe(`${bar("2026-08-31")} · 04:48:00`);
     expect(titles.some((t) => t?.includes("undefined"))).toBe(false);
   });
 
@@ -97,5 +103,47 @@ describe("ActivityDialog · month range", () => {
     }
     const chart = screen.getByText("Hours per day").parentElement!;
     expect(within(chart).getAllByText("04:48:00")).toHaveLength(7);
+  });
+
+  it("gives every month bar its figure in text, not only in the tooltip (TIME-15)", () => {
+    render(<ActivityDialog view={monthView()} onClose={() => {}} />);
+    expect(screen.getByText(`${bar("2026-08-01")}: 04:48:00`)).toHaveClass("sr-only");
+  });
+});
+
+describe("ActivityDialog · low activity (TIME-16)", () => {
+  const day = (overrides: Partial<Extract<ActivityView, { kind: "day" }>> = {}) =>
+    ({
+      kind: "day",
+      rowId: "u1",
+      name: "Kishore M",
+      subtitle: "Engineering",
+      isProject: false,
+      status: "flagged",
+      activity: 42,
+      periodLabel: "Oct 12 – 18, 2026",
+      dateLabel: "Tue, Oct 13, 2026",
+      hours: 2,
+      entries: [{ label: "Workpulse Testing", hours: 2 }],
+      ...overrides,
+    }) as ActivityView;
+
+  it("names the mark and its score in a neutral chip — never a red “Flagged”", () => {
+    render(<ActivityDialog view={day()} onClose={() => {}} />);
+    expect(screen.queryByText("Flagged")).not.toBeInTheDocument();
+    const chip = screen.getByText(/Low activity · avg 42%/);
+    expect(chip.className).not.toMatch(/(^|\s)(bg|text)-destructive/);
+  });
+
+  it("says what the mark means and which period it covers", () => {
+    render(<ActivityDialog view={day()} onClose={() => {}} />);
+    expect(
+      screen.getByText(/average activity score for Oct 12 – 18, 2026 is 42%, under 50%/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows nothing for a row that isn't marked", () => {
+    render(<ActivityDialog view={day({ status: "on-track", activity: 80 })} onClose={() => {}} />);
+    expect(screen.queryByText(/Low activity/)).not.toBeInTheDocument();
   });
 });

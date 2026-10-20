@@ -16,7 +16,6 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
-import { formatDuration } from "@/lib/format";
 import { useAuthStore } from "@/stores/auth.store";
 import { useDirectory } from "@/hooks/use-directory";
 import { projectNameMap } from "@/modules/projects/services/projects.service";
@@ -25,15 +24,12 @@ import {
   getTimeCorrections,
   type ApiCorrection,
 } from "../services/approvals.service";
+import { formatDate, formatDuration } from "@/lib/format";
+import { formatTimeOfDay } from "@/modules/attendance/lib/clock";
 
-const clock = (ms: number) =>
-  new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const day = (iso: string) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString([], {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+/** The viewer's clock and the shared date notation, like every other time page (TIME-14). */
+const clock = (ms: number) => formatTimeOfDay(ms);
+const day = (iso: string) => formatDate(iso, { weekday: true });
 const secs = (a: number, b: number) => Math.max(0, Math.round((b - a) / 1000));
 
 export function TimeCorrectionsQueue() {
@@ -184,11 +180,14 @@ export function TimeCorrectionsQueue() {
                     </span>
                   ) : (
                     <>
+                      {/* Named for the person and day (UX audit 2026-10-16, TIME-15): a list of
+                          identical "Approve" buttons said nothing about whose time they changed. */}
                       <Button
                         size="sm"
                         variant="outline"
                         disabled={busy === c.request_id}
                         onClick={() => setRejecting(c)}
+                        aria-label={`Reject ${name}'s time correction for ${day(c.date)}`}
                       >
                         <X className="size-4" /> Reject
                       </Button>
@@ -196,6 +195,7 @@ export function TimeCorrectionsQueue() {
                         size="sm"
                         disabled={busy === c.request_id}
                         onClick={() => void decide(c, "approve")}
+                        aria-label={`Approve ${name}'s time correction for ${day(c.date)}`}
                       >
                         {busy === c.request_id ? (
                           <Loader2 className="size-4 animate-spin" />

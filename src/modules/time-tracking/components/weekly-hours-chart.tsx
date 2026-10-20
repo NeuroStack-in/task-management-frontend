@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatHours } from "@/lib/format";
+import { formatDateRange, formatHours, isoDay } from "@/lib/format";
 import { MAX_WEEKS_BACK, useWeeklyHours } from "../use-weekly-hours";
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
@@ -33,9 +33,8 @@ function weekRangeLabel(base: Date, offset: number): string {
   d.setDate(d.getDate() - mondayDelta + offset * 7);
   const end = new Date(d);
   end.setDate(end.getDate() + 6);
-  const fmt = (x: Date) =>
-    x.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  return `${fmt(d)} – ${fmt(end)}`;
+  // The shared range notation (UX audit XC-06 / TIME-14): "12 – 18 Oct 2026".
+  return formatDateRange(isoDay(d), isoDay(end));
 }
 
 /**
@@ -165,13 +164,16 @@ export function WeeklyHoursChart({
                   tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 />
                 <YAxis
-                  // Ticks already carry "h", but the bars are stacked billable + other, so the
-                  // axis names what the stack height means rather than leaving it to the legend.
+                  // The bars are stacked billable + other, so the axis names what the stack height
+                  // means rather than leaving it to the legend.
                   {...yAxisLabel("Hours logged")}
                   tickLine={false}
                   axisLine={false}
-                  width={44}
-                  tickFormatter={(v) => `${v}h`}
+                  // `HH:MM:SS`, like the week total beside it: ticks read "0.75h" next to a
+                  // "01:00:00" total — two notations for one kind of amount (UX audit 2026-10-16,
+                  // TIME-14). Wide enough for the notation and the rotated axis name beside it.
+                  width={78}
+                  tickFormatter={(v: number) => formatHours(v)}
                   tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 />
                 <Tooltip

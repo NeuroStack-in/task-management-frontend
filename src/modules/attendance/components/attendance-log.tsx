@@ -29,6 +29,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { downloadBlob } from "@/lib/download";
 import { isFutureDate, monthMatrix, MONTH_NAMES, WEEKDAY_LABELS } from "../lib/calendar";
+import { formatTimeOfDay } from "../lib/clock";
+import { formatDate, formatMinutes } from "@/lib/format";
 import { useToday } from "../use-today";
 import type {
   OversightMode,
@@ -99,13 +101,17 @@ const STATUS_RANK: Record<string, number> = {
 };
 const statusRank = (s?: string) => STATUS_RANK[s ?? ""] ?? 99;
 
-/** Epoch ms → local `HH:MM`, or `—`. Client-only (the log renders after mount), so no SSR skew. */
-const fmtTime = (ms?: number) =>
-  ms
-    ? new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
-    : "—";
-/** Worked minutes → one-decimal hours, or `—`. */
-const fmtHours = (mins?: number) => (mins && mins > 0 ? (mins / 60).toFixed(1) : "—");
+/**
+ * Epoch ms → the viewer's clock, or `—`. Client-only (the log renders after mount), so no SSR skew.
+ * Not a forced 24-hour clock: every time on the time and attendance pages now follows the viewer's
+ * locale (UX audit 2026-10-16, TIME-14).
+ */
+const fmtTime = (ms?: number) => (ms ? formatTimeOfDay(ms) : "—");
+/**
+ * Worked minutes → `HH:MM:SS`, or `—`. It was one-decimal hours ("7.5") while the personal page and
+ * the timesheet beside it said "07:30:00" for the same kind of amount (UX audit 2026-10-16, TIME-14).
+ */
+const fmtHours = (mins?: number) => (mins && mins > 0 ? formatMinutes(mins) : "—");
 /**
  * Live worked hours for a row. A running row ticks as its completed sessions plus the open one,
  * counted from that session's own start (`runningSince`) — exact after a break and a restart, where
@@ -125,11 +131,10 @@ const fmtRowHours = (
 ): string => {
   if (r.running && typeof r.runningSince === "number") {
     const mins = (r.workedMinutes ?? 0) + Math.max(0, (now - r.runningSince) / 60_000);
-    return mins > 0 ? (mins / 60).toFixed(1) : "—";
+    return fmtHours(mins);
   }
   if (r.running && r.entryCount === 1 && typeof r.clockIn === "number") {
-    const h = Math.max(0, (now - r.clockIn) / 3_600_000);
-    return h > 0 ? h.toFixed(1) : "—";
+    return fmtHours(Math.max(0, (now - r.clockIn) / 60_000));
   }
   return fmtHours(r.workedMinutes);
 };
@@ -841,8 +846,10 @@ export interface SelectedDate {
   day: number;
 }
 
-const dateLabel = (d: SelectedDate) =>
-  `${MONTH_NAMES[d.month].slice(0, 3)} ${d.day}, ${d.year}`;
+/** The shared date notation (UX audit XC-06 / TIME-14) — it was a hand-built "Oct 14, 2026". */
+const isoOfDate = (d: SelectedDate) =>
+  `${d.year}-${String(d.month + 1).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
+const dateLabel = (d: SelectedDate) => formatDate(isoOfDate(d));
 
 export function LogDatePicker({
   value,
@@ -881,7 +888,14 @@ export function LogDatePicker({
       }}
     >
       <DropdownMenuTrigger
-        render={<Button variant="outline" size="sm" className="h-8 gap-1.5" />}
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5"
+            aria-label={`Pick a day — showing ${dateLabel(value)}`}
+          />
+        }
       >
         <CalendarDays className="size-4" />
         {dateLabel(value)}
@@ -910,7 +924,10 @@ export function LogDatePicker({
           </button>
         </div>
 
-        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-muted-foreground">
+        <div
+          className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-muted-foreground"
+          aria-hidden="true"
+        >
           {WEEKDAY_LABELS.map((d) => (
             <span key={d}>{d[0]}</span>
           ))}
@@ -930,6 +947,11 @@ export function LogDatePicker({
                 key={i}
                 type="button"
                 disabled={disabled}
+                // A bare "14" told a screen reader nothing about which month, or which is chosen
+                // (UX audit 2026-10-16, TIME-15).
+                aria-label={formatDate(isoOfDate(cell), { weekday: true })}
+                aria-pressed={selected}
+                aria-current={cell.isToday ? "date" : undefined}
                 onClick={() => {
                   onChange({
                     year: cell.year,

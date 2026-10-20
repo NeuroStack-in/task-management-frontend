@@ -16,7 +16,7 @@ import { DepartmentFilter } from "@/components/shared/department-filter";
 import { DatePicker } from "@/components/ui/date-picker";
 import { DeltaPill } from "@/components/shared/delta-pill";
 import { cn } from "@/lib/utils";
-import { todayIso } from "@/lib/format";
+import { formatDate, todayIso } from "@/lib/format";
 import { LogDatePicker } from "./attendance-log";
 import { attended, attendanceRate1dp } from "../lib/attended";
 import type {
@@ -305,14 +305,12 @@ function LegendItem({
   );
 }
 
-const MONTHS_ABBR = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-/** Format an ISO date (`2026-07-03`) as `Jul 3`, parsing the string directly (no `Date` in render). */
+/**
+ * An ISO date (`2026-07-03`) in the shared notation without the year ("3 Jul" / "Jul 3", per the
+ * viewer's locale) — UX audit XC-06 / TIME-14. Safe in render: the series only exists after a read.
+ */
 function fmtDay(iso: string): string {
-  const [, m, d] = iso.split("-").map(Number);
-  return `${MONTHS_ABBR[m - 1] ?? "?"} ${d}`;
+  return formatDate(iso, { year: false });
 }
 
 /**
@@ -416,28 +414,40 @@ function TrendBars({
       {/* One column per day: a faint full-height track (the 0–100 scale) with a bottom-anchored fill
           whose height is the day's attendance rate — so a low day reads as a short fill in a tall
           track, not a floating pill. */}
-      <div className="relative flex h-28 items-stretch gap-[3px]">
-        {series.map((p) => (
-          <div
+      {/* A list, each bar carrying its own sentence: the per-day figures were only in `title`
+          tooltips, which a keyboard or screen reader never reaches (UX audit 2026-10-16, TIME-15). */}
+      <ul
+        className="relative flex h-28 items-stretch gap-[3px]"
+        aria-label={`Attendance by day${benchmarkRate !== null ? `, average ${benchmarkRate}%` : ""}`}
+      >
+        {series.map((p) => {
+          // The rate counts partial days as attended (lib/attended), so the fraction beside it
+          // must too — "75% present (2/4)" paired a rate with a count that disagreed (WP-476).
+          const story = `${formatDate(p.iso, { weekday: true, year: false })} — ${p.rate}% attended (${
+            p.present + p.partial
+          } of ${p.total}${p.partial ? `, ${p.partial} partial` : ""}${
+            p.leave ? `, ${p.leave} on leave` : ""
+          })`;
+          return (
+          <li
             key={p.iso}
             className="flex flex-1 items-end overflow-hidden rounded-t-md bg-muted/50"
-            // The rate counts partial days as attended (lib/attended), so the fraction beside it
-            // must too — "75% present (2/4)" paired a rate with a count that disagreed (WP-476).
-            title={`${fmtDay(p.iso)} — ${p.rate}% attended (${p.present + p.partial}/${p.total}${
-              p.partial ? `, ${p.partial} partial` : ""
-            }${p.leave ? `, ${p.leave} on leave` : ""})`}
+            title={story}
           >
+            <span className="sr-only">{story}</span>
             <div
+              aria-hidden="true"
               className={cn(
                 "w-full rounded-t-md transition-[filter] hover:brightness-90",
                 band(p.rate),
               )}
               style={{ height: `${Math.max(3, p.rate)}%` }}
             />
-          </div>
-        ))}
-      </div>
-      <div className="flex justify-between text-[11px] text-muted-foreground">
+          </li>
+          );
+        })}
+      </ul>
+      <div className="flex justify-between text-[11px] text-muted-foreground" aria-hidden="true">
         <span>{fmtDay(series[0].iso)}</span>
         {benchmarkRate !== null ? (
           <span className="tabular-nums">avg {benchmarkRate}%</span>

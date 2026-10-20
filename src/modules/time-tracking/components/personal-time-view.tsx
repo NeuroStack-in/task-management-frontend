@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowDown,
+  Wallet,
   CalendarDays,
   BadgeDollarSign,
   Clock,
@@ -34,8 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDuration } from "@/lib/format";
-import { formatHours } from "@/lib/format";
+import { formatDate, formatDuration, formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useTrackingMode } from "@/hooks/use-features";
 import { useAssistantPageContext } from "@/stores/page-context.store";
@@ -48,7 +49,7 @@ import { TimerHero } from "./timer-hero";
 import { WeeklyHoursChart } from "./weekly-hours-chart";
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { PageActions } from "@/components/shared/page-actions";
-import { PayrollWidget } from "./payroll-widget";
+import { PayrollWidget, PayslipsLink } from "./payroll-widget";
 import { TimeCorrectionDialog } from "./time-correction-dialog";
 import { MyCorrections } from "./my-corrections";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -123,14 +124,9 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   const [todayIso, setTodayIso] = useState("");
   useEffect(() => {
     const now = new Date();
-    setToday(
-      now.toLocaleDateString(undefined, {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      }),
-    );
+    // The shared date notation (UX audit XC-06 / TIME-14) — this card said "Tuesday, 20 October
+    // 2026" above a history that said "Oct 19".
+    setToday(formatDate(now, { weekday: true }));
     const p = (n: number) => String(n).padStart(2, "0");
     setTodayIso(`${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`);
   }, []);
@@ -211,6 +207,13 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
         todayTotalSec={settledSec}
         machine={isMachine}
       />
+
+      {/* Phones fold the header's actions behind "…", so the way to payslips — which sit at the
+          foot of this page — is repeated here, where it can be seen (UX audit 2026-10-16, TIME-19). */}
+      <PayslipsLink className="text-primary -mt-3 inline-flex items-center gap-1.5 text-sm font-medium hover:underline sm:hidden">
+        <Wallet className="size-4" /> My payslips
+        <ArrowDown className="size-3.5" />
+      </PayslipsLink>
 
       {/* `time:sessions` is marked in BOTH branches of /time-tracking — PersonalTimeView here and
           TeamTimeView for anyone who can manage a team. A marker in only one is invisible to half

@@ -9,7 +9,13 @@ import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -38,6 +44,7 @@ import { DeductionsCard } from "./deductions-card";
 import { SetCompensationCard } from "./set-compensation-card";
 import { RunLinesCard } from "./run-lines-card";
 import type { ApiPayrollRun } from "../services/payroll.service";
+import { lastCompletedPeriod, periodLabel, recentPeriods } from "../lib/periods";
 
 const STATUS_META: Record<string, string> = {
   draft: "bg-warning/15 text-warning",
@@ -59,12 +66,6 @@ export function monthHasEnded(period: string, now: string = thisMonth()): boolea
   return period < now;
 }
 
-/** YYYY-MM → "August 2026". */
-function periodLabel(period: string): string {
-  const [y, m] = period.split("-").map(Number);
-  if (!y || !m) return period;
-  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-}
 
 export function PayrollView() {
   // Every amount in the org's own currency (WP-078).
@@ -85,7 +86,13 @@ export function PayrollView() {
   } = usePayroll();
 
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
-  const [newPeriod, setNewPeriod] = useState("");
+  // A month picker, not free text (UX audit 2026-10-16, TIME-20): "YYYY-MM" typed by hand was easy
+  // to get wrong, and a wrong month drafts a run that can't be deleted. Defaults to the last month
+  // that has ended — the only kind that can be finalized. Read once on the client (the picker is
+  // never in the server render: the page shows a loader until payroll has loaded).
+  const [now] = useState(() => new Date());
+  const periodOptions = useMemo(() => recentPeriods(now), [now]);
+  const [newPeriod, setNewPeriod] = useState(() => lastCompletedPeriod(now));
   const [busy, setBusy] = useState(false);
   /** The period awaiting a confirmed Finalize — finalizing is not reversible (WP-270). */
   const [confirmPeriod, setConfirmPeriod] = useState<string | null>(null);
@@ -96,6 +103,16 @@ export function PayrollView() {
     if (!runs.length) return null;
     return runs.find((r) => r.period === selectedPeriod) ?? runs[0];
   }, [runs, selectedPeriod]);
+
+  // What the picked month already holds, so the picker and button can say so before a click.
+  const runByPeriod = useMemo(() => new Map(runs.map((r) => [r.period, r] as const)), [runs]);
+  const chosenRun = runByPeriod.get(newPeriod) ?? null;
+  const draftNote =
+    chosenRun?.status === "final"
+      ? `${periodLabel(newPeriod)} is finalized — its payslips are issued and it can't be redrafted.`
+      : !monthHasEnded(newPeriod)
+        ? `${periodLabel(newPeriod)} hasn't ended — a draft now is a preview, and it can be finalized once the month is over.`
+        : null;
 
   // Publish the selected pay run's figures to the assistant.
   useAssistantPageContext({
@@ -114,18 +131,18 @@ export function PayrollView() {
   });
 
   async function handleDraft() {
-    const p = newPeriod.trim();
+    const p = newPeriod;
     // A real month only — "2026-13" used to pass, sort above December, read as "January 2027" and
-    // stay forever (no delete route). The server now checks too (WP-269).
+    // stay forever (no delete route). The picker offers only real months; the server checks too
+    // (WP-269).
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(p)) {
-      toast.error("Enter a period as YYYY-MM, e.g. 2026-09.");
+      toast.error("Pick the month to draft.");
       return;
     }
     setBusy(true);
     try {
       const run = await draft(p);
       setSelectedPeriod(run.period);
-      setNewPeriod("");
       toast.success(`Drafted ${periodLabel(run.period)}`, {
         description: `Gross ${formatCurrency(run.gross, currency)} · net ${formatCurrency(run.net, currency)}`,
       });
@@ -201,30 +218,62 @@ export function PayrollView() {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Net pay" value={formatCurrency(selected.net, currency)} icon={Wallet} hint={periodLabel(selected.period)} featured />
           <StatCard label="Gross pay" value={formatCurrency(selected.gross, currency)} icon={Banknote} hint={`${formatCurrency(selected.deductions, currency)} deductions`} />
-          <StatCard label="Deductions" value={formatCurrency(selected.deductions, currency)} icon={Receipt} hint={`${deductions.length} rules`} />
+          {/* The run's own figures only. This said "{n} rules" — today's rule count, under the
+              deductions of a run that may have been drafted under other rules (TIME-20). */}
+          <StatCard
+            label="Deductions"
+            value={formatCurrency(selected.deductions, currency)}
+            icon={Receipt}
+            hint={
+              selected.gross > 0
+                ? `${Math.round((selected.deductions / selected.gross) * 100)}% of gross`
+                : "on this run"
+            }
+          />
           <StatCard label="Status" value={selected.status === "final" ? "Final" : "Draft"} icon={CheckCircle2} hint={selected.status === "final" ? "settled" : "not settled"} />
         </div>
       ) : null}
 
       {/* Draft a new run */}
       {canManage ? (
-        <div className="flex flex-col gap-2 rounded-lg border bg-card p-4 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-center">
           <div className="flex-1">
             <p className="text-sm font-medium">Draft a pay run</p>
             <p className="text-xs text-muted-foreground">
-              Computes totals from each employee&apos;s comp minus the deduction rules below.
+              Computes each employee&apos;s pay from their comp, minus the deduction rules below as
+              they stand now. Redrafting a draft recomputes it; a finalized month can&apos;t be redrafted.
             </p>
+            {draftNote ? <p className="mt-1 text-xs text-muted-foreground">{draftNote}</p> : null}
           </div>
-          <div className="flex items-center gap-2">
-            <Input
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
               value={newPeriod}
-              onChange={(e) => setNewPeriod(e.target.value)}
-              placeholder="2026-09"
-              aria-label="Pay period (YYYY-MM)"
-              className="w-32"
-            />
-            <Button onClick={handleDraft} disabled={busy}>
-              <Plus className="size-4" /> Draft run
+              onValueChange={(v) => setNewPeriod(v as string)}
+              items={Object.fromEntries(periodOptions.map((p) => [p, periodLabel(p)]))}
+            >
+              <SelectTrigger className="w-44" aria-label="Month to draft">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {periodOptions.map((p) => {
+                  const run = runByPeriod.get(p);
+                  return (
+                    <SelectItem key={p} value={p} disabled={run?.status === "final"}>
+                      {periodLabel(p)}
+                      {run?.status === "final"
+                        ? " · finalized"
+                        : run
+                          ? " · draft"
+                          : !monthHasEnded(p)
+                            ? " · in progress"
+                            : ""}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            <Button onClick={handleDraft} disabled={busy || chosenRun?.status === "final"}>
+              <Plus className="size-4" /> {chosenRun ? "Redraft" : "Draft run"}
             </Button>
           </div>
         </div>
@@ -244,7 +293,14 @@ export function PayrollView() {
               className="m-4 border-0"
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div
+              // A named, focusable scroll region, so the columns past the edge are reachable without
+              // a pointer (UX audit 2026-10-16, TIME-15).
+              className="overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+              role="region"
+              aria-label="Pay runs"
+              tabIndex={0}
+            >
               <table className="w-full text-sm">
                 <TableHeader>
                   <TableRow>

@@ -44,7 +44,7 @@ export interface TimesheetRow {
   /** What the person typed in the agent. The server folds entries by (project, description). */
   description: string;
   project: string;
-  /** Local `HH:MM`. */
+  /** Local start time, in the viewer's clock (`clockOf`) — display only. */
   start: string;
   /**
    * Epoch **ms** the session started — the agent's exact stamp, straight from the server.
@@ -54,7 +54,7 @@ export interface TimesheetRow {
    * up to 59 s ahead of the desktop agent's own timer for the same session.
    */
   startMs: number;
-  /** Local `HH:MM`, or null while the session is still running. */
+  /** Local end time in the viewer's clock, or null while the session is still running. */
   end: string | null;
   /** Seconds. 0 for a running session — it has not yet contributed any settled time. */
   durationSec: number;

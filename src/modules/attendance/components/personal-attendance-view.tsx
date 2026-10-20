@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, CalendarCheck, Clock, CalendarOff, Plane } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarCheck, CalendarX2, Clock, CalendarOff, Plane } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { StatCard } from "@/components/shared/stat-card";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth.store";
@@ -34,7 +36,7 @@ import {
   ymd,
   type MyAttendanceRange,
 } from "../use-my-attendance";
-import { formatHours, formatMinutes } from "@/lib/format";
+import { formatDate, formatHours, formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<
@@ -94,8 +96,6 @@ function dayStatusTextColor(status: string, late: boolean): string {
 function dayStatusDot(status: string, late: boolean): string {
   return status === "present" && late ? LATE_DOT : statusMeta(status).dot;
 }
-
-const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
  * The org's expected working day, in minutes (declared span − unpaid break) — the denominator the
@@ -236,12 +236,11 @@ export function PersonalAttendanceView() {
   // back across the fetched window and takes up to 10 resolved workdays; an unclosed day is skipped
   // rather than shown blank, and the walk is bounded so it can't run past the fetched range.
   const recent = useMemo(() => {
-    const out: { key: string; label: string; status: DayStatus; late: boolean; clockIn: string; clockOut: string; hours: number; holiday: string | undefined }[] = [];
+    const out: { key: string; iso: string; status: DayStatus; late: boolean; clockIn: string; clockOut: string; hours: number; holiday: string | undefined }[] = [];
     const cursor = new Date(now.year, now.month, now.day);
     let guard = 0;
     while (out.length < 10 && guard < 40) {
       guard += 1;
-      const wd = cursor.getDay();
       const rec = recentData.recordFor(
         cursor.getFullYear(),
         cursor.getMonth(),
@@ -253,7 +252,8 @@ export function PersonalAttendanceView() {
       if (rec && (isWorkday(cursor, workdays) || isCounted(rec.status))) {
         out.push({
           key: `${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`,
-          label: `${SHORT_DAY[wd]} ${MONTH_NAMES[cursor.getMonth()].slice(0, 3)} ${cursor.getDate()}`,
+          // Labelled with the shared date notation at render (UX audit 2026-10-16, TIME-14 / XC-06).
+          iso: ymd(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()),
           status: rec.status,
           late: rec.late,
           clockIn: rec.clockIn,
@@ -289,8 +289,8 @@ export function PersonalAttendanceView() {
   if (!user) return null;
 
   return (
-    // Bottom room for the floating assistant button (UX audit 2026-10-16, TIME-12 / XC-03).
-    <div className="space-y-5 pt-1 pb-20">
+    // No bottom padding of its own: the shell reserves the assistant button's room (XC-03).
+    <div className="space-y-5 pt-1">
       <PageHeader
         title="My attendance"
         // Not "only you can see this": managers and admins read the same records and can export them
@@ -316,8 +316,12 @@ export function PersonalAttendanceView() {
         </div>
       ) : null}
 
-      {/* `att:summary` is marked in BOTH branches of /attendance — here and in the org view. */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="att:summary">
+      {/* `att:summary` is marked in BOTH branches of /attendance — here and in the org view.
+          Five tiles: leave and absences are separate facts and get one each (TIME-13). */}
+      <div
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+        data-tour="att:summary"
+      >
         <StatCard
           label="Attendance rate"
           // No closed day yet (the 1st of the month) is no rate, not 0 %.
@@ -345,11 +349,21 @@ export function PersonalAttendanceView() {
           icon={Clock}
           hint={ready ? "this month" : tileHint}
         />
+        {/* Leave is leave and an absence is an absence (UX audit 2026-10-16, TIME-13). One "Time
+            off" tile under a plane icon added the two together, so two unexplained absences read
+            as "Time off 2" — as if they were approved holidays. */}
         <StatCard
-          label="Time off"
-          value={ready ? summary.leave + summary.absent : "—"}
+          label="Leave taken"
+          value={ready ? summary.leave : "—"}
           icon={Plane}
-          hint={ready ? `${summary.leave} leave · ${summary.absent} absent` : tileHint}
+          hint={ready ? `approved day${summary.leave === 1 ? "" : "s"} off` : tileHint}
+        />
+        <StatCard
+          label="Absences"
+          value={ready ? summary.absent : "—"}
+          icon={CalendarX2}
+          // What `absent` is, server-side: a scheduled workday with no tracked time and no leave.
+          hint={ready ? "workdays with no time or leave" : tileHint}
         />
       </div>
 
@@ -393,7 +407,8 @@ export function PersonalAttendanceView() {
         </CardHeader>
 
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-7 gap-1.5">
+          {/* Each cell names its own weekday for a screen reader (TIME-15), so this row is visual. */}
+          <div className="grid grid-cols-7 gap-1.5" aria-hidden="true">
             {WEEKDAY_LABELS.map((d) => (
               <div
                 key={d}
@@ -404,7 +419,11 @@ export function PersonalAttendanceView() {
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-1.5">
+          <div
+            className="grid grid-cols-7 gap-1.5"
+            role="group"
+            aria-label={`${MONTH_NAMES[view.month]} ${view.year}, day by day`}
+          >
             {weeks.flat().map((cell, i) => (
               <PersonalDayCell
                 key={i}
@@ -448,170 +467,188 @@ export function PersonalAttendanceView() {
 
       {/* Personal recent log */}
       <Card className="gap-0 p-0 [--card-spacing:0px]">
-        <div className="flex items-center gap-2 border-b border-border px-5 py-4">
-          <CalendarOff className="size-4 text-muted-foreground" />
-          <h2 className="font-display text-base font-semibold tracking-tight">
-            Recent days
-          </h2>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-5 py-4">
+          <div className="flex items-center gap-2">
+            <CalendarOff className="size-4 text-muted-foreground" />
+            <h2 className="font-display text-base font-semibold tracking-tight">
+              Recent days
+            </h2>
+          </div>
+          {/* What the bar means, said once and visibly — it was a "Hours worked" percentage beside a
+              separate Hours column, the same figure twice, explained only in a tooltip (TIME-18). */}
+          <p className="text-xs text-muted-foreground">
+            Bars show each day against your organization&apos;s {formatMinutes(expectedMin)}{" "}
+            working day.
+          </p>
         </div>
-        {/* Phones: one card per day. Clock in/out and Hours were past the right edge of a 390 px
-            screen behind an unlabelled sideways scroll (UX audit 2026-10-16, TIME-12 / XC-05). */}
-        <ul className="divide-y divide-border sm:hidden" aria-label="Recent days">
-          {recent.map((r) => {
-            const meta = statusMeta(r.status);
-            const logged = r.hours > 0 && r.clockIn && r.clockOut;
-            const fillPct =
-              r.hours > 0 ? Math.min(100, ((r.hours * 60) / expectedMin) * 100) : 0;
-            return (
-              <li key={r.key} className="space-y-2 px-5 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 font-medium">
-                    {r.label}
-                    {r.holiday ? <HolidayBadge name={r.holiday} /> : null}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-sm">
-                    <span className={cn("size-2 rounded-full", dayStatusDot(r.status, r.late))} />
-                    <span className={cn("font-medium", dayStatusTextColor(r.status, r.late))}>
-                      {dayStatusLabel(r.status, r.late)}
-                    </span>
-                  </span>
-                </div>
-                {r.hours > 0 ? (
-                  <div className="flex items-center gap-2">
-                    <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={cn("absolute inset-y-0 left-0 rounded-full", meta.dot)}
-                        style={{ width: `${Math.max(fillPct, 2)}%` }}
-                      />
-                    </div>
-                    <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                      {Math.round(fillPct)}%
-                    </span>
-                  </div>
-                ) : null}
-                <dl className="grid grid-cols-3 gap-2 text-xs">
-                  <div>
-                    <dt className="text-muted-foreground">Clock in</dt>
-                    <dd className="font-medium tabular-nums">{logged ? r.clockIn : "—"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Clock out</dt>
-                    <dd className="font-medium tabular-nums">{logged ? r.clockOut : "—"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Hours</dt>
-                    <dd className="font-medium tabular-nums">
-                      {r.hours > 0 ? formatHours(r.hours) : "—"}
-                    </dd>
-                  </div>
-                </dl>
-              </li>
-            );
-          })}
-        </ul>
-        <div
-          className="hidden overflow-x-auto focus-visible:outline-2 focus-visible:outline-ring sm:block"
-          role="region"
-          aria-label="Recent days"
-          tabIndex={0}
-        >
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                <th scope="col" className="whitespace-nowrap px-5 py-2.5 font-medium">
-                  Date
-                </th>
-                <th scope="col" className="whitespace-nowrap px-5 py-2.5 font-medium">
-                  Status
-                </th>
-                <th scope="col" className="w-full px-3 py-2.5 font-medium">
-                  Hours worked
-                </th>
-                <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
-                  Clock in
-                </th>
-                <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
-                  Clock out
-                </th>
-                <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
-                  Hours
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
+        {/* Loading and empty are states of their own (UX audit 2026-10-16, TIME-18): the list used
+            to render nothing at all until the read landed, and nothing at all when it was empty. */}
+        {!recentData.loaded && !recentData.error ? (
+          <div className="space-y-2 p-5" aria-busy="true" aria-label="Loading recent days">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full" />
+            ))}
+          </div>
+        ) : recentData.error && !recentData.loaded ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-6 text-sm">
+            <span className="text-muted-foreground">
+              Your recent days couldn&apos;t be loaded. {recentData.error}
+            </span>
+            <Button variant="outline" size="sm" onClick={recentData.reload}>
+              Retry
+            </Button>
+          </div>
+        ) : recent.length === 0 ? (
+          <EmptyState
+            icon={CalendarOff}
+            title="No closed days yet"
+            description="Each workday appears here after the nightly close settles it — today shows up tomorrow."
+            className="m-4 border-0"
+          />
+        ) : (
+          <>
+            {/* Phones: one card per day. Clock in/out and Hours were past the right edge of a 390 px
+                screen behind an unlabelled sideways scroll (UX audit 2026-10-16, TIME-12 / XC-05). */}
+            <ul className="divide-y divide-border sm:hidden" aria-label="Recent days">
               {recent.map((r) => {
-                const meta = statusMeta(r.status);
-                // Clock columns still show times only when both punches exist.
                 const logged = r.hours > 0 && r.clockIn && r.clockOut;
-                // Day-completion: hours worked as a share of the expected day, capped at 100%.
-                const fillPct =
-                  r.hours > 0 ? Math.min(100, ((r.hours * 60) / expectedMin) * 100) : 0;
                 return (
-                  <tr key={r.key} className="transition-colors hover:bg-muted/40">
-                    <td className="whitespace-nowrap px-5 py-3 font-medium">
-                      <span className="flex items-center gap-2">
-                        {r.label}
+                  <li key={r.key} className="space-y-2 px-5 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="flex items-center gap-2 font-medium">
+                        {formatDate(r.iso, { weekday: true, year: false })}
                         {r.holiday ? <HolidayBadge name={r.holiday} /> : null}
                       </span>
-                    </td>
-                    {/* Status reflects the *resolved* verdict, including the late qualifier: a
-                        present-but-late day reads "Late", a short day "Partial", etc. — never a flat
-                        "Present" for everything. */}
-                    <td className="whitespace-nowrap px-5 py-3">
-                      <span className="flex items-center gap-1.5">
+                      <span className="flex items-center gap-1.5 text-sm">
                         <span className={cn("size-2 rounded-full", dayStatusDot(r.status, r.late))} />
                         <span className={cn("font-medium", dayStatusTextColor(r.status, r.late))}>
                           {dayStatusLabel(r.status, r.late)}
                         </span>
                       </span>
-                    </td>
-                    {/* Day-completion bar: fills from the left toward the org's expected day, so a
-                        short day reads as a short bar. Coloured by status (green present / amber
-                        partial), matching the same threshold that decides present vs partial. */}
-                    <td className="px-3 py-3">
-                      <div
-                        className="flex items-center gap-2"
-                        title={
-                          r.hours > 0
-                            ? `${formatHours(r.hours)} of a ${formatMinutes(expectedMin)} day`
-                            : undefined
-                        }
-                      >
-                        <div className="relative h-1.5 w-full min-w-[7rem] overflow-hidden rounded-full bg-muted">
-                          {r.hours > 0 ? (
-                            <div
-                              className={cn("absolute inset-y-0 left-0 rounded-full", meta.dot)}
-                              style={{ width: `${Math.max(fillPct, 2)}%` }}
-                            />
-                          ) : null}
-                        </div>
-                        <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                          {r.hours > 0 ? `${Math.round(fillPct)}%` : "—"}
-                        </span>
+                    </div>
+                    <HoursWorked hours={r.hours} status={r.status} expectedMin={expectedMin} />
+                    <dl className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <dt className="text-muted-foreground">Clock in</dt>
+                        <dd className="font-medium tabular-nums">{logged ? r.clockIn : "—"}</dd>
                       </div>
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-muted-foreground">
-                      {logged ? r.clockIn : "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-muted-foreground">
-                      {logged ? r.clockOut : "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums">
-                      {/* Hours come from attendance (worked_minutes) and exist without clock
-                          punches — so this is gated on hours, not on `logged`. */}
-                      {r.hours > 0 ? (
-                        <span className="font-medium">{formatHours(r.hours)}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </td>
-                  </tr>
+                      <div>
+                        <dt className="text-muted-foreground">Clock out</dt>
+                        <dd className="font-medium tabular-nums">{logged ? r.clockOut : "—"}</dd>
+                      </div>
+                    </dl>
+                  </li>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </ul>
+            <div
+              className="hidden overflow-x-auto focus-visible:outline-2 focus-visible:outline-ring sm:block"
+              role="region"
+              aria-label="Recent days"
+              tabIndex={0}
+            >
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <th scope="col" className="whitespace-nowrap px-5 py-2.5 font-medium">
+                      Date
+                    </th>
+                    <th scope="col" className="whitespace-nowrap px-5 py-2.5 font-medium">
+                      Status
+                    </th>
+                    {/* One column for the day's hours — the figure, with the bar beside it. */}
+                    <th scope="col" className="w-full px-3 py-2.5 font-medium">
+                      Hours worked
+                    </th>
+                    <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
+                      Clock in
+                    </th>
+                    <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
+                      Clock out
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {recent.map((r) => {
+                    // Clock columns still show times only when both punches exist.
+                    const logged = r.hours > 0 && r.clockIn && r.clockOut;
+                    return (
+                      <tr key={r.key} className="transition-colors hover:bg-muted/40">
+                        <td className="whitespace-nowrap px-5 py-3 font-medium">
+                          <span className="flex items-center gap-2">
+                            {formatDate(r.iso, { weekday: true, year: false })}
+                            {r.holiday ? <HolidayBadge name={r.holiday} /> : null}
+                          </span>
+                        </td>
+                        {/* Status reflects the *resolved* verdict, including the late qualifier: a
+                            present-but-late day reads "Late", a short day "Partial", etc. — never a
+                            flat "Present" for everything. */}
+                        <td className="whitespace-nowrap px-5 py-3">
+                          <span className="flex items-center gap-1.5">
+                            <span className={cn("size-2 rounded-full", dayStatusDot(r.status, r.late))} />
+                            <span className={cn("font-medium", dayStatusTextColor(r.status, r.late))}>
+                              {dayStatusLabel(r.status, r.late)}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <HoursWorked hours={r.hours} status={r.status} expectedMin={expectedMin} />
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-muted-foreground">
+                          {logged ? r.clockIn : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-muted-foreground">
+                          {logged ? r.clockOut : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </Card>
+    </div>
+  );
+}
+
+/**
+ * A day's hours worked: the `HH:MM:SS` figure, with a bar filling toward the org's expected day.
+ *
+ * One figure, not two (UX audit 2026-10-16, TIME-18). The row used to carry a percentage bar under
+ * "Hours worked" *and* a separate "Hours" column — the same amount said twice, the percentage
+ * explained only in a hover tooltip. The bar stays because "short day" is easiest to see as a short
+ * bar; its meaning is in the card header, and its share is in the accessible name.
+ *
+ * Hours come from attendance (`worked_minutes`) and exist without clock punches, so this is gated on
+ * hours, never on the punches. Coloured by status (green present / amber partial), matching the same
+ * threshold that decides present vs partial.
+ */
+function HoursWorked({
+  hours,
+  status,
+  expectedMin,
+}: {
+  hours: number;
+  status: string;
+  expectedMin: number;
+}) {
+  if (hours <= 0) return <span className="text-muted-foreground">—</span>;
+  const fillPct = Math.min(100, ((hours * 60) / expectedMin) * 100);
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className="relative h-1.5 w-full min-w-[5rem] overflow-hidden rounded-full bg-muted"
+        role="img"
+        aria-label={`${Math.round(fillPct)}% of a ${formatMinutes(expectedMin)} day`}
+      >
+        <div
+          className={cn("absolute inset-y-0 left-0 rounded-full", statusMeta(status).dot)}
+          style={{ width: `${Math.max(fillPct, 2)}%` }}
+        />
+      </div>
+      <span className="shrink-0 text-right font-medium tabular-nums">{formatHours(hours)}</span>
     </div>
   );
 }
@@ -637,33 +674,52 @@ function PersonalDayCell({
   // A day off is hatched unless it was worked: then it closed as a counted day (`present`), and the
   // hatch hid that work and its hours (QA audit 2026-10-08, WP-260).
   const workedOff = !cell.isWorkday && rec !== null && isCounted(rec.status);
+  // The cell's whole story as one sentence, for a screen reader (UX audit 2026-10-16, TIME-15). It
+  // used to live only in a `title` tooltip, which neither a keyboard nor a screen reader reaches —
+  // the cell announced a bare "14". The visible pieces are hidden from assistive tech instead, so
+  // the date is not read twice. The same sentence stays as the hover tooltip.
+  const dateText = formatDate(ymd(cell.year, cell.month, cell.day), { weekday: true });
+  const holidayText = holidayName ? `Holiday: ${holidayName}` : "";
 
   if ((!cell.isWorkday && !workedOff) || beforeStart) {
+    const story = [
+      dateText,
+      beforeStart ? "before you joined" : holidayText || "day off",
+    ].join(": ");
     return (
       <div
         className={cn(
           "wp-hatch flex min-h-[3.5rem] flex-col gap-1 rounded-xl p-2",
           !cell.inMonth && "opacity-50",
         )}
-        title={
-          beforeStart
-            ? `${cell.day}: before you joined`
-            : holidayName
-              ? `Holiday: ${holidayName}`
-              : undefined
-        }
+        title={story}
+        // A neighbouring month's day is context for the eye only.
+        aria-hidden={!cell.inMonth || undefined}
       >
-        <span className="text-xs font-semibold leading-none tabular-nums text-muted-foreground">
+        <span className="sr-only">{story}</span>
+        <span
+          aria-hidden="true"
+          className="text-xs font-semibold leading-none tabular-nums text-muted-foreground"
+        >
           {cell.day}
         </span>
         {!beforeStart && holidayName ? (
-          <HolidayBadge name={holidayName} showIcon={false} className="mt-auto self-start px-1" />
+          <span aria-hidden="true" className="mt-auto self-start">
+            <HolidayBadge name={holidayName} showIcon={false} className="px-1" />
+          </span>
         ) : null}
       </div>
     );
   }
 
   const meta = rec ? statusMeta(rec.status) : null;
+  const story = rec
+    ? `${dateText}: ${dayStatusLabel(rec.status, rec.late)}${
+        rec.hours > 0 ? `, ${formatHours(rec.hours)} worked` : ""
+      }${holidayText ? ` · ${holidayText}` : ""}${workedOff ? " · worked on a day off" : ""}`
+    : `${dateText}${cell.isToday ? ": today, closes tonight" : future ? "" : ": no record yet"}${
+        holidayText ? ` · ${holidayText}` : ""
+      }`;
 
   return (
     <div
@@ -672,15 +728,11 @@ function PersonalDayCell({
         meta ? `${meta.tile} ring-inset` : "bg-card ring-border",
         cell.isToday && "ring-2 ring-primary",
       )}
-      title={
-        rec
-          ? `${cell.day}: ${meta!.label}${rec.late ? " (late)" : ""} · ${formatHours(rec.hours)}${holidayName ? ` · Holiday: ${holidayName}` : ""}${workedOff ? " · worked on a day off" : ""}`
-          : holidayName
-            ? `${cell.day} · Holiday: ${holidayName}`
-            : `${cell.day}`
-      }
+      title={story}
+      aria-hidden={!cell.inMonth || undefined}
     >
-      <div className="flex items-start justify-between gap-1">
+      <span className="sr-only">{story}</span>
+      <div aria-hidden="true" className="flex items-start justify-between gap-1">
         <span
           className={cn(
             "text-sm font-semibold leading-none tabular-nums",
@@ -695,7 +747,7 @@ function PersonalDayCell({
           Absent / Day off — `late` qualifies present per LLD §7) plus the hours when any were worked.
           Before this a present/partial day showed only its hours, indistinguishable from each other. */}
       {rec ? (
-        <div className="flex items-end justify-between gap-1">
+        <div aria-hidden="true" className="flex items-end justify-between gap-1">
           <span
             className={cn(
               // `min-w-0 truncate`: the figure beside this is `shrink-0` and got wider when the
@@ -708,8 +760,11 @@ function PersonalDayCell({
           >
             {dayStatusLabel(rec.status, rec.late)}
           </span>
+          {/* Not on a phone: a 390 px month cell is ~44 px wide, and `03:10:00` spilled out of it
+              over the next day. The day's hours are in Recent days below and in the cell's
+              screen-reader sentence; the status word keeps the room. */}
           {rec.hours > 0 ? (
-            <span className="shrink-0 text-[11px] font-medium tabular-nums text-foreground/70">
+            <span className="hidden shrink-0 text-[11px] font-medium tabular-nums text-foreground/70 sm:inline">
               {formatHours(rec.hours)}
             </span>
           ) : null}

@@ -32,7 +32,7 @@ import {
   UNASSIGNED_DEPT,
   type ApiEmployee,
 } from "@/modules/employees/services/employees.service";
-import { UNKNOWN_DEPARTMENT, UNKNOWN_PROJECT } from "@/lib/format";
+import { formatDateRange, UNKNOWN_DEPARTMENT, UNKNOWN_PROJECT } from "@/lib/format";
 import { listProjects } from "@/modules/projects/services/projects.service";
 import { getUserActivity } from "@/modules/insights/services/insights.service";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
@@ -79,20 +79,6 @@ function isForbidden(e: unknown): boolean {
   );
 }
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 const pad2 = (n: number) => String(n).padStart(2, "0");
 /** Local `YYYY-MM-DD` (not `toISOString()`, which shifts to UTC and can hand back yesterday). */
 const isoLocal = (d: Date) =>
@@ -175,18 +161,9 @@ function weekOf(
  * Reads the **last element**, not `dates[6]`: a month is 28-31 dates, and indexing the seventh
  * would have labelled every month as its first week while the grid showed the whole thing.
  */
+/** "12 – 18 Oct 2026" — the shared range notation (UX audit XC-06 / TIME-14), not a hand-built one. */
 function weekLabelOf(dates: string[]): string {
-  const parse = (iso: string) => {
-    const [y, m, d] = iso.split("-").map(Number);
-    return { y, m: m - 1, d };
-  };
-  const a = parse(dates[0]);
-  const b = parse(dates[dates.length - 1]);
-  const m0 = MONTHS[a.m];
-  const m1 = MONTHS[b.m];
-  return a.m === b.m
-    ? `${m0} ${a.d} – ${b.d}, ${b.y}`
-    : `${m0} ${a.d} – ${m1} ${b.d}, ${b.y}`;
+  return formatDateRange(dates[0], dates[dates.length - 1]);
 }
 
 interface Fetched {
@@ -545,7 +522,10 @@ export function useTeamTimesheet(
         trackedHrs,
         days: agg.days,
         dayEntries: agg.dayEntries,
-        status: trackedHrs > 0 ? "on-track" : "flagged",
+        // Never flagged. A project has no activity score, and "no hours this period" is not a
+        // problem — a red "Flagged" on a quiet project said there was one (UX audit 2026-10-16,
+        // TIME-16). A project with no hours in the period doesn't get a row at all anyway.
+        status: "on-track",
       };
     });
 

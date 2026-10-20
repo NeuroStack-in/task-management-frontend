@@ -44,6 +44,7 @@ import { beforeLateThreshold, orgClockAt } from "./lib/org-clock";
 import { useOrgMetaStore } from "@/stores/org-meta.store";
 import { useNow } from "@/hooks/use-now";
 import { isoOfDay, useToday } from "./use-today";
+import { formatDate, formatDateRange } from "@/lib/format";
 
 /** `AttendanceReadOrg` in wp-contracts — the bit that lets a reader past their own department. */
 const ATTENDANCE_READ_ORG_BIT = 35;
@@ -203,13 +204,8 @@ const EMPTY_COUNTS: OversightCounts = {
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const isoOf = (y: number, m: number, d: number) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
 
-const shortDate = (iso: string) => {
-  const [y, m, d] = iso.split("-").map(Number);
-  void y;
-  return `${MONTH_NAMES[m - 1].slice(0, 3)} ${d}`;
-};
-const prettyDate = (d: AttendanceDate) =>
-  `${MONTH_NAMES[d.month].slice(0, 3)} ${d.day}, ${d.year}`;
+/** The shared date notation (UX audit XC-06 / TIME-14), never a hand-built "Oct 14, 2026". */
+const prettyDate = (d: AttendanceDate) => formatDate(isoOf(d.year, d.month, d.day));
 
 function isForbidden(e: unknown): boolean {
   return (
@@ -432,7 +428,7 @@ function rangeLabel(
   if (range === "week") return "Last 7 days";
   if (range === "month") return `${MONTH_NAMES[date.month]} ${date.year}`;
   if (range === "custom")
-    return start && end ? `${shortDate(start)} – ${shortDate(end)}` : "Custom range";
+    return start && end ? formatDateRange(start, end) : "Custom range";
   return "";
 }
 

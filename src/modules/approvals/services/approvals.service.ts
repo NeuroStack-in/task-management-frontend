@@ -86,6 +86,17 @@ export async function getQueue(status: string): Promise<ApiApprovalRow[]> {
   return rows;
 }
 
+/**
+ * How many leave requests are waiting — for a link to the queue, not the queue itself (UX audit
+ * 2026-10-16, TIME-17: the admin's Leave page showed no requests and no way to them). One page of
+ * `GET /v1/approvals?status=pending` (`leave:approve`); `more` says the count is a floor.
+ */
+export async function countPendingLeave(): Promise<{ count: number; more: boolean }> {
+  const q = new URLSearchParams({ status: "pending", limit: String(QUEUE_PAGE) });
+  const r = await apiFetch<QueueResponse>(`/v1/approvals?${q}`);
+  return { count: r.approvals.length, more: Boolean(r.cursor) };
+}
+
 export interface DecideInput {
   user_id: string;
   request_id: string;

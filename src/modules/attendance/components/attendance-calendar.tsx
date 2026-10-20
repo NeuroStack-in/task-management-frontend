@@ -26,6 +26,7 @@ import type { DayPoint } from "../use-oversight-attendance";
 import { attendanceRate } from "../lib/attended";
 import { useToday } from "../use-today";
 import { toCsv } from "@/lib/csv";
+import { formatDate } from "@/lib/format";
 
 interface AttendanceDate {
   year: number;
@@ -237,13 +238,18 @@ export function AttendanceCalendar({
               <Download className="size-4" /> Download
             </Button>
           </div>
-        <div className="grid grid-cols-7 gap-1.5">
+        {/* Each cell names its own weekday and date (TIME-15), so this row is for the eye. */}
+        <div className="grid grid-cols-7 gap-1.5" aria-hidden="true">
           {WEEKDAY_LABELS.map((d) => (
             <div key={d} className="text-center text-xs font-medium text-muted-foreground">{d}</div>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-1.5">
+        <div
+          className="grid grid-cols-7 gap-1.5"
+          role="group"
+          aria-label={`${MONTH_NAMES[view.month]} ${view.year}, day by day`}
+        >
           {weeks.flat().map((cell, i) => (
             <DayCellView key={i} cell={cell} selected={selected} onSelect={onSelect} days={days} loading={loading} holidays={holidays} orgStart={orgStart} summarize={summarize} />
           ))}
@@ -311,24 +317,35 @@ function DayCellView({
   // its figures like any workday instead of disappearing behind the hatch (QA audit 2026-10-08,
   // WP-260).
   const workedOff = !cell.isWorkday && s !== undefined && s.counted > 0;
+  // Every cell names its full date and what it holds, for a screen reader and a keyboard (UX audit
+  // 2026-10-16, TIME-15). The counts were only in a `title` tooltip, so a day button announced a
+  // bare "14" and "92%". The tooltip keeps the same sentence for the mouse.
+  const dateText = formatDate(iso, { weekday: true });
+  const holidayText = holidayName ? ` · Holiday: ${holidayName}` : "";
 
   // Weekends, off-days nobody worked, and pre-launch days: hatched, no data by design. A holiday
   // landing on one is still labelled.
   if ((!cell.isWorkday && !workedOff) || beforeOrgStart) {
-    const title = beforeOrgStart
-      ? `${cell.day}: before the organization was created`
+    const story = beforeOrgStart
+      ? `${dateText}: before the organization was created`
       : holidayName
-        ? `Holiday: ${holidayName}`
-        : undefined;
+        ? `${dateText}: Holiday: ${holidayName}`
+        : `${dateText}: day off`;
     return (
       <div
         className={cn("wp-hatch flex min-h-[4.25rem] flex-col gap-1 rounded-xl p-2", !cell.inMonth && "opacity-50")}
-        title={title}
+        title={story}
+        aria-hidden={!cell.inMonth || undefined}
       >
-        <span className={cn("text-xs font-semibold leading-none tabular-nums", cell.inMonth ? "text-muted-foreground" : "text-muted-foreground/50")}>
+        <span className="sr-only">{story}</span>
+        <span aria-hidden="true" className={cn("text-xs font-semibold leading-none tabular-nums", cell.inMonth ? "text-muted-foreground" : "text-muted-foreground/50")}>
           {cell.day}
         </span>
-        {!beforeOrgStart && holidayName ? <HolidayBadge name={holidayName} showIcon={false} className="mt-auto self-start px-1" /> : null}
+        {!beforeOrgStart && holidayName ? (
+          <span aria-hidden="true" className="mt-auto self-start">
+            <HolidayBadge name={holidayName} showIcon={false} className="px-1" />
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -359,7 +376,9 @@ function DayCellView({
         type="button"
         onClick={() => onSelect({ year: cell.year, month: cell.month, day: cell.day })}
         className={cn(base, "hover:ring-primary/50")}
-        title={`${cell.day}: ${why}${holidayName ? ` · Holiday: ${holidayName}` : ""}`}
+        title={`${dateText}: ${why}${holidayText}`}
+        aria-label={`${dateText}: ${why}${holidayText}`}
+        aria-pressed={isSelected}
       >
         <span className={cn("text-sm font-semibold leading-none tabular-nums", cell.isToday ? "text-primary" : "text-foreground")}>
           {cell.day}
@@ -376,6 +395,7 @@ function DayCellView({
   }
 
   const rate = rateOf(s);
+  const story = `${dateText}: ${rate}% attended — ${s.present} present · ${s.partial} partial · ${s.leave} on leave · ${s.absent} absent${holidayText}${workedOff ? " · worked on a day off" : ""}`;
   const denom = s.counted;
   const presentPct = (s.present / denom) * 100;
   // Its own band, in the amber the roster badge already uses. Folded into the red "absent" bar
@@ -389,7 +409,9 @@ function DayCellView({
     <button
       type="button"
       onClick={() => onSelect({ year: cell.year, month: cell.month, day: cell.day })}
-      title={`${cell.day}: ${s.present} present · ${s.leave} on leave · ${s.absent} absent · ${s.partial} partial${holidayName ? ` · Holiday: ${holidayName}` : ""}${workedOff ? " · worked on a day off" : ""}`}
+      title={story}
+      aria-label={story}
+      aria-pressed={isSelected}
       className={cn(base, "hover:shadow-sm hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary")}
     >
       <div className="flex items-center justify-between gap-1">

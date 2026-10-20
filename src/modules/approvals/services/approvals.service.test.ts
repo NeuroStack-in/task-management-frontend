@@ -8,7 +8,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { apiFetch } from "@/lib/api";
-import { decide, getQueue } from "./approvals.service";
+import { countPendingLeave, decide, getQueue } from "./approvals.service";
 
 const mock = vi.mocked(apiFetch);
 beforeEach(() => mock.mockClear());
@@ -32,6 +32,17 @@ describe("approvals.service route contract", () => {
     expect(rows.map((r) => r.request_id)).toEqual(["a", "b", "c", "d"]);
     expect(mock).toHaveBeenNthCalledWith(2, "/v1/approvals?status=approved&limit=100&cursor=c1");
     expect(mock).toHaveBeenNthCalledWith(3, "/v1/approvals?status=approved&limit=100&cursor=c2");
+  });
+
+  /** TIME-17: the Leave page's link to the queue reads one page and says when there are more. */
+  it("countPendingLeave reads one page of the pending queue", async () => {
+    const row = (id: string) => ({ request_id: id }) as never;
+    mock.mockResolvedValueOnce({ approvals: [row("a"), row("b")] });
+    expect(await countPendingLeave()).toEqual({ count: 2, more: false });
+    expect(mock).toHaveBeenCalledWith("/v1/approvals?status=pending&limit=100");
+    mock.mockResolvedValueOnce({ approvals: [row("a")], cursor: "c1" });
+    expect(await countPendingLeave()).toEqual({ count: 1, more: true });
+    expect(mock).toHaveBeenCalledTimes(2);
   });
 
   it("decide POSTs the whole decision input verbatim", async () => {
