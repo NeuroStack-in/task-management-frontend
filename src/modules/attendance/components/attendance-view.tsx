@@ -115,7 +115,11 @@ function OversightAttendance() {
           }`
         : live.counts.total === 0
           ? "Today · nobody is expected at work"
-          : `Today · ${livePct}% of the team clocked in`;
+          : (live.counts.notInYet ?? 0) > 0
+            ? // Before "Late after" a percentage reads as an attendance verdict the day hasn't
+              // reached yet — "0 % clocked in" at 08:00 (UX audit 2026-10-16, TIME-11).
+              `Today · ${live.counts.present} of ${live.counts.total} in so far · late after ${live.lateAfter}`
+            : `Today · ${livePct}% of the team clocked in`;
 
   // The calendar shows the selected date's month, fed by the real month fan-out — fetched only while
   // the (collapsed-by-default) calendar is open.
@@ -155,7 +159,8 @@ function OversightAttendance() {
       : null;
 
   return (
-    <div className="space-y-5 pt-1">
+    // Bottom room for the floating assistant button (UX audit 2026-10-16, TIME-12 / XC-03).
+    <div className="space-y-5 pt-1 pb-20">
       <PageHeader
         title="Attendance"
         description={liveDescription}
@@ -194,6 +199,7 @@ function OversightAttendance() {
           loading={data.loading}
           error={data.error}
           note={data.note}
+          lateAfter={data.lateAfter}
         />
       </div>
 

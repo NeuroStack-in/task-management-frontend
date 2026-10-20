@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { formatMinutes } from "@/lib/format";
+import { formatHoursOff } from "@/modules/leave/lib/days";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -69,6 +69,12 @@ const TODAY_STATUS_META: Record<
   leave: { label: "On leave", badge: "bg-primary/12 text-primary", dot: "bg-primary" },
   // A holiday, or an unscheduled day they didn't work — not expected, so never "Absent" (WP-254).
   off: { label: "Day off", badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/40" },
+  // Expected, no session yet, and it's still before "Late after" — neutral, not red (TIME-11).
+  not_in_yet: {
+    label: "Not in yet",
+    badge: "bg-muted text-muted-foreground",
+    dot: "bg-muted-foreground/40",
+  },
   absent: { label: "Absent", badge: "bg-destructive/12 text-destructive", dot: "bg-destructive" },
   late: { label: "Late", badge: "bg-warning/15 text-warning", dot: "bg-warning" },
   present: { label: "On time", badge: "bg-success/12 text-success", dot: "bg-success" },
@@ -150,9 +156,12 @@ const PERMISSION = "__permission";
 // an unrecognised server status, but it printed "__permission · 1" on the chip. Every render path
 // must special-case it *before* `statusMeta`; there is only one, just below.
 
-/** `90` → `01:30:00`. Minutes are what the server stores; `HH:MM:SS` is what the product speaks. */
+/**
+ * `90` → "1 h 30 min off". Approved short time off within a day — the API's `permission` kind. It
+ * read "Permission 01:30:00": HR jargon over a stopwatch reading (UX audit 2026-10-16, TIME-08).
+ */
 function formatPermission(minutes: number): string {
-  return formatMinutes(minutes);
+  return formatHoursOff(minutes);
 }
 
 /** Statuses a day correction is offered on: a false absence (or short day), or an earlier correction. */
@@ -318,7 +327,7 @@ export function AttendanceLog({
             "Department",
             "Status",
             "Attendance",
-            "Permission",
+            "Hours off",
             "Clock in",
             "Clock out",
             "Hours",
@@ -327,7 +336,7 @@ export function AttendanceLog({
             "Employee",
             "Department",
             "Status",
-            "Permission",
+            "Hours off",
             "Clock in",
             "Clock out",
             "Hours",
@@ -345,7 +354,7 @@ export function AttendanceLog({
         r.running ? "running" : fmtTime(r.clockOut),
         fmtHours(r.workedMinutes),
       ];
-      // `perm` on BOTH shapes — the header carries a Permission column for each, and writing it
+      // `perm` on BOTH shapes — the header carries an "Hours off" column for each, and writing it
       // on only one silently shifted every column after it in the other.
       return isToday
         ? [...base, r.todayStatus ? TODAY_STATUS_META[r.todayStatus].label : "—", perm, ...tail]
@@ -379,6 +388,7 @@ export function AttendanceLog({
                 setPage(0);
               }}
               placeholder="Search name…"
+              aria-label="Search the attendance log by name"
               className="h-9 w-44 pl-8"
             />
           </div>
@@ -417,7 +427,7 @@ export function AttendanceLog({
                 {s === "all"
                   ? "All"
                   : s === PERMISSION
-                    ? "On permission"
+                    ? "Hours off"
                     : statusMeta(s).label}{" "}
                 · {statusCounts[s] ?? 0}
               </button>
@@ -446,8 +456,115 @@ export function AttendanceLog({
           />
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <Table>
+            {/* Phones: one card per person. Clock in/out and Hours sat past the right edge of a
+                390 px screen, behind a sideways scroll (UX audit 2026-10-16, TIME-12 / XC-05). */}
+            <ul className="divide-y divide-border sm:hidden" aria-label={`Attendance log, ${label}`}>
+              {pageRows.map((r) => {
+                const meta = r.status ? statusMeta(r.status) : null;
+                const rate = r.rate ?? 0;
+                return (
+                  <li key={r.userId} className="space-y-2 py-3">
+                    <div className="flex items-center gap-3">
+                      <UserAvatar
+                        userId={r.userId}
+                        name={r.name}
+                        className="size-8 shrink-0"
+                        fallbackClassName="text-xs"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <Link
+                          href={`/employees/${r.userId}`}
+                          className="block font-medium break-words hover:underline focus-visible:underline focus-visible:outline-none"
+                        >
+                          {r.name}
+                        </Link>
+                        <p className="truncate text-xs text-muted-foreground">{r.dept}</p>
+                      </div>
+                      {isRange ? (
+                        <span
+                          className={cn(
+                            "shrink-0 font-semibold tabular-nums",
+                            rate >= 90
+                              ? "text-success"
+                              : rate >= 75
+                                ? "text-warning"
+                                : "text-destructive",
+                          )}
+                        >
+                          {rate}%
+                        </span>
+                      ) : null}
+                    </div>
+                    {isRange ? (
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        Present {r.daysPresent ?? 0} of {r.daysCounted ?? 0} counted days
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {meta ? (
+                            <Badge className={cn("font-medium", meta.badge)}>
+                              <span className={cn("mr-1.5 size-1.5 rounded-full", meta.dot)} />
+                              {meta.label}
+                            </Badge>
+                          ) : null}
+                          {isToday && r.todayStatus ? (
+                            <Badge className={cn("font-medium", TODAY_STATUS_META[r.todayStatus].badge)}>
+                              <span
+                                className={cn(
+                                  "mr-1.5 size-1.5 rounded-full",
+                                  TODAY_STATUS_META[r.todayStatus].dot,
+                                )}
+                              />
+                              {TODAY_STATUS_META[r.todayStatus].label}
+                            </Badge>
+                          ) : null}
+                          {(r.permissionMinutes ?? 0) > 0 ? (
+                            <Badge variant="outline" className="text-primary border-primary/30 font-medium">
+                              {formatPermission(r.permissionMinutes ?? 0)}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <dl className="grid grid-cols-3 gap-2 text-xs">
+                          <div>
+                            <dt className="text-muted-foreground">Clock in</dt>
+                            <dd className="font-medium tabular-nums">{fmtTime(r.clockIn)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted-foreground">Clock out</dt>
+                            <dd className="font-medium tabular-nums">
+                              {r.running ? (
+                                <span className="text-success">running</span>
+                              ) : (
+                                fmtTime(r.clockOut)
+                              )}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted-foreground">Hours</dt>
+                            <dd className="font-medium tabular-nums">{fmtRowHours(r, now)}</dd>
+                          </div>
+                        </dl>
+                        {correction && r.status && CORRECTABLE.has(r.status) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            aria-label={`Correct ${r.name}'s day`}
+                            onClick={() => setCorrecting({ userId: r.userId, name: r.name })}
+                          >
+                            Correct this day
+                          </Button>
+                        ) : null}
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+
+            <div className="hidden sm:block">
+              <Table scrollLabel={`Attendance log, ${label}`}>
                 <TableHeader>
                   <TableRow>
                     <SortHead
@@ -560,9 +677,9 @@ export function AttendanceLog({
                                 <Badge
                                   variant="outline"
                                   className="text-primary border-primary/30 ml-1.5 font-medium"
-                                  title={`Approved permission: ${formatPermission(r.permissionMinutes ?? 0)}`}
+                                  title={`Approved time off within the day: ${formatPermission(r.permissionMinutes ?? 0)}`}
                                 >
-                                  Permission {formatPermission(r.permissionMinutes ?? 0)}
+                                  {formatPermission(r.permissionMinutes ?? 0)}
                                 </Badge>
                               ) : null}
                             </TableCell>

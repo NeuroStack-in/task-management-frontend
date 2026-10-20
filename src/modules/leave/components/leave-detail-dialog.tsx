@@ -34,9 +34,9 @@ export interface LeaveDetail {
   person?: { userId: string; name: string };
   /** "Aug 31, 2026" or "Aug 19 – Aug 21, 2026". */
   dateLabel: string;
-  /** The figure: "1 day" / "2h". */
+  /** The figure: "1 day" / "2 h off". */
   valueLabel: string;
-  /** `HH:MM` window for a permission, else null. */
+  /** `HH:MM` window for a few hours off (the API's `permission` kind), else null. */
   fromTime?: string;
   toTime?: string;
   reason?: string;
@@ -94,9 +94,10 @@ export function LeaveDetailDialog({
               <p className="truncate font-medium">{detail.person.name}</p>
             ) : null}
             <p className="text-muted-foreground truncate text-sm">{detail.dateLabel}</p>
-            {/* The one thing a permission is actually decided on: which hours the person is away. */}
+            {/* The one thing a few hours off is actually decided on: which hours the person is
+                away. Not "Permission from …" — HR jargon (UX audit 2026-10-16, TIME-08). */}
             {window ? (
-              <p className="text-foreground truncate text-sm">Permission from {window}</p>
+              <p className="text-foreground truncate text-sm">Away from {window}</p>
             ) : null}
           </div>
           <span className="font-mono text-lg font-semibold tabular-nums">

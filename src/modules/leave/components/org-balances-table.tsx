@@ -136,93 +136,127 @@ export function OrgBalancesTable() {
               className="m-4 border-0"
             />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Employee</TableHead>
-                    {types.map((t) => (
-                      <TableHead key={t.type_id} className="text-right">
-                        {t.name}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((emp) => (
-                    <TableRow key={emp.user_id}>
-                      <TableCell className="max-w-0">
-                        <div className="flex items-center gap-3">
-                          <UserAvatar
-                            userId={emp.user_id}
-                            name={emp.name}
-                            className="size-8 shrink-0"
-                            fallbackClassName="text-xs"
-                          />
-                          <div className="min-w-0">
-                            <span className="block truncate font-medium">{emp.name}</span>
-                            {emp.emp_id ? (
-                              <span className="block truncate font-mono text-[0.7rem] text-muted-foreground">
-                                {emp.emp_id}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      </TableCell>
+            <>
+              {/* Phones: one card per person, every type's figure a button inside it. The table
+                  squeezed the name column to nothing (`max-w-0`) and leave names to "A.." on a
+                  390 px screen (UX audit 2026-10-16, TIME-12 / XC-05). */}
+              <ul className="divide-y divide-border sm:hidden" aria-label="Employee balances">
+                {rows.map((emp) => (
+                  <li key={emp.user_id} className="space-y-3 px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <UserAvatar
+                        userId={emp.user_id}
+                        name={emp.name}
+                        className="size-8 shrink-0"
+                        fallbackClassName="text-xs"
+                      />
+                      <div className="min-w-0">
+                        <span className="block font-medium break-words">{emp.name}</span>
+                        {emp.emp_id ? (
+                          <span className="block font-mono text-[0.7rem] text-muted-foreground">
+                            {emp.emp_id}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <dl className="grid grid-cols-2 gap-2">
                       {types.map((t) => {
-                        const b =
-                          emp.balances.find((x) => x.type_id === t.type_id) ?? null;
-                        if (!b) return <TableCell key={t.type_id} />;
+                        const b = emp.balances.find((x) => x.type_id === t.type_id) ?? null;
                         return (
-                          <TableCell key={t.type_id} className="text-right">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setEdit({
-                                  userId: emp.user_id,
-                                  name: emp.name,
-                                  balance: b,
-                                  typeAllowance: t.annual_allowance,
-                                })
-                              }
-                              className="group inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 tabular-nums transition-colors hover:bg-muted"
-                              aria-label={`Adjust ${t.name} for ${emp.name}`}
-                              title={
-                                b.seeded
-                                  ? undefined
-                                  : `Not granted for ${data?.year ?? "this year"} yet — they receive the ${t.name} allowance the first time they open Leave, or when you set one here.`
-                              }
-                            >
-                              {/* No balance row is not a balance of 0 — it printed "0 / 0", the
-                                  same as a real zero allowance (QA audit 2026-10-08, WP-479). */}
-                              {b.seeded ? (
-                                <>
-                                  <span className="font-medium">{formatDays(b.remaining)}</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    / {formatDays(b.allowance)}
-                                  </span>
-                                </>
+                          <div key={t.type_id} className="rounded-lg bg-muted/40 px-2.5 py-2">
+                            <dt className="text-xs text-muted-foreground break-words">{t.name}</dt>
+                            <dd className="-mx-1.5">
+                              {b ? (
+                                <BalanceButton
+                                  balance={b}
+                                  typeName={t.name}
+                                  personName={emp.name}
+                                  year={data?.year}
+                                  onClick={() =>
+                                    setEdit({
+                                      userId: emp.user_id,
+                                      name: emp.name,
+                                      balance: b,
+                                      typeAllowance: t.annual_allowance,
+                                    })
+                                  }
+                                />
                               ) : (
-                                <span className="text-xs text-muted-foreground">Not granted</span>
+                                <span className="px-1.5 text-sm text-muted-foreground">—</span>
                               )}
-                              {b.adjusted ? (
-                                <Badge
-                                  className="bg-primary/12 px-1 py-0 text-[0.6rem] text-primary"
-                                  title="Hand-adjusted — a catalog change won't overwrite it"
-                                >
-                                  set
-                                </Badge>
-                              ) : null}
-                              <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
-                            </button>
-                          </TableCell>
+                            </dd>
+                          </div>
                         );
                       })}
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="hidden sm:block">
+                <Table scrollLabel="Employee balances">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Employee</TableHead>
+                      {types.map((t) => (
+                        <TableHead key={t.type_id} className="text-right">
+                          {t.name}
+                        </TableHead>
+                      ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((emp) => (
+                      <TableRow key={emp.user_id}>
+                        {/* `min-w-44`, not `max-w-0`: a zero max-width let the leave columns
+                            squeeze the name to an ellipsis (TIME-12). */}
+                        <TableCell className="min-w-44">
+                          <div className="flex items-center gap-3">
+                            <UserAvatar
+                              userId={emp.user_id}
+                              name={emp.name}
+                              className="size-8 shrink-0"
+                              fallbackClassName="text-xs"
+                            />
+                            <div className="min-w-0">
+                              <span className="block truncate font-medium">{emp.name}</span>
+                              {emp.emp_id ? (
+                                <span className="block truncate font-mono text-[0.7rem] text-muted-foreground">
+                                  {emp.emp_id}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </TableCell>
+                        {types.map((t) => {
+                          const b =
+                            emp.balances.find((x) => x.type_id === t.type_id) ?? null;
+                          if (!b) return <TableCell key={t.type_id} />;
+                          return (
+                            <TableCell key={t.type_id} className="text-right">
+                              <BalanceButton
+                                balance={b}
+                                typeName={t.name}
+                                personName={emp.name}
+                                year={data?.year}
+                                onClick={() =>
+                                  setEdit({
+                                    userId: emp.user_id,
+                                    name: emp.name,
+                                    balance: b,
+                                    typeAllowance: t.annual_allowance,
+                                  })
+                                }
+                              />
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -237,6 +271,55 @@ export function OrgBalancesTable() {
         }}
       />
     </>
+  );
+}
+
+/** One person's figure for one type — opens the allowance editor. Shared by the table and the cards. */
+function BalanceButton({
+  balance: b,
+  typeName,
+  personName,
+  year,
+  onClick,
+}: {
+  balance: ApiTypeBalance;
+  typeName: string;
+  personName: string;
+  year?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 tabular-nums transition-colors hover:bg-muted"
+      aria-label={`Adjust ${typeName} for ${personName}`}
+      title={
+        b.seeded
+          ? undefined
+          : `Not granted for ${year ?? "this year"} yet — they receive the ${typeName} allowance the first time they open Leave, or when you set one here.`
+      }
+    >
+      {/* No balance row is not a balance of 0 — it printed "0 / 0", the same as a real zero
+          allowance (QA audit 2026-10-08, WP-479). */}
+      {b.seeded ? (
+        <>
+          <span className="font-medium">{formatDays(b.remaining)}</span>
+          <span className="text-xs text-muted-foreground">/ {formatDays(b.allowance)}</span>
+        </>
+      ) : (
+        <span className="text-xs text-muted-foreground">Not granted</span>
+      )}
+      {b.adjusted ? (
+        <Badge
+          className="bg-primary/12 px-1 py-0 text-[0.6rem] text-primary"
+          title="Hand-adjusted — a catalog change won't overwrite it"
+        >
+          set
+        </Badge>
+      ) : null}
+      <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
+    </button>
   );
 }
 

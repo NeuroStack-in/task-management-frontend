@@ -9,8 +9,7 @@ import { CalendarPlus, Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatMinutes } from "@/lib/format";
-import { formatDays } from "../lib/days";
+import { daysPhrase, formatDays, formatHoursShort, HOURS_OFF_KIND_LABEL } from "../lib/days";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -152,7 +151,7 @@ const schema = z
   // Every rule below mirrors the server (docs/LEAVE.md §6) rather than trusting it, so the message
   // arrives before the round-trip instead of as a 400.
   .refine((d) => d.kind !== "permission" || d.startDate === d.endDate, {
-    message: "A permission is time off within one day — pick a single date.",
+    message: "A few hours off is within one day — pick a single date.",
     path: ["endDate"],
   })
   .refine((d) => d.kind !== "permission" || (!!d.fromTime && !!d.toTime), {
@@ -173,7 +172,7 @@ const schema = z
       !d.fromTime ||
       !d.toTime ||
       minutesBetween(d.fromTime, d.toTime) >= 30,
-    { message: "A permission is at least 30 minutes.", path: ["toTime"] },
+    { message: "Hours off start at 30 minutes.", path: ["toTime"] },
   )
   .refine(
     (d) =>
@@ -409,13 +408,14 @@ export function RequestLeaveDialog({
         data.kind === "permission" ? minutesBetween(data.fromTime, data.toTime) : 0;
       const what =
         mins > 0
-          ? `permission ${data.fromTime}–${data.toTime}`
+          ? `${formatHoursShort(mins)} off, ${data.fromTime}–${data.toTime}`
           : (() => {
               const d = requestDays(data.startDate, data.endDate);
               return `${d} day${d === 1 ? "" : "s"}`;
             })();
       toast.success(
-        who ? `Leave recorded for ${who}` : mins > 0 ? "Permission requested" : "Leave request submitted",
+        // "Permission" was HR jargon for this (UX audit 2026-10-16, TIME-08).
+        who ? `Leave recorded for ${who}` : mins > 0 ? "Time off requested" : "Leave request submitted",
         { description: `${label} · ${what} — pending approval` },
       );
       close();
@@ -464,8 +464,10 @@ export function RequestLeaveDialog({
             </Field>
           ) : null}
           {/* The two kinds, chosen first — everything below reads differently depending on this,
-              so it cannot be a detail tucked underneath the dates. Picking Permission collapses the
-              request to one day, because that is what a permission is. */}
+              so it cannot be a detail tucked underneath the dates. Picking a few hours collapses the
+              request to one day, because that is what it is. The API still calls this kind
+              `permission`; the word was HR jargon on screen (UX audit 2026-10-16, TIME-08). There
+              is deliberately no half day (owner decision 2026-10-20). */}
           <Controller
             control={control}
             name="kind"
@@ -474,7 +476,7 @@ export function RequestLeaveDialog({
                 {(
                   [
                     ["full_day", "Full day", "One or more whole days"],
-                    ["permission", "Permission", "A few hours within a day"],
+                    ["permission", HOURS_OFF_KIND_LABEL, "Up to 4 hours on one day"],
                   ] as const
                 ).map(([value, label, hint]) => (
                   <button
@@ -483,7 +485,7 @@ export function RequestLeaveDialog({
                     aria-pressed={field.value === value}
                     onClick={() => {
                       field.onChange(value);
-                      // A permission is a single date. Collapsing the range here means the user
+                      // A few hours off is a single date. Collapsing the range here means the user
                       // never sees a validation error for a state the UI let them build.
                       if (value === "permission" && start) setValue("endDate", start);
                     }}
@@ -569,6 +571,13 @@ export function RequestLeaveDialog({
               `stepMinutes={15}` keeps a usable granularity; the native input allowed five-minute
               steps, so half-hours would have been a regression. */}
           {isPermission ? (
+            // The one plain explanation of the kind, where the choice is made (TIME-08).
+            <p className="text-muted-foreground text-sm">
+              For an appointment or an errand: from 30 minutes to 4 hours on a single day. It comes
+              out of the leave type you pick, counting 8 hours as one day.
+            </p>
+          ) : null}
+          {isPermission ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="From" htmlFor={`${fieldId}-from`} error={errors.fromTime?.message}>
                 <Controller
@@ -606,13 +615,11 @@ export function RequestLeaveDialog({
           {isPermission && permissionMinutes > 0 ? (
             <p className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">
-                {formatMinutes(permissionMinutes)}
+                {formatHoursShort(permissionMinutes)} off
               </span>{" "}
-              of permission &mdash; deducts{" "}
-              <span className="font-medium text-foreground">
-                {+days.toFixed(3)}
-              </span>{" "}
-              of a day from your balance.
+              &mdash; takes{" "}
+              <span className="font-medium text-foreground">{daysPhrase(+days.toFixed(3))}</span>{" "}
+              from your balance.
             </p>
           ) : !isPermission && days > 0 ? (
             <p className="text-sm text-muted-foreground">

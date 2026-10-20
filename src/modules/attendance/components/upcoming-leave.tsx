@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { cn } from "@/lib/utils";
+import { formatHoursOff } from "@/modules/leave/lib/days";
 import { useUpcomingLeave, type UpcomingLeaveItem } from "../use-upcoming-leave";
 
 /** `2026-09-01` → `Sept 1, 2026`. */
@@ -35,8 +36,9 @@ function fmt12(hhmm: string): string {
 function sentence(i: UpcomingLeaveItem): string {
   const when =
     i.from === i.to ? `on ${fmtDay(i.from)}` : `from ${fmtDay(i.from)} to ${fmtDay(i.to)}`;
+  // A few hours off, not "on permission" — HR jargon (UX audit 2026-10-16, TIME-08).
   if (i.permissionMinutes > 0 && i.fromTime && i.toTime) {
-    return `on permission ${when}, ${fmt12(i.fromTime)} to ${fmt12(i.toTime)}`;
+    return `taking ${formatHoursOff(i.permissionMinutes)} ${when}, ${fmt12(i.fromTime)} to ${fmt12(i.toTime)}`;
   }
   return `on leave ${when}`;
 }
@@ -100,7 +102,8 @@ export function UpcomingLeave() {
                   className="flex items-center gap-3 py-3"
                 >
                   <UserAvatar userId={i.userId} name={i.name} className="size-8" />
-                  <p className="min-w-0 flex-1 truncate text-sm">
+                  {/* Wraps on a phone rather than cutting the dates off (TIME-12). */}
+                  <p className="min-w-0 flex-1 text-sm sm:truncate">
                     <span className="font-medium">{i.name}</span>{" "}
                     <span className="text-muted-foreground">is {sentence(i)}</span>
                   </p>

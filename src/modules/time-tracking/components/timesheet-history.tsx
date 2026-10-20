@@ -74,13 +74,15 @@ export function TimesheetHistory({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+      {/* Wraps below `sm`: on one row the stepper's Next button was pushed off a 390 px screen
+          (UX audit 2026-10-16, TIME-12). */}
+      <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="flex items-center gap-2 text-base">
           <CalendarDays className="text-muted-foreground size-4" />
           Previous days
           {holidayName ? <HolidayBadge name={holidayName} /> : null}
         </CardTitle>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {/* One shortcut, for the day people ask for most. The second chip used to be the day
               before, labelled with its bare weekday ("Thu") — a different kind of label from
               "Yesterday" sitting right beside it, and ambiguous about *which* Thursday. Stepping
@@ -95,7 +97,9 @@ export function TimesheetHistory({
           </Button>
           {/* Same day-stepper as Analytics and Locations, so every date control in the app walks
               days identically. `disabled` while the date is still resolving on the client, and the
-              forward step stops at today for the same reason `max` does. */}
+              forward step stops at today for the same reason `max` does. Kept together as one
+              unit, so on a phone the three wrap as a group and Next is never stranded or cut. */}
+          <div className="flex items-center gap-1.5">
           <Button
             variant="outline"
             size="icon-sm"
@@ -111,7 +115,7 @@ export function TimesheetHistory({
               shared DatePicker portals into the body, so it is anchored and cannot be clipped.
               `max` still caps it at today — a future day has no entries by construction, and its
               empty state reads as data loss. */}
-          <DatePicker value={date} onChange={setDate} max={max} className="w-[10.5rem]" />
+          <DatePicker value={date} onChange={setDate} max={max} className="w-36 sm:w-[10.5rem]" />
           <Button
             variant="outline"
             size="icon-sm"
@@ -121,6 +125,7 @@ export function TimesheetHistory({
           >
             <ChevronRight className="size-4" />
           </Button>
+          </div>
         </div>
       </CardHeader>
 
@@ -161,7 +166,52 @@ export function TimesheetHistory({
               </span>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Phones: one card per session (TIME-12 / XC-05). */}
+            <ul className="divide-y divide-border sm:hidden" aria-label={`Sessions on ${date}`}>
+              {rows.map((r) => (
+                <li key={r.id} className="space-y-1 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="min-w-0 font-medium break-words">
+                      {r.task || r.description || "—"}
+                    </span>
+                    <span className="shrink-0 font-medium tabular-nums">
+                      {r.running ? (
+                        <span className="text-primary">Still running</span>
+                      ) : (
+                        formatDuration(r.durationSec)
+                      )}
+                    </span>
+                  </div>
+                  {r.task && r.description ? (
+                    <p className="text-muted-foreground text-xs break-words">{r.description}</p>
+                  ) : null}
+                  <p className="text-muted-foreground flex flex-wrap gap-x-2 text-xs">
+                    {r.project ? <span>{r.project}</span> : null}
+                    <span className="tabular-nums">
+                      {r.start} – {r.end ?? "…"}
+                    </span>
+                    {!(canFix && onFix && r.correctable) && r.corrected ? <span>Corrected</span> : null}
+                  </p>
+                  {canFix && onFix && r.correctable ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-1 h-8"
+                      onClick={() => onFix(r, r.date || date)}
+                    >
+                      <Pencil className="size-3.5" /> Fix this session
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+
+            <div
+              className="hidden overflow-x-auto focus-visible:outline-2 focus-visible:outline-ring sm:block"
+              role="region"
+              aria-label={`Sessions on ${date}`}
+              tabIndex={0}
+            >
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-muted-foreground border-b text-left text-xs tracking-wide uppercase">

@@ -55,6 +55,7 @@ export function AttendanceOverview({
   loading,
   error,
   note,
+  lateAfter,
 }: {
   range: AttendanceRange;
   onRangeChange: (r: AttendanceRange) => void;
@@ -76,6 +77,8 @@ export function AttendanceOverview({
   /** The window's data could not be read — every figure renders "—", never a confident zero. */
   error?: string | null;
   note: string | null;
+  /** The org's "Late after" — named beside "Not in yet" on Today (TIME-11). */
+  lateAfter?: string;
 }) {
   // Attendance is a record of what already happened, so neither end of a custom range may reach
   // past today. Read per render (not at module scope) so a tab left open overnight still bounds to
@@ -98,7 +101,10 @@ export function AttendanceOverview({
   // day. Left as it was, it would have started double-counting the moment `late` was populated.
   const attendedCount = attended(shown);
   const leave = shown.leave;
-  const absent = Math.max(0, total - attendedCount - leave);
+  // Today only: expected, but it's still before "Late after" — not absent yet, so not red
+  // (UX audit 2026-10-16, TIME-11). Before 09:00 the bar was solid red and the headline 0 %.
+  const notInYet = shown.notInYet ?? 0;
+  const absent = Math.max(0, total - attendedCount - leave - notInYet);
 
   const rate = attendanceRate1dp(shown, total);
   const share = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
@@ -108,7 +114,12 @@ export function AttendanceOverview({
   const presentPct = share(shown.present);
   const partialPct = share(shown.partial);
   const leavePct = share(leave);
-  const absentPct = total > 0 ? Math.max(0, 100 - presentPct - partialPct - leavePct) : 0;
+  const notInYetPct = share(notInYet);
+  const absentPct =
+    total > 0 && absent > 0
+      ? Math.max(0, 100 - presentPct - partialPct - leavePct - notInYetPct)
+      : 0;
+  const isToday = range === "today";
 
   const blank = loading || Boolean(error) || total === 0;
   const figure = (n: number) => (loading || error ? "—" : `${n}`);
@@ -137,7 +148,11 @@ export function AttendanceOverview({
                 {/* Today counts everyone who has clocked in at all, not who happens to be running a
                     timer at this instant — see `use-oversight-attendance`. Still not the closed verdict
                     (the nightly close adds partial), hence its own wording. */}
-                {range === "today" ? "Clocked in today" : "Attendance rate"}
+                {isToday
+                  ? notInYet > 0
+                    ? "Clocked in so far"
+                    : "Clocked in today"
+                  : "Attendance rate"}
               </span>
             </div>
           </div>
@@ -224,6 +239,8 @@ export function AttendanceOverview({
               partialPct={partialPct}
               leavePct={leavePct}
               absentPct={absentPct}
+              notInYet={notInYet}
+              notInYetPct={notInYetPct}
               rate={rate}
               // No "vs recent" delta on the single-day / Today split: Today is a live clocked-in-now
               // snapshot (not comparable to a full-day average), and a single picked day has no
@@ -236,10 +253,31 @@ export function AttendanceOverview({
         {/* Legend */}
         <div className="grid grid-cols-2 gap-2 border-t pt-3 sm:grid-cols-4">
           <LegendItem dot="bg-success" label="Present" value={figure(shown.present)} />
-          <LegendItem dot="bg-warning" label="Partial" value={figure(shown.partial)} />
+          {/* Today has no partial verdict (the close assigns it tonight), so its slot says who
+              hasn't come in yet instead — neutral until "Late after" (TIME-11). */}
+          {isToday ? (
+            <LegendItem
+              dot="bg-muted-foreground/40"
+              label="Not in yet"
+              value={figure(notInYet)}
+              title={
+                lateAfter
+                  ? `Expected today, no session yet — counted absent after ${lateAfter}, the organization's "Late after" time.`
+                  : undefined
+              }
+            />
+          ) : (
+            <LegendItem dot="bg-warning" label="Partial" value={figure(shown.partial)} />
+          )}
           <LegendItem dot="bg-primary" label="On leave" value={figure(leave)} />
           <LegendItem dot="bg-destructive" label="Absent" value={figure(absent)} />
         </div>
+        {isToday && notInYet > 0 && lateAfter && !loading && !error ? (
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Anyone with no session counts as absent after {lateAfter}, your organization&apos;s
+            &ldquo;Late after&rdquo; time.
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -249,13 +287,15 @@ function LegendItem({
   dot,
   label,
   value,
+  title,
 }: {
   dot: string;
   label: string;
   value: string;
+  title?: string;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-1" title={title}>
       <span className="flex items-center gap-1.5">
         <span className={cn("size-2 rounded-full", dot)} />
         <span className="truncate text-xs text-muted-foreground">{label}</span>
@@ -290,6 +330,8 @@ function StackedDistribution({
   partialPct,
   leavePct,
   absentPct,
+  notInYet,
+  notInYetPct,
   rate,
   benchmarkRate,
 }: {
@@ -302,6 +344,8 @@ function StackedDistribution({
   partialPct: number;
   leavePct: number;
   absentPct: number;
+  notInYet: number;
+  notInYetPct: number;
   rate: number;
   benchmarkRate: number | null;
 }) {
@@ -311,6 +355,14 @@ function StackedDistribution({
     { key: "present", w: presentPct, className: "bg-success", label: "Present", count: present },
     { key: "partial", w: partialPct, className: "bg-warning", label: "Partial", count: partial },
     { key: "leave", w: leavePct, className: "bg-primary", label: "On leave", count: leave },
+    // Neutral, not red: expected, and it's still before "Late after" (TIME-11).
+    {
+      key: "not-in-yet",
+      w: notInYetPct,
+      className: "bg-muted-foreground/25",
+      label: "Not in yet",
+      count: notInYet,
+    },
     { key: "absent", w: absentPct, className: "bg-destructive/70", label: "Absent", count: absent },
   ].filter((s) => s.w > 0);
 
@@ -327,7 +379,9 @@ function StackedDistribution({
       <div
         className="flex h-8 w-full overflow-hidden rounded-full bg-muted"
         role="img"
-        aria-label={`Present ${present}, partial ${partial}, on leave ${leave}, absent ${absent} of ${total}`}
+        aria-label={`Present ${present}, partial ${partial}, on leave ${leave}, ${
+          notInYet ? `not in yet ${notInYet}, ` : ""
+        }absent ${absent} of ${total}`}
       >
         {segs.map((s) => (
           <div

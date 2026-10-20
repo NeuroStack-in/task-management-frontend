@@ -40,6 +40,9 @@ import { isWorkday } from "@/lib/workdays";
 import { hasPermissionBit } from "@/lib/permission-bits";
 import { useAuthStore } from "@/stores/auth.store";
 import { attendanceRate } from "./lib/attended";
+import { beforeLateThreshold, orgClockAt } from "./lib/org-clock";
+import { useOrgMetaStore } from "@/stores/org-meta.store";
+import { useNow } from "@/hooks/use-now";
 import { isoOfDay, useToday } from "./use-today";
 
 /** `AttendanceReadOrg` in wp-contracts — the bit that lets a reader past their own department. */
@@ -108,13 +111,15 @@ export interface OversightRow {
    * same rules the nightly close applies (`shared::attendance::resolve`):
    *  - `leave`   — an approved leave covers today
    *  - `off`     — not expected today: an org holiday, or an unscheduled day nobody worked
-   *  - `absent`  — a scheduled day with no session and no approved leave
+   *  - `not_in_yet` — a scheduled day with no session yet, while it is still before the org's
+   *    "Late after" time (org clock). Nobody is absent at 08:00 (UX audit 2026-10-16, TIME-11).
+   *  - `absent`  — a scheduled day with no session and no approved leave, once "Late after" passed
    *  - `late`    — clocked in on a scheduled day after the org's "Late after" time
    *  - `present` — clocked in (on time, or on a day off they chose to work)
    *
    * Absent (`undefined`) for a `dayUnknown` row.
    */
-  todayStatus?: "leave" | "off" | "absent" | "late" | "present";
+  todayStatus?: "leave" | "off" | "not_in_yet" | "absent" | "late" | "present";
 }
 
 export interface OversightCounts {
@@ -131,6 +136,11 @@ export interface OversightCounts {
   /** Always 0 — the oversight index has no per-person late flag. Never fabricated. */
   late: number;
   leave: number;
+  /**
+   * Today only: expected people with no session yet while it is still before "Late after" — in
+   * `total`, but neither attended nor absent (TIME-11). Absent/0 for every closed range.
+   */
+  notInYet?: number;
   total: number;
 }
 
@@ -176,6 +186,10 @@ export interface OversightAttendance {
   summarizeDay: ((iso: string, users: ApiDayUser[]) => DayPoint) | null;
   /** Today is not a working day for the org — a holiday, or outside its scheduled weekdays. */
   todayOff: boolean;
+  /** The org's "Late after" (`HH:MM`) — until then a missing session is "not in yet" (TIME-11). */
+  lateAfter: string;
+  /** Today's "late"/"not in yet" read the org's own timezone (`false` = the viewer's clock). */
+  orgClockZoned: boolean;
 }
 
 const EMPTY_COUNTS: OversightCounts = {
@@ -307,6 +321,17 @@ export interface TodayKind {
 }
 
 /**
+ * Where the org's day stands right now (TIME-11). Optional, so a caller without it classifies as
+ * before: no session on a scheduled day is absent, lateness read on the viewer's clock.
+ */
+export interface TodayClock {
+  /** Still before "Late after" (org time): no session yet is `not_in_yet`, not `absent`. */
+  beforeLate: boolean;
+  /** Epoch ms → the org's `HH:MM`, for the late check. */
+  hhmmOf: (ms: number) => string;
+}
+
+/**
  * Classify a person's **today** attendance from live signals (today has no closed verdict yet), in
  * the order the nightly close resolves a day (`shared::attendance::resolve`): leave → holiday →
  * no session (absent on a scheduled day, off otherwise) → late vs on time.
@@ -319,16 +344,24 @@ export function classifyToday(
   r: OversightRow,
   lateThreshold: string,
   day: TodayKind,
+  clock?: TodayClock,
 ): OversightRow["todayStatus"] {
   if (r.dayUnknown) return undefined;
   if (r.onLeave) return "leave";
   // A configured holiday is a non-working day even if a timer ran — the close stamps it so.
   if (day.holiday) return "off";
   const worked = r.clockIn != null || Boolean(r.running);
-  // No session at all: absent only on a day they were expected.
-  if (!worked) return day.scheduled ? "absent" : "off";
-  // Lateness is measured against an expected start, so only a scheduled day can be late.
-  if (day.scheduled && r.clockIn != null && localHHMM(r.clockIn) > lateThreshold) return "late";
+  // No session at all: off on a day they weren't expected; on one they were, "not in yet" until
+  // the org's "Late after" passes and only then absent. At 08:00 everyone read "Absent", the
+  // headline said 0 % and the bar was solid red (UX audit 2026-10-16, TIME-11).
+  if (!worked) {
+    if (!day.scheduled) return "off";
+    return clock?.beforeLate ? "not_in_yet" : "absent";
+  }
+  // Lateness is measured against an expected start, so only a scheduled day can be late — and in
+  // the org's own time, as the nightly close measures it.
+  const hhmm = clock?.hhmmOf ?? localHHMM;
+  if (day.scheduled && r.clockIn != null && hhmm(r.clockIn) > lateThreshold) return "late";
   return "present";
 }
 
@@ -571,6 +604,24 @@ export function useOversightAttendance({
   // "Late after" for the live today classification. Defaults to the same 09:30 the server assumes for
   // an unconfigured org, so a slow/failed settings read still classifies sensibly.
   const lateThreshold = useWorkingHours()?.late_threshold ?? "09:30";
+  // The org's timezone (`GET /v1/org`, any member), so "late" and "not in yet" are judged on the
+  // org's clock like the nightly close, not the viewer's (TIME-11). Loaded once, shared, deduped.
+  const orgTimezone = useOrgMetaStore((s) => s.view?.timezone);
+  useEffect(() => {
+    if (enabled) void useOrgMetaStore.getState().load();
+  }, [enabled]);
+  // Re-read every 30 s, so a roster left open across "Late after" turns its "Not in yet" rows into
+  // "Absent" without a refresh.
+  const nowMs = useNow();
+  const orgClock = useMemo(() => orgClockAt(orgTimezone, nowMs), [orgTimezone, nowMs]);
+  const todayClock = useMemo<TodayClock>(
+    () => ({
+      beforeLate: beforeLateThreshold(orgClock, todayIso, lateThreshold),
+      hhmmOf: (ms) => orgClockAt(orgTimezone, ms).hhmm,
+    }),
+    // `orgClock` carries the minute; the function only needs the zone.
+    [orgClock, todayIso, lateThreshold, orgTimezone],
+  );
   const todayKind = useMemo<TodayKind>(
     () => ({
       scheduled: isWorkday(new Date(now.year, now.month, now.day), workdays),
@@ -817,7 +868,7 @@ export function useOversightAttendance({
     if (state.mode !== "today") return null;
     const rows = state.rows.map((r) => ({
       ...r,
-      todayStatus: classifyToday(r, lateThreshold, todayKind),
+      todayStatus: classifyToday(r, lateThreshold, todayKind, todayClock),
     }));
     // **Attended today, not clocked in right now.**
     //
@@ -835,6 +886,9 @@ export function useOversightAttendance({
       partial: 0,
       late: 0,
       leave: counted.filter((r) => r.todayStatus === "leave").length,
+      // Expected and not in yet — in the denominator (they are expected), but neither attended nor
+      // absent until "Late after" passes (TIME-11).
+      notInYet: counted.filter((r) => r.todayStatus === "not_in_yet").length,
       total: counted.length,
     };
     const unknown = rows.filter((r) => r.dayUnknown).length;
@@ -849,7 +903,7 @@ export function useOversightAttendance({
         : null;
     const note = [state.note, offNote, unknownNote].filter(Boolean).join(" ") || null;
     return { rows, counts, note };
-  }, [state.mode, state.rows, state.note, lateThreshold, todayKind]);
+  }, [state.mode, state.rows, state.note, lateThreshold, todayKind, todayClock]);
 
   const summarizeDay = useMemo(
     () =>
@@ -871,5 +925,7 @@ export function useOversightAttendance({
     reload,
     summarizeDay,
     todayOff: todayKind.holiday || !todayKind.scheduled,
+    lateAfter: lateThreshold,
+    orgClockZoned: orgClock.zoned,
   };
 }

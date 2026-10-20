@@ -289,7 +289,8 @@ export function PersonalAttendanceView() {
   if (!user) return null;
 
   return (
-    <div className="space-y-5 pt-1">
+    // Bottom room for the floating assistant button (UX audit 2026-10-16, TIME-12 / XC-03).
+    <div className="space-y-5 pt-1 pb-20">
       <PageHeader
         title="My attendance"
         // Not "only you can see this": managers and admins read the same records and can export them
@@ -453,7 +454,67 @@ export function PersonalAttendanceView() {
             Recent days
           </h2>
         </div>
-        <div className="overflow-x-auto">
+        {/* Phones: one card per day. Clock in/out and Hours were past the right edge of a 390 px
+            screen behind an unlabelled sideways scroll (UX audit 2026-10-16, TIME-12 / XC-05). */}
+        <ul className="divide-y divide-border sm:hidden" aria-label="Recent days">
+          {recent.map((r) => {
+            const meta = statusMeta(r.status);
+            const logged = r.hours > 0 && r.clockIn && r.clockOut;
+            const fillPct =
+              r.hours > 0 ? Math.min(100, ((r.hours * 60) / expectedMin) * 100) : 0;
+            return (
+              <li key={r.key} className="space-y-2 px-5 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 font-medium">
+                    {r.label}
+                    {r.holiday ? <HolidayBadge name={r.holiday} /> : null}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-sm">
+                    <span className={cn("size-2 rounded-full", dayStatusDot(r.status, r.late))} />
+                    <span className={cn("font-medium", dayStatusTextColor(r.status, r.late))}>
+                      {dayStatusLabel(r.status, r.late)}
+                    </span>
+                  </span>
+                </div>
+                {r.hours > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={cn("absolute inset-y-0 left-0 rounded-full", meta.dot)}
+                        style={{ width: `${Math.max(fillPct, 2)}%` }}
+                      />
+                    </div>
+                    <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                      {Math.round(fillPct)}%
+                    </span>
+                  </div>
+                ) : null}
+                <dl className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <dt className="text-muted-foreground">Clock in</dt>
+                    <dd className="font-medium tabular-nums">{logged ? r.clockIn : "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Clock out</dt>
+                    <dd className="font-medium tabular-nums">{logged ? r.clockOut : "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Hours</dt>
+                    <dd className="font-medium tabular-nums">
+                      {r.hours > 0 ? formatHours(r.hours) : "—"}
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            );
+          })}
+        </ul>
+        <div
+          className="hidden overflow-x-auto focus-visible:outline-2 focus-visible:outline-ring sm:block"
+          role="region"
+          aria-label="Recent days"
+          tabIndex={0}
+        >
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">

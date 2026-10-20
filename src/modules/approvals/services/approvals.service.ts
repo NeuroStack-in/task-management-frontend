@@ -9,8 +9,9 @@
  *   GET  /v1/approvals?status        the queue for one status (GSI2 inbox)
  *   POST /v1/approvals/decide        approve | reject one
  *
- * (`POST /v1/approvals/bulk-decide` exists server-side but is not wrapped: no screen decides in bulk,
- * and a wrapper whose only caller was a test made bulk approval look finished — WP-480.)
+ * (`POST /v1/approvals/bulk-decide` exists server-side but is not wrapped. The queue's bulk approve
+ * (UX audit 2026-10-16, TIME-10) runs `decide` once per request, one at a time, so each result —
+ * and each refusal — is the same answer a single click would get.)
  *
  * A decision needs BOTH `user_id` and `request_id`: the request lives on the requester's partition,
  * so the id alone doesn't locate it.

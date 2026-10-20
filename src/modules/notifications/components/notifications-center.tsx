@@ -7,6 +7,7 @@ import {
   BellOff,
   Check,
   CheckCheck,
+  MoreHorizontal,
   SlidersHorizontal,
   X,
   ArrowUpRight,
@@ -23,6 +24,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useNotificationStore } from "@/stores/notification.store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
@@ -115,27 +122,57 @@ export function NotificationsCenter() {
   });
 
   return (
-    <div className="space-y-5">
+    // Bottom room for the floating assistant button (UX audit 2026-10-16, XC-03).
+    <div className="space-y-5 pb-20">
       <PageHeader
         title="Notifications"
         description="Everything that needs your attention."
         actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              nativeButton={false}
-              render={<Link href="/settings/notifications" />}
-            >
-              <SlidersHorizontal className="size-4" /> Preferences
-            </Button>
-            <Button
-              variant="outline"
-              onClick={markAllRead}
-              disabled={unread === 0}
-            >
-              <CheckCheck className="size-4" /> Mark all read
-            </Button>
-          </div>
+          <>
+            <div className="hidden items-center gap-2 md:flex">
+              <Button
+                variant="ghost"
+                nativeButton={false}
+                render={<Link href="/settings/notifications" />}
+              >
+                <SlidersHorizontal className="size-4" /> Preferences
+              </Button>
+              <Button
+                variant="outline"
+                onClick={markAllRead}
+                disabled={unread === 0}
+              >
+                <CheckCheck className="size-4" /> Mark all read
+              </Button>
+            </div>
+            {/* Below md the two buttons go into one "…" menu. Side by side in the top bar they
+                pushed the page to ≈ 522 px on a 390 px phone and squeezed the title out entirely
+                (UX audit 2026-10-16, EMP-05 / XC-04). */}
+            <div className="md:hidden">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="size-9 rounded-full"
+                      aria-label="Notification actions"
+                    />
+                  }
+                >
+                  <MoreHorizontal className="size-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-48">
+                  <DropdownMenuItem disabled={unread === 0} onClick={markAllRead}>
+                    <CheckCheck className="size-4" /> Mark all read
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push("/settings/notifications")}>
+                    <SlidersHorizontal className="size-4" /> Notification preferences
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </>
         }
       />
 

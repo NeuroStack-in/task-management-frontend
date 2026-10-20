@@ -85,7 +85,8 @@ export function TimeTrackingView() {
       : "Track your time, review today's timesheet, and monitor your weekly hours.";
 
   return (
-    <div className="flex flex-col gap-5">
+    // Bottom room for the floating assistant button (UX audit 2026-10-16, TIME-12 / XC-03).
+    <div className="flex flex-col gap-5 pb-20">
       <PageHeader
         title="Time Tracking"
         description={description}
@@ -205,6 +206,9 @@ function ToggleButton({
       onClick={onClick}
       // Not colour alone: the selected view is announced (QA audit 2026-10-08, WP-439).
       aria-pressed={active}
+      // Icon-only below `sm`, where the label pushed the page title out of the top bar (EMP-05);
+      // the name stays for assistive tech.
+      aria-label={label}
       className={cn(
         "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
         active
@@ -212,7 +216,7 @@ function ToggleButton({
           : "text-muted-foreground hover:text-foreground",
       )}
     >
-      <Icon className="size-4" /> {label}
+      <Icon className="size-4" /> <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }

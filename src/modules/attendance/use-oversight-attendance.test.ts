@@ -45,6 +45,25 @@ describe("classifyToday", () => {
   it("gives no verdict for a day that couldn't be read", () => {
     expect(classifyToday(row({ dayUnknown: true }), "09:30", scheduled)).toBeUndefined();
   });
+
+  /** TIME-11: nobody is absent before the workday has properly begun. */
+  it("is 'not in yet' before Late after and 'absent' only once it has passed", () => {
+    const early = { beforeLate: true, hhmmOf: () => "08:00" };
+    const late = { beforeLate: false, hhmmOf: () => "10:00" };
+    expect(classifyToday(row(), "09:30", scheduled, early)).toBe("not_in_yet");
+    expect(classifyToday(row(), "09:30", scheduled, late)).toBe("absent");
+    // A day nobody is expected stays a day off, whatever the hour; leave still wins.
+    expect(classifyToday(row(), "09:30", dayOff, early)).toBe("off");
+    expect(classifyToday(row({ onLeave: true }), "09:30", scheduled, early)).toBe("leave");
+  });
+
+  /** TIME-11: lateness is read on the org's clock, not the viewer's. */
+  it("judges a start late by the org's clock when it is given", () => {
+    const orgSaysTen = { beforeLate: false, hhmmOf: () => "10:05" };
+    const orgSaysNine = { beforeLate: false, hhmmOf: () => "09:00" };
+    expect(classifyToday(row({ clockIn: at(9, 0) }), "09:30", scheduled, orgSaysTen)).toBe("late");
+    expect(classifyToday(row({ clockIn: at(11, 0) }), "09:30", scheduled, orgSaysNine)).toBe("present");
+  });
 });
 
 describe("rangeDays", () => {

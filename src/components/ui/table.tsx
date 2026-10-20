@@ -4,11 +4,25 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  scrollLabel,
+  ...props
+}: React.ComponentProps<"table"> & {
+  /**
+   * Names the table's horizontal scroll area and makes it keyboard-focusable, so someone who
+   * can't swipe can still reach the columns past the edge (UX audit 2026-10-16, EMP-05; axe
+   * `scrollable-region-focusable`). Optional — without it the container is unchanged.
+   */
+  scrollLabel?: string
+}) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className="relative w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      {...(scrollLabel
+        ? { role: "region", "aria-label": scrollLabel, tabIndex: 0 }
+        : {})}
     >
       <table
         data-slot="table"

@@ -4,41 +4,60 @@
  * The approval queue, joined into something the table can render, from the real backend.
  *
  * The queue rows carry only ids (`user_id`, `type_id`) — names live in other contexts. So this joins
- * two side reads: the employees directory (`user_id → name`) and the leave-type catalog
+ * side reads: the employees directory (`user_id → name`, department) and the leave-type catalog
  * (`type_id → name`). Both **degrade**: a forbidden or missing lookup falls back to the id, so the
  * queue still renders rather than blanking over a name it couldn't resolve.
  *
  * Fetches pending/approved/rejected/cancelled together so the status tabs can show real counts and
  * switching a tab is instant — four GSI2 queries on an admin screen, not a hot path. (Cancelled used
  * to be left out, so "All" was not all: a withdrawn request vanished from the approver's view.)
+ *
+ * **Balances (UX audit 2026-10-16, TIME-10).** With `withBalances`, the org ledger
+ * (`GET /v1/leave/balances?year=`, `leave:manage`) is read for each year the pending requests touch,
+ * so a request can show what it leaves the person with. The queue route itself carries no balance and
+ * the ledger needs `leave:manage`, which the `leave:approve` bit alone doesn't grant — so an approver
+ * without it sees "balance not available", never a guess.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "@/lib/api";
-import { employeeNameMap } from "@/modules/employees/services/employees.service";
+import { readRoster } from "@/modules/employees/services/employees.service";
 import { UNKNOWN_TYPE } from "@/lib/format";
 import {
+  getOrgBalances,
   getTypes,
   type ApiLeaveAttachment,
+  type ApiOrgBalances,
 } from "@/modules/leave/services/leave.service";
+import { yearPortions } from "@/modules/leave/components/request-leave-dialog";
 import * as api from "./services/approvals.service";
 import type { ApiApprovalRow, DecideInput } from "./services/approvals.service";
+import {
+  alsoOff,
+  balanceAfter,
+  decisionError,
+  sortQueue,
+  type BalanceAfter,
+  type Standing,
+} from "./lib/queue";
 
 /** A queue row joined with resolved names — what the table renders. */
 export interface ApprovalItem {
   userId: string;
   requestId: string;
   requesterName: string;
+  /** The requester's department name, when the directory could be read. */
+  department?: string;
+  typeId: string;
   typeName: string;
   from: string;
   to: string;
   days: number;
   /**
-   * Minutes of permission; 0/absent for a full day. Carried so the approver reads
-   * "Permission · 2h · 10:30–12:30" instead of "0.25 days" — `requestLabel` needs all three, and
-   * dropping them here made it silently fall through to the fraction.
+   * Minutes of a few hours off (the API's `permission` kind); 0/absent for a full day. Carried so
+   * the approver reads "2 h off · 10:30 am to 12:30 pm" instead of "0.25 days".
    */
   permissionMinutes?: number;
-  /** `HH:MM` window, present only for a permission. */
+  /** `HH:MM` window, present only for a few hours off. */
   fromTime?: string;
   toTime?: string;
   reason?: string;
@@ -48,7 +67,17 @@ export interface ApprovalItem {
   attachments: ApiLeaveAttachment[];
 }
 
+/** Whether balance-after can be shown, and if not, why. */
+export type BalanceAvailability = "ok" | "loading" | "forbidden" | "error" | "off";
+
 const STATUSES = ["pending", "approved", "rejected", "cancelled"] as const;
+
+/** One failed item of a bulk decision. */
+export interface BulkFailure {
+  item: ApprovalItem;
+  title: string;
+  description: string;
+}
 
 export interface ApprovalsData {
   items: ApprovalItem[];
@@ -61,12 +90,33 @@ export interface ApprovalsData {
    * status from that moment, and the queue re-reads in the background.
    */
   decide: (item: ApprovalItem, decision: "approve" | "reject") => Promise<void>;
+  /**
+   * Approve several, **one at a time** over the same decide route (no burst, so no throttle), and
+   * report which failed and why. Never throws; re-reads the queue once at the end.
+   */
+  approveMany: (
+    items: ApprovalItem[],
+    onProgress?: (done: number) => void,
+  ) => Promise<{ approved: ApprovalItem[]; failed: BulkFailure[] }>;
+  /** What approving leaves the requester with, per year; `null` entries = that year unknown. */
+  balanceFor: (item: ApprovalItem) => (BalanceAfter | null)[] | null;
+  balanceAvailability: BalanceAvailability;
+  /** Other people off on any of this request's dates (approved or pending), soonest first. */
+  alsoOffFor: (item: ApprovalItem) => ApprovalItem[];
 }
 
-export function useApprovals(): ApprovalsData {
+export function useApprovals({
+  withBalances = false,
+}: { withBalances?: boolean } = {}): ApprovalsData {
   const [rows, setRows] = useState<ApiApprovalRow[]>([]);
   const [typeName, setTypeName] = useState<Map<string, string>>(new Map());
-  const [userName, setUserName] = useState<Map<string, string>>(new Map());
+  const [people, setPeople] = useState<
+    Map<string, { name: string; department?: string }>
+  >(new Map());
+  const [ledgers, setLedgers] = useState<Map<string, ApiOrgBalances>>(new Map());
+  const [balanceAvailability, setBalanceAvailability] = useState<BalanceAvailability>(
+    withBalances ? "loading" : "off",
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -92,18 +142,56 @@ export function useApprovals(): ApprovalsData {
         const merged = queues.flat();
         setRows(merged);
 
-        // Side joins, both best-effort. A directory a role can't read must not fail the queue.
-        const [types, names] = await Promise.all([
+        // The years the pending requests touch — usually one, two around New Year. Each needs its
+        // own ledger read: a balance is per calendar year.
+        const years = new Set<string>();
+        for (const r of merged) {
+          if (r.status !== "pending") continue;
+          for (const [y] of yearPortions(r.from, r.to, r.days)) years.add(y);
+        }
+
+        // Side joins, all best-effort. A directory or ledger a role can't read must not fail the
+        // queue.
+        const [types, roster, ledgerRead] = await Promise.all([
           getTypes()
             .then((ts) => new Map(ts.map((t) => [t.type_id, t.name])))
             .catch(() => new Map<string, string>()),
           // Names are a nicety: a `leave:approve` holder can usually read the directory, but if
           // they can't, the rows fall back to short ids rather than failing the whole queue.
-          employeeNameMap().catch(() => new Map<string, string>()),
+          readRoster().catch(() => null),
+          withBalances && years.size > 0
+            ? Promise.all(
+                [...years].map((y) => getOrgBalances(y).then((b) => [y, b] as const)),
+              )
+                .then((pairs) => ({ ok: new Map(pairs) as Map<string, ApiOrgBalances> }))
+                .catch((e: unknown) => ({
+                  failed:
+                    e instanceof ApiError && e.status === 403 ? "forbidden" : "error",
+                }))
+            : Promise.resolve({ ok: new Map<string, ApiOrgBalances>() }),
         ]);
         if (!live) return;
         setTypeName(types);
-        setUserName(names);
+        if (roster) {
+          const deptName = new Map((roster.departments ?? []).map((d) => [d.id, d.name]));
+          setPeople(
+            new Map(
+              roster.employees.map((e) => [
+                e.user_id,
+                { name: e.name, department: deptName.get(e.department_id) },
+              ]),
+            ),
+          );
+        }
+        if (withBalances) {
+          if ("ok" in ledgerRead) {
+            setLedgers(ledgerRead.ok);
+            setBalanceAvailability("ok");
+          } else {
+            setLedgers(new Map());
+            setBalanceAvailability(ledgerRead.failed as BalanceAvailability);
+          }
+        }
       } catch (e) {
         if (live) setError(messageOf(e));
       } finally {
@@ -114,7 +202,7 @@ export function useApprovals(): ApprovalsData {
     return () => {
       live = false;
     };
-  }, [nonce]);
+  }, [nonce, withBalances]);
 
   const items = useMemo<ApprovalItem[]>(() => {
     // One row per request. The four queues are separate reads of that settling index, so a
@@ -124,35 +212,79 @@ export function useApprovals(): ApprovalsData {
       const prev = byId.get(r.request_id);
       if (!prev || prev.status === "pending") byId.set(r.request_id, r);
     }
-    return (
-      [...byId.values()]
-        .map((r) => ({
-          userId: r.user_id,
-          requestId: r.request_id,
-          requesterName: userName.get(r.user_id) ?? shortId(r.user_id),
-          typeName: typeName.get(r.type_id) ?? UNKNOWN_TYPE,
-          from: r.from,
-          to: r.to,
-          attachments: r.attachments ?? [],
-          days: r.days,
-          permissionMinutes: r.permission_minutes,
-          fromTime: r.from_time,
-          toTime: r.to_time,
-          reason: r.reason,
-          status:
-            r.status === "pending" ? (decided.get(r.request_id) ?? r.status) : r.status,
-          createdAt: r.created_at,
-        }))
-        // Newest first, when the server stamped a created_at.
-        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    return sortQueue(
+      [...byId.values()].map((r) => ({
+        userId: r.user_id,
+        requestId: r.request_id,
+        requesterName: people.get(r.user_id)?.name ?? shortId(r.user_id),
+        department: people.get(r.user_id)?.department,
+        typeId: r.type_id,
+        typeName: typeName.get(r.type_id) ?? UNKNOWN_TYPE,
+        from: r.from,
+        to: r.to,
+        attachments: r.attachments ?? [],
+        days: r.days,
+        permissionMinutes: r.permission_minutes,
+        fromTime: r.from_time,
+        toTime: r.to_time,
+        reason: r.reason,
+        status:
+          r.status === "pending" ? (decided.get(r.request_id) ?? r.status) : r.status,
+        createdAt: r.created_at,
+      })),
     );
-  }, [rows, typeName, userName, decided]);
+  }, [rows, typeName, people, decided]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: items.length };
     for (const s of STATUSES) c[s] = items.filter((i) => i.status === s).length;
     return c;
   }, [items]);
+
+  /** `(year, user, type)` → the standing the server's check will read, from the ledger. */
+  const standing = useCallback(
+    (year: string, userId: string, typeId: string): Standing | null => {
+      const ledger = ledgers.get(year);
+      if (!ledger) return null;
+      const b = ledger.employees
+        .find((e) => e.user_id === userId)
+        ?.balances.find((x) => x.type_id === typeId);
+      if (!b) return null;
+      if (b.seeded) return { allowance: b.allowance, used: b.used };
+      // Never granted for that year yet: approval seeds it at the catalog allowance, nothing used
+      // (`seed_user_year`), so that is the figure the check will meet.
+      const t = ledger.types.find((x) => x.type_id === typeId);
+      return t ? { allowance: t.annual_allowance, used: 0 } : null;
+    },
+    [ledgers],
+  );
+
+  const balanceFor = useCallback(
+    (item: ApprovalItem): (BalanceAfter | null)[] | null => {
+      if (balanceAvailability !== "ok" || item.status !== "pending") return null;
+      const others = items.filter(
+        (o) =>
+          o.status === "pending" &&
+          o.userId === item.userId &&
+          o.typeId === item.typeId &&
+          o.requestId !== item.requestId,
+      );
+      return balanceAfter(
+        yearPortions(item.from, item.to, item.days),
+        (year) => standing(year, item.userId, item.typeId),
+        (year) =>
+          others.reduce(
+            (sum, o) =>
+              sum +
+              (yearPortions(o.from, o.to, o.days).find(([y]) => y === year)?.[1] ?? 0),
+            0,
+          ),
+      );
+    },
+    [balanceAvailability, items, standing],
+  );
+
+  const alsoOffFor = useCallback((item: ApprovalItem) => alsoOff(item, items), [items]);
 
   const decide = useCallback(
     async (item: ApprovalItem, decision: "approve" | "reject") => {
@@ -168,7 +300,45 @@ export function useApprovals(): ApprovalsData {
     [reload],
   );
 
-  return { items, counts, loading, error, reload, decide };
+  const approveMany = useCallback(
+    async (batch: ApprovalItem[], onProgress?: (done: number) => void) => {
+      const approved: ApprovalItem[] = [];
+      const failed: BulkFailure[] = [];
+      // Sequential on purpose: a parallel burst trips the API's throttle, and each approval debits
+      // a balance under an optimistic lock — one at a time keeps every result meaningful.
+      for (const [i, item] of batch.entries()) {
+        try {
+          const result = await api.decide({
+            user_id: item.userId,
+            request_id: item.requestId,
+            decision: "approve",
+          });
+          approved.push(item);
+          setDecided((m) => new Map(m).set(item.requestId, result.status));
+        } catch (e) {
+          const { title, description } = decisionError(e, item);
+          failed.push({ item, title, description });
+        }
+        onProgress?.(i + 1);
+      }
+      reload();
+      return { approved, failed };
+    },
+    [reload],
+  );
+
+  return {
+    items,
+    counts,
+    loading,
+    error,
+    reload,
+    decide,
+    approveMany,
+    balanceFor,
+    balanceAvailability,
+    alsoOffFor,
+  };
 }
 
 /** A short, human-ish fallback when a name can't be resolved — the id's tail, not the whole ULID. */

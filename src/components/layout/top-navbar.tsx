@@ -40,7 +40,10 @@ export function TopNavbar() {
   } = useAgentRelease();
 
   return (
-    <header className="bg-background/85 sticky top-0 z-30 flex h-20 items-center gap-3 px-4 backdrop-blur-md sm:px-6">
+    // Below `sm` the bar wraps and the page title takes a row of its own (see the title block
+    // below): on a 390 px phone the controls left it 3–11 px — "L", "Tim…", or nothing at all
+    // beside a running timer (UX audit 2026-10-16, EMP-05 / XC-04). `sm` and up are unchanged.
+    <header className="bg-background/85 sticky top-0 z-30 flex min-h-20 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 backdrop-blur-md sm:h-20 sm:flex-nowrap sm:gap-3 sm:px-6 sm:py-0">
       {/* Mobile sidebar trigger */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetTrigger
@@ -69,8 +72,11 @@ export function TopNavbar() {
         // `data-tour` anchor for the guided walkthroughs. This is the one element present on every
         // route for every role, so it's the reliable "you are here" target — unlike the dashboard's
         // GreetingHeader, which renders null and only publishes into this store.
-        <div className="min-w-0" data-tour="page:header">
-          <span className="font-display block truncate text-3xl leading-tight font-semibold tracking-tight">
+        <div
+          className="order-last min-w-0 basis-full sm:order-none sm:basis-auto"
+          data-tour="page:header"
+        >
+          <span className="font-display block truncate text-2xl leading-tight font-semibold tracking-tight sm:text-3xl">
             {title}
           </span>
           {description ? (

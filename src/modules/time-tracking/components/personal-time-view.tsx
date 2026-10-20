@@ -295,8 +295,81 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                 />
               </div>
 
-              <div className="overflow-x-auto rounded-xl border">
-                <Table>
+              {/* Phones: one card per session, Duration and Fix inside it. The table cut Time and
+                  Duration off past the right edge (UX audit 2026-10-16, TIME-12 / XC-05). */}
+              <div className="rounded-xl border sm:hidden">
+                {loading ? (
+                  <div className="space-y-2 p-4">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-5 w-full" />
+                    ))}
+                  </div>
+                ) : rows.length === 0 ? (
+                  <p className="text-muted-foreground px-4 py-8 text-center text-sm">
+                    No time tracked today. Sessions appear here once the desktop agent syncs them.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border" aria-label="Today's sessions">
+                    {rows.map((e) => (
+                      <li key={e.id} className="space-y-1.5 px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="min-w-0 font-medium break-words">
+                            {e.task || e.description || "No description"}
+                          </span>
+                          <span className="shrink-0 font-mono text-sm tabular-nums">
+                            {e.running ? (
+                              <span className="text-primary font-medium">
+                                {formatDuration(liveSec)}
+                              </span>
+                            ) : (
+                              formatDuration(e.durationSec)
+                            )}
+                          </span>
+                        </div>
+                        {e.task && e.description && e.description !== e.task ? (
+                          <p className="text-muted-foreground text-xs break-words">{e.description}</p>
+                        ) : null}
+                        <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                          {e.project ? <span>{e.project}</span> : null}
+                          <span className="font-mono tabular-nums">
+                            {e.start} – {e.end ?? "…"}
+                          </span>
+                          {e.billable ? <Badge variant="secondary">Billable</Badge> : null}
+                          {e.corrected ? (
+                            <Badge variant="outline" className="font-normal">
+                              Corrected
+                            </Badge>
+                          ) : null}
+                          {e.taskInvalid ? (
+                            <Badge variant="outline" className="text-warning gap-1">
+                              <TriangleAlert className="size-3" /> Task removed
+                            </Badge>
+                          ) : null}
+                        </p>
+                        {canFix && e.correctable ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-1 h-8"
+                            onClick={() => setFixing({ row: e, date: e.date || sheetDate })}
+                          >
+                            <Pencil className="size-3.5" /> Fix this session
+                          </Button>
+                        ) : null}
+                      </li>
+                    ))}
+                    <li className="flex items-center justify-between px-4 py-3 text-sm">
+                      <span className="font-medium">Total</span>
+                      <span className="font-mono font-semibold tabular-nums">
+                        {formatDuration(totalSec)}
+                      </span>
+                    </li>
+                  </ul>
+                )}
+              </div>
+
+              <div className="hidden rounded-xl border sm:block">
+                <Table scrollLabel="Today's sessions">
                   <TableHeader>
                     <TableRow className="bg-muted/40 hover:bg-muted/40">
                       <TableHead className="pl-6 text-xs font-medium tracking-wide uppercase">
@@ -492,7 +565,9 @@ function SummaryCell({
         <Icon className="size-[1.15rem]" />
       </span>
       <div className="min-w-0">
-        <p className="text-muted-foreground truncate text-[0.7rem] font-medium tracking-wide uppercase">
+        {/* Wraps instead of truncating: two cells to a row on a phone cut "Billable today" to
+            "BILLABLE T…" (UX audit 2026-10-16, EMP-05). */}
+        <p className="text-muted-foreground text-[0.7rem] leading-tight font-medium tracking-wide break-words uppercase">
           {label}
         </p>
         {loading ? (
