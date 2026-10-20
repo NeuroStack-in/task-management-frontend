@@ -229,7 +229,7 @@ export function PersonActivity({ userId }: { userId: string }) {
           {totals.categorised > 0 ? (
             <div className="rounded-xl border bg-card p-4">
               <h3 className="text-sm font-semibold">Where the time went</h3>
-              <p className="text-xs text-muted-foreground">Classified by your organization&apos;s app and website rules.</p>
+              <p className="text-xs text-muted-foreground">Classified by your organization&apos;s app and website rules (not AI).</p>
               <dl className="mt-3 grid grid-cols-3 gap-3">
                 <Split label="Productive" secs={totals.productive} of={totals.categorised} />
                 <Split label="Neutral" secs={totals.neutral} of={totals.categorised} />

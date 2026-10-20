@@ -16,7 +16,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DepartmentFilter } from "@/components/shared/department-filter";
+import { useDirectory } from "@/hooks/use-directory";
 import { ApiError } from "@/lib/api";
+import { formatHours } from "@/lib/format";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import {
   getDeptSummary,
@@ -25,10 +27,11 @@ import {
   type DeptSummary,
 } from "../services/insights.service";
 import { AiReportCard, type AiMetric } from "./ai-report-card";
+import { PersonLink } from "./person-link";
+import { deptSummaryProvenance, type Provenance } from "../lib/ai-provenance";
+import { resolvePerson } from "../lib/attention";
 
 const ALL = "all";
-
-const person = (p: DeptPersonStat | null) => (p ? `${p.name} · ${p.score}` : "—");
 
 /**
  * Why the summary could not be read, in words that do not pretend it was an empty period. A refusal
@@ -141,6 +144,31 @@ export function DepartmentScoreFocus({
   );
 
   /**
+   * A named person as a link to their Activity — and, for a single day, their screenshots that day
+   * (UX audit 2026-10-16, MON-04). The summary names people without an id, so the name is matched
+   * against the directory and stays plain text when it isn't exactly one person. The hours tracked
+   * go alongside: the one thing behind the score this payload carries.
+   */
+  const { employees } = useDirectory();
+  const person = (p: DeptPersonStat | null): Pick<AiMetric, "value" | "hint"> =>
+    p
+      ? {
+          value: (
+            <>
+              <PersonLink
+                userId={resolvePerson(p.name, employees)?.user_id ?? null}
+                name={p.name}
+                date={from === to ? to : undefined}
+                tone="onFeature"
+              />{" "}
+              · {p.score}
+            </>
+          ),
+          hint: `${formatHours(p.hours)} tracked`,
+        }
+      : { value: "—" };
+
+  /**
    * Absent figures stay absent rather than rendering as `0`. "Avg score 0/100" is a verdict on the
    * team; "—" is the truth when nobody was scored in the window.
    */
@@ -155,8 +183,8 @@ export function DepartmentScoreFocus({
           label: "Reporting",
           value: `${data.metrics.scored_people} / ${data.metrics.total_people}`,
         },
-        { label: "Top performer", value: person(data.metrics.top_performer) },
-        { label: "Needs attention", value: person(data.metrics.needs_improvement) },
+        { label: "Top performer", ...person(data.metrics.top_performer) },
+        { label: "Needs attention", ...person(data.metrics.needs_improvement) },
       ]
     : [];
 
@@ -167,9 +195,17 @@ export function DepartmentScoreFocus({
         ? error.message
         : data?.narrative || "No scored activity in this period yet.";
 
+  /**
+   * Who wrote it (MON-08). The fixed line for an unscored period is visible as such; otherwise this
+   * payload can't say whether the model or the server's fallback wrote it, so the card claims
+   * neither — no "AI" in the title, and a line saying it is usually AI and can be wrong.
+   */
+  const provenance: Provenance = data ? deptSummaryProvenance(data) : { kind: "none" };
+
   return (
     <AiReportCard
-      title="AI activity report"
+      title="Activity summary"
+      provenance={provenance}
       summary={summary}
       metrics={metrics}
       notice={notice}
@@ -186,7 +222,9 @@ export function DepartmentScoreFocus({
       }
       // Only once a narrative exists: an empty period has nothing to re-run, and each press is a
       // fresh billed generation.
-      onRegenerate={data?.narrative ? regenerate : undefined}
+      // The server's fixed line for an unscored period is never generated, so a re-run (a billed
+      // model call) could not change it either (MON-08).
+      onRegenerate={data?.narrative && provenance.kind !== "computed" ? regenerate : undefined}
       regenerating={regenFor === selection}
     />
   );

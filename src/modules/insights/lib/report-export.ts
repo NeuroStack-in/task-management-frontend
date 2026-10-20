@@ -76,6 +76,40 @@ function drawReportBody(doc: ReportDoc, heading: string, report: ReportDef) {
   doc.table(columnsFor(doc, report), report.rows, { empty: "No rows for this period." });
 }
 
+/**
+ * The days a file holds, for its name — `-2026-10-16`, or `-2026-10-12_to_2026-10-16` for a range
+ * (UX audit 2026-10-16, MON-05). A download used to be `productivity-report.csv` whichever day it
+ * held, so two exports from different days were indistinguishable, and "Download all" quietly
+ * exported a window the page wasn't on.
+ */
+export function windowSuffix(w: { from: string; to: string } | undefined): string {
+  if (!w) return "";
+  return w.from === w.to ? `-${w.from}` : `-${w.from}_to_${w.to}`;
+}
+
+/** The span every report in a pack falls within, or `undefined` when none says. */
+export function packWindow(reports: ReportDef[]): { from: string; to: string } | undefined {
+  const ws = reports.map((r) => r.window).filter((w): w is { from: string; to: string } => !!w);
+  if (ws.length === 0) return undefined;
+  return {
+    from: ws.reduce((m, w) => (w.from < m ? w.from : m), ws[0].from),
+    to: ws.reduce((m, w) => (w.to > m ? w.to : m), ws[0].to),
+  };
+}
+
+function spanLabel(w: { from: string; to: string } | undefined): string {
+  if (!w) return "—";
+  const fmt = (iso: string) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+  return w.from === w.to ? fmt(w.from) : `${fmt(w.from)} – ${fmt(w.to)}`;
+}
+
 /** The footer every analytics PDF carries. */
 const footer = (what: string, stamp: string) =>
   `WorkPulse · ${what} · ${stamp.replace(/^Generated/, "generated")} · — means the value wasn't measured, never zero`;
@@ -85,9 +119,11 @@ export function exportCsv(report: ReportDef) {
   const csv = toCsv({ fields: report.columns, data: report.rows });
   downloadBlob(
     new Blob([csv], { type: "text/csv;charset=utf-8;" }),
-    `${report.id}-report.csv`,
+    `${report.id}-report${windowSuffix(report.window)}.csv`,
   );
-  toast.success("CSV exported", { description: `${report.name}.csv` });
+  toast.success("CSV exported", {
+    description: `${report.name}${report.timeframe ? ` · ${report.timeframe}` : ""}`,
+  });
 }
 
 /**
@@ -118,8 +154,10 @@ export async function exportPdf(report: ReportDef) {
       doc.finish(footer(report.name, stamp));
       return doc.d;
     });
-    doc.save(`${report.id}-report.pdf`);
-    toast.success("PDF exported", { description: `${report.name}.pdf` });
+    doc.save(`${report.id}-report${windowSuffix(report.window)}.pdf`);
+    toast.success("PDF exported", {
+      description: `${report.name}${report.timeframe ? ` · ${report.timeframe}` : ""}`,
+    });
   } catch {
     toast.error("Couldn't export the PDF. Try again.");
   }
@@ -127,6 +165,7 @@ export async function exportPdf(report: ReportDef) {
 
 /** One combined PDF containing every report — the "overall reports" export. */
 export async function exportAllPdf(reports: ReportDef[]) {
+  const span = packWindow(reports);
   try {
     const doc = await buildPdf((text) => {
       const stamp = generatedStamp();
@@ -139,13 +178,14 @@ export async function exportAllPdf(reports: ReportDef[]) {
       const rows = reports.reduce((n, r) => n + r.rows.length, 0);
       const categories = new Set(reports.map((r) => r.category));
       doc.cards([
-        { label: "Reports", value: String(reports.length), hint: "in this pack" },
-        { label: "Rows", value: String(rows), hint: "across every report" },
         {
-          label: "Categories",
-          value: String(categories.size),
+          label: "Reports",
+          value: String(reports.length),
           hint: [...categories].map((c) => REPORT_CATEGORY_LABEL[c]).join(", "),
         },
+        { label: "Rows", value: String(rows), hint: "across every report" },
+        // The pack's window up front — each report's own is in the contents and its heading.
+        { label: "Period", value: spanLabel(span), hint: "daily and weekly reports within it" },
       ]);
       doc.section("Contents");
       doc.table(
@@ -167,12 +207,13 @@ export async function exportAllPdf(reports: ReportDef[]) {
       reports.forEach((report, i) =>
         drawReportBody(doc, `${i + 1}. ${report.name}`, report),
       );
-      doc.finish(footer("reports pack", stamp));
+      doc.finish(footer(`reports pack, ${spanLabel(span)}`, stamp));
       return doc.d;
     });
-    doc.save("workpulse-reports.pdf");
+    const file = `workpulse-reports${windowSuffix(span)}.pdf`;
+    doc.save(file);
     toast.success(`${reports.length} report${reports.length > 1 ? "s" : ""} exported`, {
-      description: "workpulse-reports.pdf",
+      description: file,
     });
   } catch {
     toast.error("Couldn't export the PDF. Try again.");
@@ -188,11 +229,7 @@ export function exportSelectedCsv(reports: ReportDef[]) {
       return `# ${r.name}${r.timeframe ? ` — ${r.timeframe}` : ""}\n${body}`;
     })
     .join("\n\n");
-  downloadBlob(
-    new Blob([CSV_BOM + csv], { type: "text/csv;charset=utf-8;" }),
-    "workpulse-reports.csv",
-  );
-  toast.success(`${reports.length} reports exported`, {
-    description: "workpulse-reports.csv",
-  });
+  const file = `workpulse-reports${windowSuffix(packWindow(reports))}.csv`;
+  downloadBlob(new Blob([CSV_BOM + csv], { type: "text/csv;charset=utf-8;" }), file);
+  toast.success(`${reports.length} reports exported`, { description: file });
 }

@@ -5,6 +5,8 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
+  FileText,
+  Gauge,
   Lock,
   RefreshCw,
   Sparkles,
@@ -29,17 +31,26 @@ import { useEntitlementsStore } from "@/stores/entitlements.store";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { ReportsLibrary } from "./reports-library";
 import { useAiReport, type AiReportLock } from "../use-reports";
-import { useWeekPerformers } from "../use-week-performers";
-import type { AiReport, NamedScore } from "../services/insights.service";
+import { useWeekPerformers, type RankedPerson } from "../use-week-performers";
+import type { AiReport, NamedScore, PersonScore } from "../services/insights.service";
 import { useScopedEmployee } from "./employee-scope-bar";
 import { PersonAiReports } from "./person-analytics";
+import { ALERTS_ANCHOR, AttentionPanel } from "./attention-panel";
+import { PersonLink } from "./person-link";
+import { dailyReportProvenance, provenanceLine, type Provenance } from "../lib/ai-provenance";
+import { LOW_SCORE_BELOW, resolvePerson } from "../lib/attention";
+import { orgActivityFor } from "../lib/day-reads";
 
 /**
  * AI reports — the AI-first executive surface in the preview's layout, fully live:
+ *  • **Needs attention** ({@link AttentionPanel}) — first, because it is what the page is for: every
+ *    attention signal for the page's day, each with its count, reason and link, and the people
+ *    behind them (the Alerts block `/insights/anomalies` opens) — UX audit 2026-10-16, MON-03/MON-06.
  *  • **AI briefing** + **workforce health** score (`GET /v1/insights/reports/ai`) — the AI-written
  *    org narrative, a real average-score ring, and the real day rollup. It needs the "Export AI PDF
  *    report" and "View organization activity" permissions **and** the AI Reports add-on; a refusal
- *    says which one is missing, not a failure.
+ *    says which one is missing, not a failure. The narrative wears AI branding only when a model
+ *    wrote it; the health score is an average, so it doesn't (MON-08).
  *  • **People to check in on** moved to the Attendance page — absences and short days are acted on
  *    against the roster, and this tab is a reading surface.
  *  • **Report library** ({@link ReportsLibrary}) — the preview's full "All reports" surface, every
@@ -171,6 +182,11 @@ function OrgReports() {
         </div>
       </div>
 
+      {/* ============================ NEEDS ATTENTION ========================= */}
+      {/* One answer to "what needs my attention", for the page's day, above everything else
+          (MON-03) — and the Alerts block `/insights/anomalies` opens (MON-06). */}
+      <AttentionPanel date={date} today={today} />
+
       {/* ========================= EXECUTIVE OVERVIEW ======================== */}
       <ExecutiveOverview
         state={aiReport}
@@ -185,7 +201,8 @@ function OrgReports() {
           is the reading surface. */}
 
       {/* ============================ REPORT LIBRARY ========================== */}
-      <ReportsLibrary />
+      {/* Follows the page's date (MON-05). */}
+      <ReportsLibrary date={date} />
     </div>
   );
 }
@@ -210,6 +227,9 @@ function ExecutiveOverview({
   // in the same order on every render. Not while the report is locked: the lists render under it, so
   // a week of reads behind a lock was spent on nothing (QA audit 2026-10-08, WP-492).
   const week = useWeekPerformers(state.locked ? "" : date);
+  // The day's roster, to turn the report's bare names into links — the same shared read the
+  // attention panel makes (see `lib/day-reads`), so it costs no extra request.
+  const roster = useDayRoster(state.locked ? "" : date);
 
   if (state.locked) {
     return <ReportLocked reason={state.locked} />;
@@ -244,6 +264,7 @@ function ExecutiveOverview({
     generated_at: state.data.generated_at ?? 0,
   };
   const band = healthBand(report.metrics.avg_score ?? 0);
+  const provenance = dailyReportProvenance(state.data);
 
   // "this week" only for the week that contains today — a past week's lists were titled "this week"
   // too (QA audit 2026-10-08, WP-487).
@@ -256,6 +277,8 @@ function ExecutiveOverview({
       <section className="grid gap-4 xl:grid-cols-12" data-tour="insights:ai">
         <AiBriefing
           report={report}
+          provenance={provenance}
+          roster={roster}
           onRegenerate={onRegenerate}
           regenerating={regenerating}
           notice={
@@ -275,6 +298,7 @@ function ExecutiveOverview({
           icon={TrendingUp}
           tone="up"
           people={week.topPerformers}
+          weekDays={week.days}
           emptyText={
             week.loading
               ? "Ranking the week…"
@@ -290,6 +314,7 @@ function ExecutiveOverview({
           icon={TrendingDown}
           tone="down"
           people={week.needsAttention}
+          weekDays={week.days}
           emptyText={
             week.loading
               ? "Ranking the week…"
@@ -303,6 +328,28 @@ function ExecutiveOverview({
       </div>
     </div>
   );
+}
+
+/**
+ * The org day rollup's people for `date` — the complete roster with each scored person's
+ * breakdown. Empty while loading, on failure, and for an empty `date`: the names it resolves then
+ * simply stay plain text.
+ */
+function useDayRoster(date: string): PersonScore[] {
+  const scope = useAuthStore((s) => s.user?.id ?? "");
+  const [people, setPeople] = useState<PersonScore[]>([]);
+  useEffect(() => {
+    setPeople([]);
+    if (!date) return;
+    let live = true;
+    orgActivityFor(scope, date)
+      .then((r) => live && setPeople(r.people))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [date, scope]);
+  return people;
 }
 
 /** `2026-10-05` → `"Oct 5"`. */
@@ -366,11 +413,17 @@ function ReportLocked({ reason }: { reason: AiReportLock }) {
 
 function AiBriefing({
   report,
+  provenance,
+  roster,
   onRegenerate,
   regenerating,
   notice,
 }: {
   report: AiReport;
+  /** Who wrote the narrative — the AI mark only when a model did (MON-08). */
+  provenance: Provenance;
+  /** The day's people, to link the report's names (it sends names without ids). */
+  roster: PersonScore[];
   onRegenerate: () => void;
   regenerating: boolean;
   /** A failed re-run or refresh — said here, beside the summary it kept. */
@@ -380,6 +433,7 @@ function AiBriefing({
   // The floating assistant's own gate — a button it can't answer is a button that does nothing.
   const canAsk = useAssistantAccess().chat;
   const attention = report.metrics.needs_attention.slice(0, 3);
+  const isAi = provenance.kind === "ai";
 
   return (
     <div className="relative flex flex-col overflow-hidden rounded-3xl bg-feature p-6 text-feature-foreground shadow-soft xl:col-span-8">
@@ -390,17 +444,25 @@ function AiBriefing({
       />
       <div className="relative flex h-full flex-col">
         <div className="flex items-center gap-2 text-sm font-medium text-feature-foreground/90">
-          <Sparkles className="size-4" /> Executive summary · {prettyDate(report.date)}
+          {/* The sparkle only over text a model wrote; the fixed line for an unscored day is a
+              summary of the figures, and says so (MON-08). */}
+          {isAi ? (
+            <Sparkles className="size-4" aria-hidden="true" />
+          ) : (
+            <FileText className="size-4" aria-hidden="true" />
+          )}
+          {isAi ? "AI executive summary" : "Summary"} · {prettyDate(report.date)}
         </div>
 
-        <Markdown className="mt-3 max-w-2xl text-[0.95rem] text-feature-foreground/90">
+        {/* Bold and headings re-inked for the feature surface — see `AiReportCard`. */}
+        <Markdown className="mt-3 max-w-2xl text-[0.95rem] text-feature-foreground/90 [&_.text-foreground]:text-feature-foreground">
           {report.narrative}
         </Markdown>
 
         {attention.length > 0 ? (
           <div className="mt-5 space-y-2 border-t border-white/15 pt-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-feature-foreground/70">
-              Needs your attention
+            <p className="text-xs font-semibold uppercase tracking-wide text-feature-foreground/80">
+              Lowest scores this day
             </p>
             {attention.map((a, i) => (
               <div
@@ -409,14 +471,30 @@ function AiBriefing({
                 className="flex w-full items-center gap-3 rounded-xl bg-white/10 px-3 py-2 text-left"
               >
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/15">
-                  <TrendingDown className="size-4" />
+                  <TrendingDown className="size-4" aria-hidden="true" />
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm">{a.name}</span>
+                {/* A link to the person and their day (MON-04). The report names people without an
+                    id, so the name is matched to the day's roster — and stays text if it could be
+                    two people. */}
+                <PersonLink
+                  userId={resolveNamed(a, roster)}
+                  name={a.name}
+                  date={report.date}
+                  tone="onFeature"
+                  className="min-w-0 flex-1 text-sm"
+                />
                 <span className="shrink-0 text-xs font-medium tabular-nums text-feature-foreground/85">
                   score {Math.round(a.score)}
                 </span>
               </div>
             ))}
+            {/* What drove each score — and anyone else below the line — is in Needs attention. */}
+            <a
+              href={`#${ALERTS_ANCHOR}`}
+              className="inline-block text-xs font-medium text-feature-foreground underline decoration-white/40 underline-offset-4 hover:decoration-white"
+            >
+              Why, and everyone below {LOW_SCORE_BELOW} →
+            </a>
           </div>
         ) : null}
 
@@ -435,22 +513,23 @@ function AiBriefing({
                 Ask the assistant <ArrowUpRight className="size-4" />
               </Button>
             ) : null}
-            <Button
-              size="sm"
-              onClick={onRegenerate}
-              disabled={regenerating}
-              title="Regenerate summary"
-              className="border-transparent bg-white/15 text-feature-foreground ring-1 ring-white/15 ring-inset hover:bg-white/25 disabled:opacity-70"
-            >
-              <RefreshCw className={cn("size-3.5", regenerating && "animate-spin")} />
-              {regenerating ? "Regenerating…" : "Regenerate"}
-            </Button>
+            {/* Only over model output: the fixed line for an unscored day is not generated, so a
+                re-run (a billed model call) could not change it. */}
+            {isAi ? (
+              <Button
+                size="sm"
+                onClick={onRegenerate}
+                disabled={regenerating}
+                title="Regenerate summary"
+                className="border-transparent bg-white/15 text-feature-foreground ring-1 ring-white/15 ring-inset hover:bg-white/25 disabled:opacity-70"
+              >
+                <RefreshCw className={cn("size-3.5", regenerating && "animate-spin")} />
+                {regenerating ? "Regenerating…" : "Regenerate"}
+              </Button>
+            ) : null}
           </div>
-          {formatGenerated(report.generated_at) ? (
-            <p className="text-xs text-feature-foreground/70">
-              Generated {formatGenerated(report.generated_at)}
-            </p>
-          ) : null}
+          {/* "AI-generated · time · may be wrong", or that this one isn't AI at all (MON-08). */}
+          <p className="text-xs text-feature-foreground/85">{provenanceLine(provenance)}</p>
         </div>
         {notice ? (
           <p className="mt-3 text-xs text-feature-foreground/80" role="status">
@@ -486,8 +565,10 @@ function HealthScoreCard({
 
   return (
     <div className="flex flex-col gap-5 rounded-3xl border border-border bg-card p-6 shadow-soft xl:col-span-4">
+      {/* Not "AI workforce health": it is an average of the day's scores, computed, and an AI mark
+          on it claimed a judgement nobody made (MON-08). */}
       <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-        <Sparkles className="size-4 text-primary" /> AI workforce health
+        <Gauge className="size-4 text-primary" aria-hidden="true" /> Workforce health
       </div>
 
       <div className="flex items-center gap-5">
@@ -501,7 +582,8 @@ function HealthScoreCard({
             {m.avg_score === null ? "No scores" : band.label}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            The team&apos;s average productivity score for the day, from reported activity.
+            The team&apos;s average productivity score for the day — computed from reported
+            activity, not written by AI.
           </p>
         </div>
       </div>
@@ -571,14 +653,18 @@ function NamedScoreList({
   icon: Icon,
   tone,
   people,
+  weekDays,
   emptyText,
 }: {
   title: string;
   icon: LucideIcon;
   tone: "up" | "down";
-  people: NamedScore[];
+  people: RankedPerson[];
+  /** The days ranked — the last one is the day the screenshots link opens. */
+  weekDays: string[];
   emptyText: string;
 }) {
+  const lastDay = weekDays[weekDays.length - 1];
   return (
     <div className="rounded-2xl border border-border bg-card">
       <div className="flex items-center gap-2 border-b border-border px-5 py-3.5 text-sm font-semibold">
@@ -589,17 +675,41 @@ function NamedScoreList({
         <p className="px-5 py-8 text-center text-sm text-muted-foreground">{emptyText}</p>
       ) : (
         <div className="divide-y">
-          {people.map((p, i) => (
-            <div key={`${p.name}-${i}`} className="flex items-center justify-between gap-3 px-5 py-3">
-              <span className="min-w-0 truncate text-sm font-medium">{p.name}</span>
-              <Badge className={cn(tone === "up" ? "bg-success/12 text-success" : "bg-warning/15 text-warning")}>
-                score {Math.round(p.score)}
-              </Badge>
-            </div>
-          ))}
+          {people.map((p) => {
+            // What drove the week's score: the weakest parts for someone needing attention, the
+            // strongest for a top performer — averaged over the days they were scored (MON-04).
+            const drivers = tone === "up" ? [...p.drivers].reverse().slice(0, 2) : p.drivers.slice(0, 2);
+            return (
+              <div key={p.userId} className="flex items-start justify-between gap-3 px-5 py-3">
+                <div className="min-w-0 space-y-0.5">
+                  <PersonLink userId={p.userId} name={p.name} date={lastDay} className="text-sm font-medium" />
+                  {drivers.length > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      {tone === "up" ? "Strongest: " : "Weakest: "}
+                      {drivers.map((d) => `${d.label} ${d.value}`).join(" · ")}
+                      {` · ${p.days} ${p.days === 1 ? "day" : "days"} scored`}
+                    </p>
+                  ) : null}
+                </div>
+                <Badge className={cn("shrink-0", tone === "up" ? "bg-success/12 text-success" : "bg-warning/15 text-warning")}>
+                  score {Math.round(p.score)}
+                </Badge>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
+/**
+ * The roster id a report's bare name refers to — `null` unless exactly one person on the day's
+ * roster has that name (and, when two do, that score). The executive report sends `NamedScore`
+ * without a `user_id`; the field it needs is listed in the audit report.
+ */
+function resolveNamed(n: NamedScore, roster: PersonScore[]): string | null {
+  return (
+    resolvePerson(n.name, roster, (p) => p.breakdown?.score ?? null, n.score)?.user_id ?? null
+  );
+}

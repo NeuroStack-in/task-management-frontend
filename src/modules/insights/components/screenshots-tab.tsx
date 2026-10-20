@@ -39,6 +39,16 @@ import {
 } from "../services/insights.service";
 import { EMP_PARAM } from "../lib/employee-scope";
 import { AiReportCard } from "./ai-report-card";
+import { DATE_PARAM } from "./person-link";
+import { screenshotSummaryProvenance, type Provenance } from "../lib/ai-provenance";
+
+/** `?show=review` opens the gallery on "Needs review" — where the attention panel's link lands. */
+const SHOW_PARAM = "show";
+
+/** A `?date=` worth honouring: a real `YYYY-MM-DD` that isn't in the future. */
+function validDateParam(v: string | null, today: string): v is string {
+  return !!v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00`)) && v <= today;
+}
 
 /**
  * Screenshot gallery — the preview's polished monitoring surface (AI screenshot-report hero,
@@ -186,10 +196,17 @@ interface EmployeeGroup {
 }
 
 export function ScreenshotsTab() {
-  // Default to today; client-side to avoid an SSR date mismatch.
+  // Default to today; client-side to avoid an SSR date mismatch. A `?date=` opens that day instead —
+  // the attention panel and the AI cards link a person's screenshots *for the day they are about*
+  // (UX audit 2026-10-16, MON-04), which a tab that always opened on today could not honour.
+  const searchParams = useSearchParams();
+  const dateParam = searchParams.get(DATE_PARAM);
   const [date, setDate] = useState<string>("");
-  useEffect(() => setDate(isoOf(new Date())), []);
   const today = isoOf(new Date());
+  useEffect(() => {
+    const t = isoOf(new Date());
+    setDate((d) => (validDateParam(dateParam, t) ? dateParam : d || t));
+  }, [dateParam]);
 
   /**
    * The org's screenshot retention, so this page can say what happened to older days rather than
@@ -228,7 +245,9 @@ export function ScreenshotsTab() {
 
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState<string>(ALL_DEPTS);
-  const [flag, setFlag] = useState<"all" | "flagged">("all");
+  const [flag, setFlag] = useState<"all" | "flagged">(
+    searchParams.get(SHOW_PARAM) === "review" ? "flagged" : "all",
+  );
   /**
    * The employee whose captures are open, or `null` for the gallery.
    *
@@ -241,7 +260,6 @@ export function ScreenshotsTab() {
   // land straight on that person's day rather than the whole-org gallery. It follows the parameter
   // both ways — "Whole organization" in the scope bar drops it, and this closes the person — while a
   // tile clicked in the gallery opens a person without scoping the other tabs.
-  const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const deepLinkedUser = searchParams.get(EMP_PARAM);
@@ -540,6 +558,13 @@ export function ScreenshotsTab() {
 
   const nameOf = (id: string) => personName(dirById.get(id)?.name, OUT_OF_SCOPE);
 
+  /** Who wrote the card's text: the local count line is ours; the server's narrative may be AI. */
+  const shotProvenance: Provenance = aiAnalysed
+    ? screenshotSummaryProvenance(aiAnalysed)
+    : countsUnknown
+      ? { kind: "none" }
+      : { kind: "computed" };
+
   if (openUser) {
     // **Fetched for this person, from the server** — not filtered out of the gallery's list. The
     // gallery stops paging at a cap, and its sort key is user-then-time, so on a large day whole
@@ -607,14 +632,18 @@ export function ScreenshotsTab() {
   return (
     <div className="space-y-5" data-tour="shots:review">
       <AiReportCard
+        // No "AI" in the title (MON-08): the text below is the local count line until frames are
+        // analysed, and after that the server's payload can't say whether the model or its
+        // fallback wrote it — the provenance line says which is known.
         title={
-          dept === ALL_DEPTS
-            ? "AI screenshot report"
-            : `AI screenshot report · ${deptLabel(dept)}`
+          dept === ALL_DEPTS ? "Screenshot summary" : `Screenshot summary · ${deptLabel(dept)}`
         }
+        provenance={shotProvenance}
         summary={aiAnalysed?.narrative || summary}
         notice={aiNotice ?? aiCoverage}
-        onRegenerate={regenerateAi}
+        // Only once there is a server narrative: until frames are analysed the card shows our own
+        // count line, which no model run can change (MON-08).
+        onRegenerate={aiAnalysed ? regenerateAi : undefined}
         regenerating={aiRegenFor === aiSelection}
         metrics={[
           // "—" while the grid loads or after it failed: a count of 0 there is a measurement of

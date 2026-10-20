@@ -67,6 +67,9 @@ import { useReportsData } from "../use-reports-data";
  * and the full-table View dialog). Every `ReportDef` it renders is composed from real endpoints in
  * {@link useReportsData}: real preview rows, real counts, real exports. A report whose composer found
  * no data renders an honest empty card — never fabricated rows.
+ *
+ * **It follows the page's date** (UX audit 2026-10-16, MON-05): the header says which day and which
+ * week the cards cover, and every download is named for its window.
  */
 
 /** Each report category gets its own icon so cards are scannable at a glance. */
@@ -81,10 +84,10 @@ const CATEGORY_ICON: Record<ReportCategory, LucideIcon> = {
 
 type Filter = "all" | ReportCategory;
 
-export function ReportsLibrary() {
+export function ReportsLibrary({ date }: { date: string }) {
   const { can } = usePermissions();
   const canExport = can("reports:export");
-  const { reports: allReports, loading, error, reload } = useReportsData();
+  const { reports: allReports, window: win, loading, error, reload } = useReportsData(date);
   const [filter, setFilter] = useState<Filter>("all");
   const [preview, setPreview] = useState<ReportDef | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -138,7 +141,11 @@ export function ReportsLibrary() {
       <SectionLabel
         icon={FileText}
         title="All reports"
-        hint="Every report, organized by purpose"
+        hint={
+          win
+            ? `For the date above: daily reports cover ${win.dayLabel}, weekly reports ${win.weekLabel}. Downloads hold exactly these windows.`
+            : "Every report, organized by purpose — for the date above"
+        }
       />
 
       {loading && allReports.length === 0 ? (
@@ -220,6 +227,8 @@ export function ReportsLibrary() {
                 <Button
                   disabled={!canExport || allReports.length === 0}
                   onClick={() => exportAllPdf(allReports)}
+                  // Says which days it holds, so it can't export another window unannounced (MON-05).
+                  title={win ? `Every report, ${win.from === win.to ? win.dayLabel : `${win.weekLabel} (weekly) and ${win.dayLabel} (daily)`}` : undefined}
                 >
                   <Download className="size-4" /> Download all
                 </Button>

@@ -3,6 +3,7 @@
 import {
   Sparkles,
   ArrowUpRight,
+  FileText,
   RefreshCw,
   TrendingUp,
   TrendingDown,
@@ -14,6 +15,7 @@ import { useAssistantStore } from "@/stores/assistant.store";
 import { useAssistantAccess } from "@/hooks/use-assistant-access";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
+import { provenanceLine, type Provenance } from "../lib/ai-provenance";
 
 export type AiTone = "up" | "down" | "flat";
 export interface AiSignal {
@@ -25,7 +27,8 @@ export interface AiSignal {
 /** A headline figure rendered inside the AI hero card. */
 export interface AiMetric {
   label: string;
-  value: string | number;
+  /** A node too, so a named person can be a link (UX audit MON-04). */
+  value: React.ReactNode;
   /** Percentage delta vs previous period; omit for none. */
   delta?: number;
   /** Small qualifier shown next to the value, e.g. "live". */
@@ -42,6 +45,11 @@ const ToneIcon: Record<AiTone, typeof TrendingUp> = {
  * The shared AI report — a featured indigo card with an AI-written summary,
  * a few key signals, and a hand-off to the assistant. Reused on every Insights
  * page so each surface carries its own AI read.
+ *
+ * **Pass `provenance`** and the card says who wrote the text (UX audit 2026-10-16, MON-08): the
+ * sparkle only on text a model wrote, with "AI-generated · time · may be wrong"; a template
+ * fallback gets a plain icon and "not written by AI". Without it the card renders as it always did
+ * — callers outside Analytics still rely on that.
  */
 export function AiReportCard({
   title = "AI summary",
@@ -53,6 +61,7 @@ export function AiReportCard({
   regenerating = false,
   onRetry,
   notice,
+  provenance,
 }: {
   title?: string;
   summary: string;
@@ -74,6 +83,8 @@ export function AiReportCard({
   onRetry?: () => void;
   /** A one-line status under the summary, e.g. a failed re-run that kept the previous text. */
   notice?: string | null;
+  /** Who wrote `summary` — see `lib/ai-provenance`. Omit to keep the card's original look. */
+  provenance?: Provenance;
 }) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   // The floating assistant's own gate — a button it can't answer is a button that does nothing.
@@ -83,14 +94,26 @@ export function AiReportCard({
       <CardHeader className="pb-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="size-4" /> {title}
+            {provenance && provenance.kind !== "ai" ? (
+              <FileText className="size-4" aria-hidden="true" />
+            ) : (
+              <Sparkles className="size-4" aria-hidden="true" />
+            )}{" "}
+            {title}
           </CardTitle>
           {action}
         </div>
       </CardHeader>
       <CardContent className="space-y-3 pt-3">
         {/* The model writes Markdown; printed raw it arrived as literal `**` and pipes. */}
-        <Markdown className="text-feature-foreground/90">{summary}</Markdown>
+        {/* The shared Markdown inks bold text and headings `text-foreground`, which is dark on this
+            card — "**65/100**" rendered as near-invisible text. Re-ink them for the feature surface. */}
+        <Markdown className="text-feature-foreground/90 [&_.text-foreground]:text-feature-foreground">
+          {summary}
+        </Markdown>
+        {provenance && provenanceLine(provenance) ? (
+          <p className="text-xs text-feature-foreground/85">{provenanceLine(provenance)}</p>
+        ) : null}
         {notice ? (
           <p className="text-xs text-feature-foreground/75" role="status">
             {notice}

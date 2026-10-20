@@ -15,18 +15,22 @@
  *  - **Fetch once, reuse.** The per-employee timesheet fan-out feeds *three* reports (Timesheet
  *    Summary, Utilization, and the per-project hour rollup) from a single set of requests.
  *
- * ## Window
- * Monitoring/timesheet data lives on completed workdays, so we compose over the org's **most recent
- * scheduled day** before today (single-day reports: productivity, leaderboard, anomalies) and the
- * scheduled days of the org's week up to it (weekly reports: timesheet, utilization, project,
- * attendance). The schedule is the org's own (`GET /v1/org/working-hours`), not Mon–Fri.
+ * ## Window — the page's date (UX audit 2026-10-16, MON-05)
+ * The library follows the date the page is on: single-day reports (productivity, leaderboard,
+ * anomalies) cover **that day**, and weekly ones (timesheet, utilization, project, attendance) the
+ * org's scheduled days of the week containing it, up to it. It used to compose over "the most recent
+ * workday before today" whatever the page said, so a page on 16 Oct showed cards for 15 Oct and the
+ * week of 12 Oct, and "Download all" exported that other window without a word. Every card and every
+ * exported file now names its window. The schedule is the org's own (`GET /v1/org/working-hours`),
+ * not Mon–Fri.
  */
 import { useCallback, useEffect, useState } from "react";
-import { getAttention, getOrgActivity, type OrgActivity } from "./services/insights.service";
+import { type OrgActivity } from "./services/insights.service";
 import { OMITTED, type ReportDef } from "./lib/report-def";
-import { lastWorkdayBefore, weekWorkdays } from "./lib/week";
+import { attentionFor, orgActivityFor } from "./lib/day-reads";
+import { weekWorkdays } from "./lib/week";
 import { UNKNOWN_DEPARTMENT } from "@/lib/format";
-import { safeWorkdays } from "@/lib/workdays";
+import { safeWorkdays, type IsoWeekday } from "@/lib/workdays";
 import { useAuthStore } from "@/stores/auth.store";
 import {
   getWorkingHours,
@@ -54,15 +58,21 @@ import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 
 /* ------------------------------- concurrency ------------------------------ */
 
-/** Run `fn` over `items` with at most `limit` in flight. Mirrors `use-month-attendance`. */
+/**
+ * Run `fn` over `items` with at most `limit` in flight. Mirrors `use-month-attendance`.
+ *
+ * `live` is checked before each request: stepping the page's date past a day mid-composition used
+ * to leave that day's fan-out issuing requests for a library nobody would see.
+ */
 async function mapWithConcurrency<T>(
   items: T[],
   limit: number,
   fn: (item: T) => Promise<void>,
+  live: () => boolean = () => true,
 ): Promise<void> {
   let next = 0;
   async function worker() {
-    while (next < items.length) {
+    while (next < items.length && live()) {
       const i = next++;
       await fn(items[i]);
     }
@@ -104,10 +114,57 @@ function prettyShort(iso: string): string {
   });
 }
 
+function prettyDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** The windows a library covers for one page date — what every card and exported file names. */
+export interface ReportsWindow {
+  /** The single day the daily reports cover. */
+  day: string;
+  /** The weekly reports' scheduled days, `from`…`to`, never past `day`. */
+  from: string;
+  to: string;
+  /** How many scheduled days the weekly window holds. */
+  workdays: number;
+  dayLabel: string;
+  weekLabel: string;
+}
+
+/** Pure, so the rule is pinned by a test. `today` marks a window still filling in as "so far". */
+export function reportsWindow(
+  date: string,
+  workdays: readonly IsoWeekday[],
+  today: string,
+): ReportsWindow {
+  const weekIsos = weekWorkdays(date, workdays).filter((d) => d <= date);
+  const from = weekIsos[0] ?? date;
+  const to = weekIsos[weekIsos.length - 1] ?? date;
+  const soFar = (iso: string) => (iso === today ? " (so far)" : "");
+  return {
+    day: date,
+    from,
+    to,
+    workdays: weekIsos.length,
+    dayLabel: `${prettyDay(date)}${soFar(date)}`,
+    weekLabel:
+      from === to
+        ? `${prettyDay(from)}${soFar(to)}`
+        : `${prettyShort(from)} – ${prettyShort(to)}${soFar(to)}`,
+  };
+}
+
 /* --------------------------------- state ---------------------------------- */
 
 export interface ReportsData {
   reports: ReportDef[];
+  /** The windows `reports` cover, once composed — `null` before. */
+  window: ReportsWindow | null;
   loading: boolean;
   /** Set only when the base reads all failed — a single bad fan-out item is swallowed. */
   error: string | null;
@@ -124,56 +181,70 @@ const humanize = (s: string): string => {
 };
 
 /**
- * The last composed library, reused for a few minutes.
+ * Composed libraries, reused for a few minutes — one per page date, the last few kept.
  *
  * Composing is a request per measured person plus one per project — about 70 for a 50-person org,
  * well over 100 at 150 — and it ran again on every visit to the tab (QA audit 2026-10-08, WP-492).
- * Keyed by user and day, so another sign-in in the same tab or a new day never sees it; "Try again"
- * drops it.
+ * Keyed by user and date, so another sign-in in the same tab never sees it, and stepping back to a
+ * day just viewed costs nothing; "Try again" drops them all.
  */
-let composed: { key: string; at: number; reports: ReportDef[] } | null = null;
+const composed = new Map<string, { at: number; reports: ReportDef[]; window: ReportsWindow }>();
 const COMPOSE_TTL_MS = 5 * 60_000;
+const COMPOSE_KEEP = 6;
+/** Wait this long on a new date before composing, so stepping through days composes only the last. */
+const COMPOSE_DEBOUNCE_MS = 400;
 
-export function useReportsData(): ReportsData {
+/** The library for page date `date` (`YYYY-MM-DD`). An empty `date` composes nothing yet. */
+export function useReportsData(date: string): ReportsData {
   const [reports, setReports] = useState<ReportDef[]>([]);
+  const [reportWindow, setReportWindow] = useState<ReportsWindow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const userId = useAuthStore((s) => s.user?.id ?? "");
 
   useEffect(() => {
+    if (!date) return;
     let live = true;
+    const isLive = () => live;
     const todayIso = isoOf(new Date());
-    const cacheKey = `${userId}|${todayIso}`;
-    if (composed && composed.key === cacheKey && Date.now() - composed.at < COMPOSE_TTL_MS) {
-      setReports(composed.reports);
+    const cacheKey = `${userId}|${date}`;
+    const hit = composed.get(cacheKey);
+    if (hit && Date.now() - hit.at < COMPOSE_TTL_MS) {
+      setReports(hit.reports);
+      setReportWindow(hit.window);
       setError(null);
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
+    // Another date's cards must not sit under this one's while it composes.
+    setReports([]);
+    setReportWindow(null);
 
-    (async () => {
+    async function compose() {
       // The org's own schedule, not Mon–Fri: a Sun–Thu org got Friday as its "most recent workday"
       // and an empty report, and a six-day org never saw a Saturday (QA audit 2026-10-08, WP-283).
       // A failed read falls back to Mon–Fri — what the server assumes for an unconfigured org.
       const hours = await getWorkingHours().catch(() => null);
+      if (!live) return;
       const workdays = safeWorkdays(hours?.workdays);
-      const dayIso = lastWorkdayBefore(todayIso, workdays);
+      const win = reportsWindow(date, workdays, todayIso);
+      const dayIso = win.day;
       const weekIsos = weekWorkdays(dayIso, workdays).filter((d) => d <= dayIso);
-      const from = weekIsos[0] ?? dayIso;
-      const to = weekIsos[weekIsos.length - 1] ?? dayIso;
-      const weekLabel = `Week of ${prettyShort(from)}`;
-      const dayLabel = prettyShort(dayIso);
+      const { from, to, weekLabel, dayLabel } = win;
+      const dayWindow = { from: dayIso, to: dayIso };
+      const weekWindow = { from, to };
 
       // ── base reads (independent; each degrades to empty, not a total failure) ──
       const [empRes, deptRes, projRes, orgRes, attnRes, contribRes] = await Promise.allSettled([
         listAllEmployees(),
         departmentMap(),
         listProjects(),
-        getOrgActivity(dayIso),
-        getAttention(dayIso),
+        // Shared with the page's "Needs attention" panel and week ranking (see `lib/day-reads`).
+        orgActivityFor(userId, dayIso),
+        attentionFor(userId, dayIso),
         contributorRoleIds(),
       ]);
       if (!live) return;
@@ -232,26 +303,37 @@ export function useReportsData(): ReportsData {
       // role without `time-tracking:self` cannot log a timer, so its timesheet is a request for a
       // row no report shows (QA audit 2026-10-08, WP-492).
       const timesheets = new Map<string, ApiGridResponse>();
-      await mapWithConcurrency(measuredEmployees, 3, (e) =>
-        getUserTimesheet(e.user_id, from, to).then(
-          (g) => void timesheets.set(e.user_id, g),
-          () => {},
-        ),
+      await mapWithConcurrency(
+        measuredEmployees,
+        3,
+        (e) =>
+          getUserTimesheet(e.user_id, from, to).then(
+            (g) => void timesheets.set(e.user_id, g),
+            () => {},
+          ),
+        isLive,
       );
 
       // Attendance status per weekday (a handful of calls covers the whole org).
       const oversightByDay = new Map<string, Map<string, AttendanceStatus>>();
-      await mapWithConcurrency(weekIsos, 3, (iso) =>
-        getDayOversight(iso).then(
-          (r) => void oversightByDay.set(iso, new Map(r.users.map((u) => [u.user_id, u.status]))),
-          () => {},
-        ),
+      await mapWithConcurrency(
+        weekIsos,
+        3,
+        (iso) =>
+          getDayOversight(iso).then(
+            (r) => void oversightByDay.set(iso, new Map(r.users.map((u) => [u.user_id, u.status]))),
+            () => {},
+          ),
+        isLive,
       );
 
       // Project detail (for KPI active-member counts).
       const projectDetail = new Map<string, ApiProjectDetail>();
-      await mapWithConcurrency(projects, 3, (p) =>
-        getProject(p.id).then((d) => void projectDetail.set(p.id, d), () => {}),
+      await mapWithConcurrency(
+        projects,
+        3,
+        (p) => getProject(p.id).then((d) => void projectDetail.set(p.id, d), () => {}),
+        isLive,
       );
 
       // Per-day org activity across the week — the day-over-day series the productivity report's
@@ -263,7 +345,8 @@ export function useReportsData(): ReportsData {
       await mapWithConcurrency(
         weekIsos.filter((iso) => iso !== dayIso),
         3,
-        (iso) => getOrgActivity(iso).then((r) => void activityByDay.set(iso, r), () => {}),
+        (iso) => orgActivityFor(userId, iso).then((r) => void activityByDay.set(iso, r), () => {}),
+        isLive,
       );
       const priorScores = new Map<string, number[]>();
       for (const [iso, act] of activityByDay) {
@@ -301,6 +384,7 @@ export function useReportsData(): ReportsData {
           "Productivity score and active hours for the day, for people whose role tracks time. Trend is the change vs the person's average over the earlier days of the week.",
         category: "workforce",
         timeframe: dayLabel,
+        window: dayWindow,
         columns: ["Employee", "Department", "Active hrs", "Productivity %", "Trend"],
         rows: measuredPeople.map((p) => {
           const score = p.breakdown ? Math.round(p.breakdown.score) : null;
@@ -321,6 +405,7 @@ export function useReportsData(): ReportsData {
         description: "Top 10 performers ranked by productivity score for the day.",
         category: "workforce",
         timeframe: dayLabel,
+        window: dayWindow,
         columns: ["Rank", "Employee", "Department", "Productivity %"],
         rows: measuredPeople
           .filter((p) => p.breakdown)
@@ -337,6 +422,7 @@ export function useReportsData(): ReportsData {
           "Tracked hours and billable split per employee. Idle time needs the desktop agent's activity capture.",
         category: "time",
         timeframe: weekLabel,
+        window: weekWindow,
         columns: ["Employee", "Tracked hrs", "Idle hrs", "Billable %"],
         rows: measuredEmployees.map((e) => {
           const g = timesheets.get(e.user_id);
@@ -362,6 +448,7 @@ export function useReportsData(): ReportsData {
         } covered (${dayHours} h a day) — an org-wide assumption, not a per-person contract.`,
         category: "time",
         timeframe: weekLabel,
+        window: weekWindow,
         columns: ["Employee", "Capacity hrs", "Billable hrs", "Utilization %"],
         rows: measuredEmployees.map((e) => {
           const g = timesheets.get(e.user_id);
@@ -408,6 +495,7 @@ export function useReportsData(): ReportsData {
           "Hours tracked per project this week, with active members. On track means no overdue tasks and not past its end date.",
         category: "projects",
         timeframe: weekLabel,
+        window: weekWindow,
         columns: ["Project", "Hours", "Members", "On track"],
         rows: projects.map((p) => {
           const detail = projectDetail.get(p.id);
@@ -430,9 +518,10 @@ export function useReportsData(): ReportsData {
         id: "attendance",
         name: "Attendance Summary",
         description:
-          "Present / leave / absent days and attendance rate, for people whose role tracks time. Late needs a per-day detail the oversight index doesn't project.",
+          "Present / leave / absent days and attendance rate, for people whose role tracks time. A day counts once attendance closes overnight, so today isn't in it yet. Late needs a per-day detail the oversight index doesn't project.",
         category: "attendance",
         timeframe: weekLabel,
+        window: weekWindow,
         columns: ["Employee", "Department", "Present", "Late", "On leave", "Absent", "Rate %"],
         rows: measuredEmployees.map((e) => {
           let present = 0;
@@ -466,6 +555,7 @@ export function useReportsData(): ReportsData {
         description: "People flagged by anomaly detection, ranked by attention weight.",
         category: "monitoring",
         timeframe: dayLabel,
+        window: dayWindow,
         columns: ["Employee", "Anomalies", "Severity", "Reasons", "Score"],
         rows: (attention?.people ?? [])
           .filter((p) => p.anomaly_count > 0)
@@ -478,24 +568,35 @@ export function useReportsData(): ReportsData {
           ]),
       });
 
-      composed = { key: cacheKey, at: Date.now(), reports: out };
+      composed.set(cacheKey, { at: Date.now(), reports: out, window: win });
+      while (composed.size > COMPOSE_KEEP) {
+        const oldest = composed.keys().next().value;
+        if (oldest === undefined) break;
+        composed.delete(oldest);
+      }
       if (!live) return;
       setReports(out);
+      setReportWindow(win);
       setLoading(false);
-    })().catch(() => {
-      if (!live) return;
-      setError("Couldn't load reports. Check your connection and retry.");
-      setLoading(false);
-    });
+    }
+
+    const timer = setTimeout(() => {
+      compose().catch(() => {
+        if (!live) return;
+        setError("Couldn't load reports. Check your connection and retry.");
+        setLoading(false);
+      });
+    }, COMPOSE_DEBOUNCE_MS);
 
     return () => {
       live = false;
+      clearTimeout(timer);
     };
-  }, [nonce, userId]);
+  }, [date, nonce, userId]);
 
   const reload = useCallback(() => {
-    composed = null;
+    composed.clear();
     setNonce((n) => n + 1);
   }, []);
-  return { reports, loading, error, reload };
+  return { reports, window: reportWindow, loading, error, reload };
 }

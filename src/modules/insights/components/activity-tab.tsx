@@ -62,10 +62,17 @@ import { weekStartIso, weekStartOf, weekWorkdays } from "../lib/week";
  *    `ai.insights` feature), org-wide or per department.
  *  • Weekly / Monthly trend — real, aggregated from per-day org rollups (fan-out, concurrency 3),
  *    over the org's scheduled days up to today.
- *  • Daily trend — real, from the day's **screenshot captures** (`captured_at` + the server's
- *    category), bucketed into local hours. The scorer stores daily totals so there is no hourly
+ *  • Daily trend — real, from the day's **screenshot captures** (`captured_at` + the AI's check of
+ *    each frame), bucketed into local hours. The scorer stores daily totals so there is no hourly
  *    *score*; captures are a real record of when work happened, and are labelled as moments rather
  *    than minutes.
+ *
+ * **Colours never pass a verdict the AI didn't make** (UX audit 2026-10-16, MON-07 / XC-08). The
+ * hourly curve and the app panels were red "Distracting" by the org's **app-name** rules, against
+ * the owner's decision of 2026-10-13 that app names decide nothing — the same frame could be red
+ * here and unflagged on Screenshots. The hourly curve now splits by the AI's check (the Screenshots
+ * tab's own verdict); the app-rule panels, which have no AI equivalent, are labelled "By your app
+ * rules (not AI)" and drawn in one neutral hue, darkest for "productive", with no red.
  *  • App & website breakdown — real (`GET /v1/insights/apps/usage`), the per-app and per-site time
  *    the agents reported over the same window as the chart.
  */
@@ -81,15 +88,47 @@ const CHART_TITLE: Record<Granularity, string> = {
 
 /** Sub-title per granularity — names the unit the axis is in. */
 const CHART_SUBTITLE: Record<Granularity, string> = {
-  daily: "Captures per hour, by category",
+  daily: "Captures per hour, by the AI's check of each screenshot",
   weekly: "Score out of 100 · one point per day",
   monthly: "Score out of 100 · one point per week",
 };
 
+/**
+ * A neutral grey at `pct`% ink — the text colour mixed into the card surface. Built from those two
+ * tokens rather than a `--chart-*` slot because the chart slots change meaning by palette: one
+ * palette's `--chart-3` is red, another's `--chart-1` coral, another's `--chart-5` blue. The ink and
+ * the surface are neutral in every palette and both themes.
+ */
+const ink = (pct: number) => `color-mix(in srgb, var(--foreground) ${pct}%, var(--card))`;
+
+/**
+ * The hourly curve's bands: the AI's verdict on each capture — the Screenshots tab's own, so a frame
+ * reads the same on both pages (MON-07). Amber (the status token, amber in every palette) only for
+ * what the AI actually flagged, with a label; light grey and a dashed line for "no verdict yet",
+ * which is not "fine" — the dash keeps the two greys apart without relying on colour.
+ */
+const HOUR_VERDICTS = [
+  { key: "ok", label: "Fine for their role (AI)", color: ink(80), dash: undefined },
+  { key: "unchecked", label: "Not checked by AI yet", color: ink(35), dash: "4 3" },
+  { key: "flagged", label: "Flagged by AI", color: "var(--warning)", dash: undefined },
+] as const;
+
+/**
+ * The org's **app-rule** categories as one neutral grey stepped by lightness — an ordered scale
+ * (productive → neutral → distracting), not a good/bad green–red verdict, because these come from
+ * app names, which the AI review deliberately ignores (MON-07). Validated as an ordinal ramp against
+ * the light and dark card surfaces.
+ */
+const APP_RULE_COLOR = {
+  productive: ink(80),
+  neutral: ink(55),
+  distracting: ink(35),
+} as const;
+
 const CATEGORIES = [
-  { key: "productive", label: "Productive", color: "var(--success)" },
-  { key: "neutral", label: "Neutral", color: "var(--chart-2)" },
-  { key: "distracting", label: "Distracting", color: "var(--destructive)" },
+  { key: "productive", label: "Productive", color: APP_RULE_COLOR.productive },
+  { key: "neutral", label: "Neutral", color: APP_RULE_COLOR.neutral },
+  { key: "distracting", label: "Distracting", color: APP_RULE_COLOR.distracting },
 ] as const;
 
 const fmtHours = (sec: number): string => formatDuration(sec);
@@ -162,15 +201,15 @@ function OrgActivityTab() {
   );
 
   /**
-   * Only the categories that actually occur today.
+   * Only the verdicts that actually occur today.
    *
    * **A stacked `Area` with no data still paints its stroke** — Recharts draws it along the top of
-   * its (zero-height) band, which is the top of the whole stack. So a day with zero distracting
-   * captures still got a full-width `--destructive` line tracing the total, and red across the top
-   * of a productivity chart reads as "distraction" to anyone glancing at it. It was the total.
+   * its (zero-height) band, which is the top of the whole stack. So a day with nothing flagged
+   * still got a full-width line in the flag colour tracing the total, which reads as "flagged" to
+   * anyone glancing at it. It was the total.
    */
   const activeCategories = useMemo(
-    () => CATEGORIES.filter((c) => hourly.hours.some((b) => b[c.key] > 0)),
+    () => HOUR_VERDICTS.filter((c) => hourly.hours.some((b) => b[c.key] > 0)),
     [hourly.hours],
   );
 
@@ -475,7 +514,7 @@ function OrgActivityTab() {
                       {
                         term: "Captures",
                         definition:
-                          "How many screenshots the agent took in that hour, split by the category your rules give the app that was in front.",
+                          "How many screenshots the agent took in that hour, split by the AI's check of each one — the same verdict the Screenshots tab shows: fine for the person's role, flagged as not work for it, or not checked yet. App names play no part.",
                       },
                     ]
                   : [
@@ -612,6 +651,11 @@ function OrgActivityTab() {
                         height={28}
                         iconType="plainline"
                         wrapperStyle={{ fontSize: 12 }}
+                        // Labels in text ink, the line beside them in the series colour — a light
+                        // grey "Not checked" label was too faint to read.
+                        formatter={(value: string) => (
+                          <span style={{ color: "var(--muted-foreground)" }}>{value}</span>
+                        )}
                       />
                       {activeCategories.map((c) => (
                         <Area
@@ -620,6 +664,7 @@ function OrgActivityTab() {
                           dataKey={c.key}
                           stackId="hourly"
                           stroke={c.color}
+                          strokeDasharray={c.dash}
                           fill={`url(#fillHour-${c.key})`}
                           strokeWidth={2}
                           name={c.label}
@@ -648,7 +693,8 @@ function OrgActivityTab() {
                     <>
                       {hourly.captures.toLocaleString()} screenshot capture
                       {hourly.captures === 1 ? "" : "s"} across the team, by the hour they were
-                      taken — when work happened, not hours worked.
+                      taken — when work happened, not hours worked. The AI can be wrong; open a
+                      flagged capture on the Screenshots tab to confirm or dismiss it.
                     </>
                   )}
                 </p>
@@ -743,24 +789,25 @@ function OrgActivityTab() {
         <Card data-tour="insights:categories">
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5">
-              Time by category
+              Time by app category
               <ChartLegendInfo
                 label="How time is categorized"
                 terms={[
                   {
                     term: "Productive / Neutral / Distracting",
                     definition:
-                      "Your organization's own app rules decide which is which — the same app can be classified differently by another organization. Website rules aren't applied yet, so time in a browser follows the browser's own rule. Unrecognized apps land in the rules editor's worklist rather than being guessed at.",
+                      "Your organization's own app rules decide which is which, from the app's name — the same app can be classified differently by another organization. This is not the AI's judgement: the AI reviews screenshots against each person's role and ignores app names. Website rules aren't applied yet, so time in a browser follows the browser's own rule. Unrecognized apps land in the rules editor's worklist rather than being guessed at.",
                   },
                 ]}
               />
             </CardTitle>
             {/* Three bars with percentages and no statement of the denominator. The percentages are
                 of *classified* time, not of the working day — a distinction that changes what the
-                numbers mean and cannot be seen from the bars. */}
+                numbers mean and cannot be seen from the bars. And whose rule it is: app names, not
+                the AI (MON-07). */}
             <CardDescription>
-              Share of classified activity time in the selected period · unclassified apps are
-              excluded, not counted as neutral
+              By your app rules (not AI) · share of classified activity time in the selected period
+              · unclassified apps are excluded, not counted as neutral
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-3">
@@ -875,6 +922,24 @@ function OrgActivityTab() {
           {showUsage ? "Hide" : "Show"} app &amp; website breakdown
         </button>
         {showUsage ? (
+          <p className="text-xs text-muted-foreground">
+            Shading shows each app&apos;s category by your app rules (not AI):{" "}
+            {CATEGORIES.map((c, i) => (
+              <span key={c.key}>
+                {i > 0 ? " · " : ""}
+                <span className="inline-flex items-center gap-1">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block size-2 rounded-full"
+                    style={{ backgroundColor: c.color }}
+                  />
+                  {c.label}
+                </span>
+              </span>
+            ))}
+          </p>
+        ) : null}
+        {showUsage ? (
           <div className="grid gap-4 lg:grid-cols-2">
             <UsageList
               title="Top applications"
@@ -987,11 +1052,8 @@ interface UsageItem {
   seconds: number;
 }
 
-const CATEGORY_COLOR: Record<UsageItem["category"], string> = {
-  productive: "var(--success)",
-  neutral: "var(--chart-2)",
-  distracting: "var(--destructive)",
-};
+/** The app-rule ramp (see {@link APP_RULE_COLOR}) — no red for an app name (MON-07). */
+const CATEGORY_COLOR: Record<UsageItem["category"], string> = APP_RULE_COLOR;
 
 function UsageList({
   title,
@@ -1052,12 +1114,15 @@ function UsageList({
           items.map((it) => (
             <div key={it.name} className="space-y-1">
               <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2">
+                <span className="flex min-w-0 items-center gap-2">
                   <span
-                    className="size-2 rounded-full"
+                    aria-hidden="true"
+                    className="size-2 shrink-0 rounded-full"
                     style={{ backgroundColor: CATEGORY_COLOR[it.category] }}
                   />
-                  {it.name}
+                  <span className="truncate">{it.name}</span>
+                  {/* The category as words too — colour alone can't carry it. */}
+                  <span className="shrink-0 text-xs text-muted-foreground">{it.category}</span>
                 </span>
                 <span className="text-muted-foreground font-mono text-xs tabular-nums">
                   {formatDuration(it.seconds)}

@@ -27,11 +27,14 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { mapWithConcurrency } from "@/lib/concurrency";
-import {
-  getOrgActivity,
-  type NamedScore,
-  type PersonScore,
+import { useAuthStore } from "@/stores/auth.store";
+import type {
+  NamedScore,
+  PersonScore,
+  ScoreBreakdown,
 } from "@/modules/insights/services/insights.service";
+import { meanBreakdown, scoreDrivers, type ScoreDriver } from "./lib/attention";
+import { orgActivityFor } from "./lib/day-reads";
 
 /**
  * The line between the two lists — the same cut the daily report uses.
@@ -42,9 +45,20 @@ import {
 const ATTENTION_BELOW = 60;
 const TOP_N = 3;
 
+/**
+ * One ranked person — who it is, so the name can be a link, and what drove the week's score: the
+ * four parts averaged over their scored days, weakest first (UX audit 2026-10-16, MON-04).
+ */
+export interface RankedPerson extends NamedScore {
+  userId: string;
+  /** Days they were scored this week — the denominator of `score`. */
+  days: number;
+  drivers: ScoreDriver[];
+}
+
 export interface WeekPerformers {
-  topPerformers: NamedScore[];
-  needsAttention: NamedScore[];
+  topPerformers: RankedPerson[];
+  needsAttention: RankedPerson[];
   /** How many distinct people were scored at all this week — drives the empty-state wording. */
   scoredPeople: number;
   /** ISO dates actually fetched (past-or-today days of the week), for the caption. */
@@ -90,23 +104,31 @@ export function rankWeek(
   daysOfPeople: PersonScore[][],
 ): Pick<WeekPerformers, "topPerformers" | "needsAttention" | "scoredPeople"> {
   // Name is carried per day; the latest one seen wins, so a rename mid-week shows the current name.
-  const acc = new Map<string, { name: string; sum: number; days: number }>();
+  const acc = new Map<string, { name: string; days: ScoreBreakdown[] }>();
   for (const people of daysOfPeople) {
     for (const p of people) {
       // No breakdown = the agent never reported for them that day. A gap, never a zero — averaging
       // it in as 0 would turn a missing agent into a bad week.
       if (!p.breakdown) continue;
-      const prev = acc.get(p.user_id) ?? { name: p.name, sum: 0, days: 0 };
+      const prev = acc.get(p.user_id) ?? { name: p.name, days: [] };
       acc.set(p.user_id, {
         name: p.name || prev.name,
-        sum: prev.sum + p.breakdown.score,
-        days: prev.days + 1,
+        days: [...prev.days, p.breakdown],
       });
     }
   }
 
-  const ranked: NamedScore[] = [...acc.values()]
-    .map((v) => ({ name: v.name, score: Math.round(v.sum / v.days) }))
+  const ranked: RankedPerson[] = [...acc.entries()]
+    .map(([userId, v]) => {
+      const mean = meanBreakdown(v.days);
+      return {
+        userId,
+        name: v.name,
+        score: Math.round(v.days.reduce((s, b) => s + b.score, 0) / v.days.length),
+        days: v.days.length,
+        drivers: mean ? scoreDrivers(mean) : [],
+      };
+    })
     .sort((a, b) => b.score - a.score);
 
   // Disjoint by the threshold, so nobody can be both — the defect this replaced. An empty "top
@@ -122,6 +144,8 @@ export function rankWeek(
 
 /** Ranks the week containing `date`. An empty `date` reads nothing (e.g. while the report is locked). */
 export function useWeekPerformers(date: string): WeekPerformers {
+  // Shared with the page's other reads of the same days (see `lib/day-reads`).
+  const scope = useAuthStore((s) => s.user?.id ?? "");
   const [state, setState] = useState<WeekPerformers>({
     topPerformers: [],
     needsAttention: [],
@@ -145,7 +169,7 @@ export function useWeekPerformers(date: string): WeekPerformers {
       // Bounded: a week is at most seven reads, but firing them all at once is the burst pattern
       // that trips the 503 throttle elsewhere in this app.
       const results = await mapWithConcurrency(days, 3, (iso) =>
-        getOrgActivity(iso).then(
+        orgActivityFor(scope, iso).then(
           (r) => r.people,
           () => [],
         ),
@@ -158,7 +182,7 @@ export function useWeekPerformers(date: string): WeekPerformers {
     return () => {
       live = false;
     };
-  }, [weekKey]);
+  }, [weekKey, scope]);
 
   return state;
 }

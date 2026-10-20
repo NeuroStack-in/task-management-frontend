@@ -22,7 +22,26 @@ describe("rankWeek", () => {
       [person("u1", "Ada", 60)],
       [person("u1", "Ada")],
     ]);
-    expect(topPerformers).toEqual([{ name: "Ada", score: 70 }]);
+    expect(topPerformers).toMatchObject([{ name: "Ada", score: 70, userId: "u1", days: 2 }]);
+  });
+
+  it("carries who it is and what drove the week, weakest part first (MON-04)", () => {
+    const day = (score: number, u: number, f: number, r: number): PersonScore =>
+      ({
+        user_id: "u9",
+        name: "Ivy",
+        department_id: "d1",
+        breakdown: { score, u, q: 0, f, r, q_measured: false },
+      }) as PersonScore;
+    const { needsAttention } = rankWeek([[day(40, 20, 80, 50)], [day(50, 40, 90, 60)]]);
+    expect(needsAttention).toHaveLength(1);
+    expect(needsAttention[0].userId).toBe("u9");
+    // Quality wasn't measured, so it is left out rather than shown as 0.
+    expect(needsAttention[0].drivers.map((d) => [d.key, d.value])).toEqual([
+      ["u", 30],
+      ["r", 55],
+      ["f", 85],
+    ]);
   });
 
   it("never lists the same person in both cards", () => {
@@ -48,7 +67,7 @@ describe("rankWeek", () => {
     ]);
     expect(scoredPeople).toBe(1);
     expect(topPerformers).toEqual([]);
-    expect(needsAttention).toEqual([{ name: "Kishore M", score: 58 }]);
+    expect(needsAttention).toMatchObject([{ name: "Kishore M", score: 58 }]);
   });
 
   it("never calls a below-threshold person a top performer, even on a short roster", () => {

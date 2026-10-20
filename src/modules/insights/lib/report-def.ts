@@ -24,8 +24,13 @@ export interface ReportDef {
   name: string;
   description: string;
   category: ReportCategory;
-  /** Human label for the window the rows cover (e.g. "Week of Jul 13" or a single day). */
+  /** Human label for the window the rows cover (e.g. "Oct 12 – Oct 16" or a single day). */
   timeframe?: string;
+  /**
+   * The same window as ISO dates — what exported file names carry, so a download says which days it
+   * holds (UX audit 2026-10-16, MON-05). `from === to` for a single-day report.
+   */
+  window?: { from: string; to: string };
   columns: string[];
   rows: (string | number)[][];
 }
