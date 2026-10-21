@@ -154,7 +154,7 @@ function NoOrgFlow() {
 
 /**
  * "Signed in as … · Sign out", at the foot of the card (ONB-13). This page sits outside the app
- * shell, so the sidebar's "Log out" is not here. Without this someone who signed in with the wrong
+ * shell, so the sidebar's "Sign out" is not here. Without this someone who signed in with the wrong
  * Google account — or is waiting on a request — had no way to leave that account on this browser
  * (QA audit 2026-10-08, WP-126). The guard's redirect to /login follows the sign-out.
  */

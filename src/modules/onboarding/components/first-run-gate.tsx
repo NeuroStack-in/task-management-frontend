@@ -90,7 +90,7 @@ function latestDob(): string {
  * is still empty. Nothing extra is persisted and nothing can drift out of step with the truth.
  *
  * **Why it can be put off, and left.** It used to be a trap: no close, no Escape, the sidebar's
- * Log out hidden under the overlay, and a failed save left no way past (UX audit 2026-10-16,
+ * Sign out hidden under the overlay, and a failed save left no way past (UX audit 2026-10-16,
  * SHELL-02). It now says why each detail is asked and who sees it, offers "Remind me later" for the
  * session and a Sign out, and only phone, location and work mode are required.
  */
@@ -272,7 +272,7 @@ export function FirstRunGate() {
         </div>
 
         <DialogFooter className="sm:justify-between">
-          {/* The overlay covers the sidebar's Log out, so the way out is here (SHELL-02). */}
+          {/* The overlay covers the sidebar's Sign out, so the way out is here (SHELL-02). */}
           <Button variant="ghost" onClick={signOut} disabled={saving}>
             <LogOut className="size-4" /> Sign out
           </Button>

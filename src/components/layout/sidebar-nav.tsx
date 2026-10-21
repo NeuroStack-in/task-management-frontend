@@ -296,14 +296,14 @@ export function SidebarNav({
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <button type="button" onClick={handleLogout} aria-label="Log out" />
+                  <button type="button" onClick={handleLogout} aria-label="Sign out" />
                 }
               >
                 <span className="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex size-10 items-center justify-center rounded-md">
                   <LogOut className="size-[18px]" />
                 </span>
               </TooltipTrigger>
-              <TooltipContent side="right">Log out</TooltipContent>
+              <TooltipContent side="right">Sign out</TooltipContent>
             </Tooltip>
             {user ? (
               <Tooltip>
@@ -456,7 +456,7 @@ export function SidebarNav({
             )}
           >
             <LogOut className="size-4 shrink-0" />
-            <span className="truncate">Log out</span>
+            <span className="truncate">Sign out</span>
           </button>
         </div>
       </div>
