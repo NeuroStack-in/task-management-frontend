@@ -54,7 +54,10 @@ export function TeamTimeView({
     return { perDay, hours: perDay.reduce((s, h) => s + h, 0), billable };
   }, [rows, dates.length, now]);
   const teamHours = totals.hours;
-  const billablePct = Math.round((totals.billable / (teamHours || 1)) * 100);
+  // No hours, no ratio: "0%" read as "nothing was billable" for a period nobody worked at all
+  // (UX audit 2026-10-16, TIME-22). `null` renders as the product's "—".
+  const billablePct =
+    teamHours > 0 ? Math.round((totals.billable / teamHours) * 100) : null;
   // Averaged over the people the agent actually scored. A 0 for everyone unscored read two people
   // at 80 among ten as "16%".
   const scored = rows.filter((r): r is TeamMemberTime & { activity: number } => r.activity !== null);
@@ -66,9 +69,12 @@ export function TeamTimeView({
   // Publish the team timesheet's week totals to the assistant.
   useAssistantPageContext({
     facts: [
-      { label: "Week", value: weekLabel },
+      { label: period === "month" ? "Month" : "Week", value: weekLabel },
       { label: "Team hours", value: formatHours(teamHours) },
-      { label: "Billable", value: `${billablePct}%` },
+      {
+        label: "Billable",
+        value: billablePct === null ? "no tracked hours" : `${billablePct}%`,
+      },
       ...(activityInPlan
         ? [
             {
@@ -108,7 +114,13 @@ export function TeamTimeView({
           trend={totals.perDay}
           featured
         />
-        <StatCard label="Billable" value={`${billablePct}%`} icon={BadgeDollarSign} />
+        <StatCard
+          label="Billable"
+          value={billablePct === null ? "—" : `${billablePct}%`}
+          icon={BadgeDollarSign}
+          // Worded like Avg activity's "no scored days in view" — true of a past week as well.
+          hint={billablePct === null ? "no tracked hours in view" : "of team hours"}
+        />
         {/* Plan, not failure: without `monitoring.activity` there is no score to average, and every
             per-person read would only be refused. */}
         {!activityInPlan ? (

@@ -4,8 +4,9 @@
  * The two ways to remove an employee, per the product decision — **Deactivate** (reversible) and
  * **Delete** (permanent). They are not the same, and the UI is deliberate about the difference:
  *
- * - **Deactivate** disables the person's login immediately and reassigns their projects/tasks, but
- *   keeps them as a `deactivated` record — reversible via Reactivate. Backed by the live route.
+ * - **Deactivate** disables the person's login immediately, unassigns their tasks and removes them
+ *   from their projects, but keeps them as a `deactivated` record — Reactivate restores sign-in
+ *   only. Backed by the live route.
  * - **Delete** erases them from the org — `DELETE /v1/employees/{id}`, which removes the login,
  *   directory entry and email claim of an already-deactivated employee and keeps their
  *   time/attendance/payroll history. Irreversible, so it requires typing the name to confirm.
@@ -242,7 +243,7 @@ export function EmployeeManageMenu({
             <DialogDescription>
               {isActive
                 ? "Their sign-in stops working immediately. This also happens:"
-                : "They can sign in again. Their old projects, tasks and devices are not given back — add them to projects again, and re-enrol a device if they need tracking."}
+                : "They can sign in again. Their old projects, tasks and devices are not given back — add them to projects again, and re-enroll a device if they need tracking."}
             </DialogDescription>
           </DialogHeader>
           {isActive ? (

@@ -37,7 +37,12 @@ import {
   type PeriodRecap,
   type RecapPeriod,
 } from "@/modules/insights/services/insights.service";
-import { provenanceLine, type Provenance } from "@/modules/insights/lib/ai-provenance";
+import {
+  canRegenerate,
+  provenanceLine,
+  type Provenance,
+} from "@/modules/insights/lib/ai-provenance";
+import { recapHasData } from "../lib/recap";
 
 const PERIODS: { key: RecapPeriod; label: string }[] = [
   // "Last day", not "Daily": a day is recapped only once it has closed, so this tab can never be
@@ -213,6 +218,11 @@ export function EmployeeRecapCard({
         ? { kind: "ai", generatedAt }
         : { kind: "computed" };
   const isAi = provenance.kind === "ai";
+  // Each press is a billed model run. Over a period with nothing in it the server only re-says its
+  // own fixed line, so the button could change nothing — offered only when there is data to analyse
+  // and text on screen to replace (UX audit 2026-10-16, MON-21). Kept up while a run is out, so the
+  // spinner has somewhere to be.
+  const offerRegenerate = canRegenerate(recapHasData(recap), narrative) || regenerating;
 
   return (
     <Card>
@@ -237,18 +247,20 @@ export function EmployeeRecapCard({
                 : PERIOD_HINT[period]}
             </CardDescription>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0"
-            onClick={regenerate}
-            disabled={loading || regenerating}
-            // Said plainly: this is not a private re-roll — it replaces the stored summary.
-            title={`Rewrite ${first}'s stored summary for this period`}
-          >
-            <RefreshCw className={cn("size-3.5", regenerating && "animate-spin")} />
-            {regenerating ? "Regenerating…" : "Regenerate"}
-          </Button>
+          {offerRegenerate ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              onClick={regenerate}
+              disabled={loading || regenerating}
+              // Said plainly: this is not a private re-roll — it replaces the stored summary.
+              title={`Rewrite ${first}'s stored summary for this period`}
+            >
+              <RefreshCw className={cn("size-3.5", regenerating && "animate-spin")} />
+              {regenerating ? "Regenerating…" : "Regenerate"}
+            </Button>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

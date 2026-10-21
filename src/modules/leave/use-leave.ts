@@ -24,6 +24,11 @@ export interface LeaveData {
   balanceYear: string;
   requests: ApiLeaveRequest[];
   types: ApiLeaveType[];
+  /**
+   * The type catalog read failed, so an empty `types` is "couldn't load", not "none set up" — the
+   * page must not tell anyone the org has no leave types on the strength of a failed read.
+   */
+  typesFailed: boolean;
   /** `type_id → display name`, for labelling requests whose type is just an id. */
   typeName: (typeId: string) => string;
   loading: boolean;
@@ -40,6 +45,7 @@ export function useLeave(): LeaveData {
   const [balanceYear, setBalanceYear] = useState("");
   const [requests, setRequests] = useState<ApiLeaveRequest[]>([]);
   const [types, setTypes] = useState<ApiLeaveType[]>([]);
+  const [typesFailed, setTypesFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -59,13 +65,14 @@ export function useLeave(): LeaveData {
         const [bal, reqs, tys] = await Promise.all([
           api.getBalances(),
           api.getRequests(),
-          api.getTypes().catch(() => [] as ApiLeaveType[]),
+          api.getTypes().catch(() => null),
         ]);
         if (!live) return;
         setBalances(bal.balances);
         setBalanceYear(bal.year);
         setRequests(reqs);
-        setTypes(tys);
+        setTypes(tys ?? []);
+        setTypesFailed(tys === null);
       } catch (e) {
         if (live) setError(messageOf(e));
       } finally {
@@ -113,6 +120,7 @@ export function useLeave(): LeaveData {
     balanceYear,
     requests,
     types,
+    typesFailed,
     typeName,
     loading,
     error,

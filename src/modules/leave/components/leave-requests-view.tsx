@@ -30,6 +30,7 @@ import {
   type BalanceLookup,
 } from "./request-leave-dialog";
 import { workingPortions } from "../lib/working-days";
+import { requestUnavailableReason } from "../lib/request-availability";
 import { useWorkCalendar } from "../use-work-calendar";
 import { RecordLeaveButton } from "./record-leave-button";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -132,7 +133,11 @@ export function LeaveRequestsView() {
             Manage leave
           </Button>
         </div>
-        {view === "mine" ? <EmployeeLeaveView /> : <AdminLeaveView />}
+        {view === "mine" ? (
+          <EmployeeLeaveView onManageTypes={() => setView("manage")} />
+        ) : (
+          <AdminLeaveView />
+        )}
       </div>
     );
   }
@@ -170,12 +175,32 @@ function AdminLeaveView() {
 /** What the confirm dialog is about to do — withdraw a pending request, or cancel approved leave. */
 type Pending = { request: ApiLeaveRequest; mode: "withdraw" | "cancel" };
 
-function EmployeeLeaveView() {
+function EmployeeLeaveView({
+  onManageTypes,
+}: {
+  /**
+   * Switches to the Manage leave view, where the type catalog is edited. Only passed to someone who
+   * holds both `leave:request` and `leave:manage` — the people for whom "ask your admin" would be
+   * the wrong answer to "why can't I request leave?" (UX audit 2026-10-16, TIME-23).
+   */
+  onManageTypes?: () => void;
+} = {}) {
   const { can } = usePermissions();
   // The download route is keyed by owner, and on this page the owner is always the viewer.
   const myUserId = useAuthStore((st) => st.user?.id ?? "");
   const leave = useLeave();
-  const { balances, balanceYear, requests, types, typeName, loading, error, submit, cancel } = leave;
+  const {
+    balances,
+    balanceYear,
+    requests,
+    types,
+    typesFailed,
+    typeName,
+    loading,
+    error,
+    submit,
+    cancel,
+  } = leave;
   // What the request dialog shows against the balance (TIME-07): the server's figures for the loaded
   // year, plus the days this person already has waiting in that type and year.
   const calendar = useWorkCalendar();
@@ -204,6 +229,15 @@ function EmployeeLeaveView() {
   const [busy, setBusy] = useState(false);
   // Only active types are requestable — the server rejects an archived `type_id` anyway.
   const requestableTypes = types.filter((t) => t.active !== false);
+  // Why "Request leave" is disabled, said beside it — it was greyed out with no reason (UX audit
+  // 2026-10-16, TIME-23).
+  const noTypesReason = requestUnavailableReason({
+    loading,
+    failed: error !== null,
+    requestableTypes: requestableTypes.length,
+    typesFailed,
+    canManageTypes: onManageTypes !== undefined,
+  });
   // The local day, for "has this leave started yet?". The server compares in UTC days, which leaves
   // about a day of slack either side; a refusal from it is handled below, not guessed at here.
   const today = todayIso();
@@ -335,7 +369,14 @@ function EmployeeLeaveView() {
           : balances
               .filter((b) => b.allowance > 0)
               .map((b) => {
-                const pct = b.allowance ? Math.round((b.used / b.allowance) * 100) : 0;
+                // The bar is what's LEFT, the same figure as the big number beside it: it filled
+                // with days used while the number counted down days remaining, so a fresh
+                // allowance read "20 / 20" over an empty bar (UX audit 2026-10-16, TIME-24). Full
+                // at the start of the year, draining as leave is taken.
+                const pct = Math.max(
+                  0,
+                  Math.min(100, Math.round((b.remaining / b.allowance) * 100)),
+                );
                 return (
                   <Card key={b.type_id} className="gap-2 p-5">
                     <p className="text-sm text-muted-foreground">{b.name}</p>
@@ -346,11 +387,16 @@ function EmployeeLeaveView() {
                         / {formatDays(b.allowance)} days
                       </span>
                     </p>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{ width: `${Math.min(100, pct)}%` }}
-                      />
+                    <div
+                      role="meter"
+                      aria-label={`${b.name} days remaining`}
+                      aria-valuemin={0}
+                      aria-valuemax={b.allowance}
+                      aria-valuenow={Math.max(0, Math.min(b.allowance, b.remaining))}
+                      aria-valuetext={`${formatDays(b.remaining)} of ${formatDays(b.allowance)} days left`}
+                      className="h-1.5 overflow-hidden rounded-full bg-muted"
+                    >
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {formatDays(b.used)} taken · {formatDays(b.remaining)} available
@@ -367,13 +413,37 @@ function EmployeeLeaveView() {
             My requests
           </h2>
           {can("leave:request") ? (
-            <Button
-              size="sm"
-              onClick={() => setOpen(true)}
-              disabled={requestableTypes.length === 0}
-            >
-              <CalendarPlus className="size-4" /> Request leave
-            </Button>
+            <div className="flex flex-col gap-1.5 sm:items-end">
+              <Button
+                size="sm"
+                className="w-fit"
+                onClick={() => setOpen(true)}
+                disabled={requestableTypes.length === 0}
+                aria-describedby={noTypesReason ? "leave-request-unavailable" : undefined}
+              >
+                <CalendarPlus className="size-4" /> Request leave
+              </Button>
+              {noTypesReason ? (
+                <p
+                  id="leave-request-unavailable"
+                  className="text-muted-foreground max-w-xs text-xs sm:text-right"
+                >
+                  {noTypesReason}
+                  {onManageTypes && !typesFailed ? (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={onManageTypes}
+                        className="text-primary font-medium underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                      >
+                        Set them up in Manage leave
+                      </button>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
           ) : null}
         </div>
         {loading && requests.length === 0 ? (

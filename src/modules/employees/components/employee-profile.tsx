@@ -205,7 +205,7 @@ function headerBadge(
     return {
       label: "Today · Non-working day",
       className: "bg-muted text-muted-foreground",
-      title: "Today is not a scheduled working day for this organisation",
+      title: "Today is not a scheduled working day for this organization",
     };
   }
   if (data.todayAttendance === null) {
@@ -832,8 +832,24 @@ function ProfileView({
   const [changeRoleOpen, setChangeRoleOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
+  // Job title and department, with a separator only BETWEEN values: an empty title or department
+  // left a lone "·" under the name in the top bar (UX audit 2026-10-16, PEOPLE-19).
+  const roleLine = [data.jobTitle.trim(), department.trim()].filter(Boolean).join(" · ");
+
   // Surface the employee's name + role in the top navbar for this detail route.
-  usePageTitle(data.name, `${data.jobTitle} · ${department}`);
+  usePageTitle(data.name, roleLine || null);
+
+  // The browser tab names the person. Every profile shared the app's generic title, so a row of
+  // open profiles was indistinguishable (PEOPLE-19). Put back on the way out only if it is still
+  // ours — the next route may already have set its own.
+  useEffect(() => {
+    const previous = document.title;
+    const mine = `${data.name} · WorkPulse`;
+    document.title = mine;
+    return () => {
+      if (document.title === mine) document.title = previous;
+    };
+  }, [data.name]);
 
   const badge = headerBadge(data, todayIsWorkday, isTracked);
   const tabs: { key: ProfileTab; label: string; short: string }[] = [
@@ -860,6 +876,9 @@ function ProfileView({
       {/* Top bar. Wraps on a phone — the action row didn't, so "Manage" sat off-screen behind a
           sideways scroll (UX audit PEOPLE-13). */}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        {/* The one way back. A breadcrumb ("Employees / <name>") repeated it on wide screens and
+            said the name yet again under the top bar's title, just above the card's (UX audit
+            2026-10-16, PEOPLE-19); the back link is the one that also exists on a phone. */}
         <Link
           href="/employees"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -868,11 +887,6 @@ function ProfileView({
           All employees
         </Link>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-          <nav className="hidden min-w-0 items-center gap-1.5 text-sm text-muted-foreground md:flex">
-            <Link href="/employees" className="transition-colors hover:text-foreground">Employees</Link>
-            <span className="text-muted-foreground/50">/</span>
-            <span className="truncate font-medium text-foreground">{data.name}</span>
-          </nav>
           {canViewAnalytics ? (
             // One way into this person's analytics (owner request 2026-10-16): it replaced the
             // separate Location and Screenshots buttons. `?emp=` scopes the whole Analytics hub to
@@ -964,13 +978,15 @@ function ProfileView({
             <h1 className="font-display text-xl font-semibold tracking-tight break-words">
               {data.name}
             </h1>
-            <span className="font-mono text-xs text-muted-foreground">
-              {dash(data.empCode)}
-            </span>
+            {/* Only when there is a code: a bare "–" beside the name read as a stray dash
+                ("Acme Owner –", PEOPLE-19). */}
+            {data.empCode.trim() ? (
+              <span className="font-mono text-xs text-muted-foreground">{data.empCode}</span>
+            ) : null}
           </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {[data.jobTitle, department].filter(Boolean).join(" · ") || "—"}
-          </p>
+          {/* No line at all when there is neither a title nor a department — a lone placeholder
+              under the name looked like a rendering fault. The Details card still says "—". */}
+          {roleLine ? <p className="mt-0.5 text-sm text-muted-foreground">{roleLine}</p> : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Badge className="bg-feature-tint text-primary">{data.roleName || "No role"}</Badge>
             <Badge className={badge.className} title={badge.title}>
@@ -1221,7 +1237,7 @@ function TimeTab({ data, isTracked }: { data: EmployeeProfileData; isTracked: bo
 
   const links = [
     can("attendance:view") ? { href: "/attendance", label: "Attendance", note: "daily status and history" } : null,
-    can("time-tracking:view") ? { href: "/time-tracking", label: "Time Tracking", note: "timesheets, session by session" } : null,
+    can("time-tracking:view") ? { href: "/time-tracking", label: "Time tracking", note: "timesheets, session by session" } : null,
     canSeeLeave ? { href: "/leave-requests", label: "Leave", note: "requests and balances" } : null,
   ].filter((l): l is { href: string; label: string; note: string } => l !== null);
 
@@ -1561,7 +1577,7 @@ function AccessTab({
             label="Tracking"
             value={
               data.benched
-                ? "Not tracked — excluded from Attendance and Time Tracking"
+                ? "Not tracked — excluded from attendance and time tracking"
                 : isTracked
                   ? "Tracked — their time, activity and screenshots are recorded"
                   : "Their role doesn't track time"

@@ -637,12 +637,13 @@ export function TimesheetGrid({
                 >
                   {/* An empty grid means "nobody tracked time" far more often than "your search
                       missed" now that past weeks are reachable — saying "no matches for ''" for a
-                      quiet week reads as a broken filter. */}
+                      quiet week reads as a broken filter. Names the period on screen: the month
+                      view said "this week" (UX audit 2026-10-16, TIME-22). */}
                   {hasFilters
                     ? query.trim()
                       ? `No matches for “${query.trim()}”.`
                       : "No one matches this filter."
-                    : "No tracked time in this week."}
+                    : `No tracked time in this ${period === "month" ? "month" : "week"}.`}
                 </td>
               </tr>
             ) : (

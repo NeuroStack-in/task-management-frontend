@@ -62,6 +62,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useQueryState } from "@/modules/projects/use-query-state";
+// Where departments are created and edited — Settings → Organization → Departments (PEOPLE-22).
+import { DEPARTMENTS_HREF } from "@/modules/settings/lib/org-sections";
 import { useAuthStore } from "@/stores/auth.store";
 import { readInterruptedRun, type InviteRunRecord } from "../lib/invite-run";
 import { InviteDialog } from "./invite-dialog";
@@ -123,6 +125,24 @@ const STATUS_LABELS: Record<DirectoryStatus, string> = {
  * (UX audit PEOPLE-04).
  */
 const DEFAULT_PAGE_SIZE: PageSize = "25";
+
+/**
+ * Rows per page in the Not tracked and Deactivated rosters — the Invited section's figure. Both
+ * listed everyone at once, so at 150 people a long bench pushed the rest of the page out of reach
+ * (UX audit 2026-10-16, PEOPLE-22).
+ */
+const ROSTER_PAGE_SIZE = 10;
+
+/** One page of a roster, with the page clamped to what exists — the list shrinks as people move. */
+function rosterPage<T>(list: T[], page1: string): { shown: T[]; page: number; pageCount: number } {
+  const pageCount = Math.max(1, Math.ceil(list.length / ROSTER_PAGE_SIZE));
+  const page = Math.min(Math.max(0, (Number.parseInt(page1, 10) || 1) - 1), pageCount - 1);
+  return {
+    shown: list.slice(page * ROSTER_PAGE_SIZE, (page + 1) * ROSTER_PAGE_SIZE),
+    page,
+    pageCount,
+  };
+}
 
 // No Email or Team columns: the directory list carries neither, so they were blank in every row
 // (WP-456). Both are on each person's profile.
@@ -396,6 +416,10 @@ export function EmployeesView() {
   const [sort, setSort] = useQueryState<DirectorySort>("sort", "name", DIRECTORY_SORTS);
   const [pageSizeParam, setPageSize] = useQueryState<PageSize>("size", DEFAULT_PAGE_SIZE, PAGE_SIZES);
   const [pageParam, setPageParam] = useQueryState<string>("page", "1");
+  // The two rosters' pages, in the URL like the table's, so Back from a profile opened from either
+  // returns to the same page of it.
+  const [benchPageParam, setBenchPageParam] = useQueryState<string>("bench_page", "1");
+  const [leaverPageParam, setLeaverPageParam] = useQueryState<string>("deactivated_page", "1");
   const pageSize = Number(pageSizeParam);
   const page = Math.max(0, (Number.parseInt(pageParam, 10) || 1) - 1);
   const setPage = (p: number) => setPageParam(String(p + 1));
@@ -528,6 +552,8 @@ export function EmployeesView() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
   const rows = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const benchRoster = rosterPage(benchedEmployees, benchPageParam);
+  const leaverRoster = rosterPage(deactivatedEmployees, leaverPageParam);
   /**
    * The rosters below list only people the table isn't already showing — the bench under Active or
    * Deactivated, leavers under Active or Not tracked — so nobody appears twice (PEOPLE-05).
@@ -536,6 +562,8 @@ export function EmployeesView() {
   const showDeactivatedRoster = status === "active" || status === "benched";
 
   const canManage = can("employees:manage");
+  // Departments are edited on Settings → Organization, which needs `settings:view` to open.
+  const canOpenDepartments = can("settings:view");
   const onToggleBench = async (e: EmployeeRow) => {
     try {
       await bench(e.id, !e.benched);
@@ -639,7 +667,16 @@ export function EmployeesView() {
                       : "no agent activity in the last 30 days"
           }
         />
-        <StatCard label="Departments" value={liveStats.departments} icon={Building2} hint="across the org" />
+        {/* A way to departments from People: they were managed only in Settings → Organization,
+            with nothing here pointing there (UX audit 2026-10-16, PEOPLE-22). A link only for
+            whoever can open that page. */}
+        <StatCard
+          label="Departments"
+          value={liveStats.departments}
+          icon={Building2}
+          hint={canOpenDepartments ? "manage in Settings" : "across the org"}
+          href={canOpenDepartments ? DEPARTMENTS_HREF : undefined}
+        />
       </div>
 
       {/* Toolbar */}
@@ -752,10 +789,27 @@ export function EmployeesView() {
                 : String(liveStats.activeWorking),
           },
           { label: "Productivity", value: pct(liveStats.avgProductivity) },
-          { label: "Departments", value: String(liveStats.departments) },
-        ].map((s) => (
+          {
+            label: "Departments",
+            value: String(liveStats.departments),
+            href: canOpenDepartments ? DEPARTMENTS_HREF : undefined,
+          },
+        ].map((s: { label: string; value: string; href?: string }) => (
           <div key={s.label} className="min-w-0 px-1 py-2">
-            <dt className="truncate text-[11px] text-muted-foreground">{s.label}</dt>
+            <dt className="truncate text-[11px] text-muted-foreground">
+              {/* The phone strip's way to departments, as the card is on wider screens (PEOPLE-22). */}
+              {s.href ? (
+                <Link
+                  href={s.href}
+                  className="underline decoration-dotted underline-offset-2"
+                  aria-label={`${s.label}: manage in Settings`}
+                >
+                  {s.label}
+                </Link>
+              ) : (
+                s.label
+              )}
+            </dt>
             <dd className="font-display text-lg font-semibold tabular-nums">{s.value}</dd>
           </div>
         ))}
@@ -1024,11 +1078,11 @@ export function EmployeesView() {
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Still employed and still able to sign in &mdash; just excluded from Attendance and
-              Time-Tracking. Different from deactivated, which ends their access.
+              Still employed and still able to sign in &mdash; just excluded from attendance and
+              time tracking. Different from deactivated, which ends their access.
             </p>
             <div className="divide-y">
-              {benchedEmployees.map((e) => (
+              {benchRoster.shown.map((e) => (
                 <div key={e.id} className="flex items-center gap-3 py-2">
                   <UserAvatar
                     userId={e.id}
@@ -1058,6 +1112,16 @@ export function EmployeesView() {
                 </div>
               ))}
             </div>
+            {benchedEmployees.length > ROSTER_PAGE_SIZE ? (
+              <TablePagination
+                page={benchRoster.page}
+                pageCount={benchRoster.pageCount}
+                total={benchedEmployees.length}
+                pageSize={ROSTER_PAGE_SIZE}
+                onPageChange={(p) => setBenchPageParam(String(p + 1))}
+                className="border-t pt-3"
+              />
+            ) : null}
           </CardContent>
         </Card>
       )}
@@ -1078,12 +1142,14 @@ export function EmployeesView() {
                 {deactivatedEmployees.length}
               </Badge>
             </div>
+            {/* "Reassigned" was untrue: deactivation unassigns their tasks and gives them to no one
+                — what the deactivate dialog has said since PEOPLE-01. */}
             <p className="text-xs text-muted-foreground">
-              Their sign-in is disabled and their work has been reassigned. They stay in the
-              directory so the record survives &mdash; open one to reactivate.
+              Their sign-in is disabled and their tasks were unassigned. They stay in the directory
+              so their records survive &mdash; open one to reactivate.
             </p>
             <div className="divide-y">
-              {deactivatedEmployees.map((e) => (
+              {leaverRoster.shown.map((e) => (
                 <div key={e.id} className="flex items-center gap-3 py-2">
                   <UserAvatar
                     userId={e.id}
@@ -1112,6 +1178,16 @@ export function EmployeesView() {
                 </div>
               ))}
             </div>
+            {deactivatedEmployees.length > ROSTER_PAGE_SIZE ? (
+              <TablePagination
+                page={leaverRoster.page}
+                pageCount={leaverRoster.pageCount}
+                total={deactivatedEmployees.length}
+                pageSize={ROSTER_PAGE_SIZE}
+                onPageChange={(p) => setLeaverPageParam(String(p + 1))}
+                className="border-t pt-3"
+              />
+            ) : null}
           </CardContent>
         </Card>
       )}

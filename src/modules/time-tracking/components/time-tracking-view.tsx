@@ -90,7 +90,7 @@ export function TimeTrackingView() {
     // No bottom padding of its own: the shell reserves the assistant button's room (XC-03).
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="Time Tracking"
+        title="Time tracking"
         description={description}
         actions={
           <div className="flex items-center gap-2">
@@ -156,10 +156,12 @@ export function TimeTrackingView() {
           // Only the *current* week short-circuits to a standalone empty state. On a past week the
           // grid must still render, because it carries the week stepper — swapping it out would
           // strand the viewer on a quiet week with no way back.
+          // Names the period selected — the month view said "this week" (UX audit 2026-10-16,
+          // TIME-22).
           <EmptyState
             icon={MonitorSmartphone}
-            title="No tracked time this week"
-            description="No one in view has tracked time for the current week yet. Entries appear here once the desktop agent syncs them."
+            title={`No tracked time this ${period === "month" ? "month" : "week"}`}
+            description={`No one in view has tracked time for the current ${period === "month" ? "month" : "week"} yet. Entries appear here once the desktop agent syncs them.`}
           />
         ) : (
           <>

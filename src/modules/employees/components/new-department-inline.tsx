@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermissions } from "@/hooks/use-permissions";
 import { friendlyError } from "@/lib/errors";
+import { DEPARTMENTS_HREF } from "@/modules/settings/lib/org-sections";
 import { createDepartment, type ApiDepartment } from "../services/employees.service";
 
 export function NewDepartmentInline({
@@ -41,7 +42,7 @@ export function NewDepartmentInline({
         {/* A link for whoever can open the page (UX audit SET-15). */}
         {can("settings:view") ? (
           <Link
-            href="/settings/organization#structure"
+            href={DEPARTMENTS_HREF}
             className="text-foreground font-medium underline-offset-2 hover:underline"
           >
             Settings → Organization → Departments

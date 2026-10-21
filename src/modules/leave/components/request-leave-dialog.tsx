@@ -627,7 +627,7 @@ export function RequestLeaveDialog({
             </p>
           ) : hoursOnOffDay ? (
             <p role="alert" className="text-destructive text-sm">
-              That day isn&apos;t a working day for your organisation, so no time off is needed.
+              That day isn&apos;t a working day for your organization, so no time off is needed.
             </p>
           ) : null}
 
