@@ -305,21 +305,21 @@ export function LocationsManager() {
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label>Timezone</Label>
+              <Label>Time zone</Label>
               <Select
                 value={form.timezone || TZ_NONE}
                 onValueChange={(v) => setForm((f) => ({ ...f, timezone: v === TZ_NONE ? "" : (v as string) }))}
                 disabled={saving}
                 items={{
-                  [TZ_NONE]: "No timezone",
+                  [TZ_NONE]: "No time zone",
                   ...Object.fromEntries(TIMEZONE_OPTIONS.map((tz) => [tz, tz])),
                 }}
               >
-                <SelectTrigger className="w-full" aria-label="Location timezone">
-                  <SelectValue placeholder="Select a timezone…" />
+                <SelectTrigger className="w-full" aria-label="Location time zone">
+                  <SelectValue placeholder="Select a time zone…" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={TZ_NONE}>No timezone</SelectItem>
+                  <SelectItem value={TZ_NONE}>No time zone</SelectItem>
                   {TIMEZONE_OPTIONS.map((tz) => (
                     <SelectItem key={tz} value={tz}>
                       {tz}

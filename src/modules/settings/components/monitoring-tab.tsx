@@ -422,7 +422,7 @@ export function MonitoringTab() {
     <div className="space-y-6">
       <PageHeader
         title="Monitoring"
-        description="Configure how the desktop agent captures screenshots and how long they are retained across your organization."
+        description="How often device agents take screenshots, how long they're kept, and how agents stay up to date — for the whole organization."
       />
 
       {/* The permission's own name, as Roles & permissions lists it — it said "Manage Settings",
@@ -456,8 +456,8 @@ export function MonitoringTab() {
             <CardHeader>
               <CardTitle>Screenshot capture</CardTitle>
               <CardDescription>
-                Control how often the desktop agent captures screenshots and how long they are
-                retained.
+                How often screenshots are taken and how long they&apos;re kept before they&apos;re
+                deleted automatically.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-0 pb-2">
@@ -473,10 +473,10 @@ export function MonitoringTab() {
                 </p>
               ) : null}
               <SettingRow
-                label="Capture cadence"
+                label="Screenshot frequency"
                 description={
                   !lock
-                    ? "How often a screenshot is taken while a session is active."
+                    ? "How often a screenshot is taken while time is being recorded."
                     : capturing(lock)
                       ? "Screenshots are still taken at this interval; it just can't be changed right now."
                       : "Kept for when Screenshots is switched back on — nothing is captured meanwhile."
@@ -495,7 +495,7 @@ export function MonitoringTab() {
                         }
                         disabled={!canManage || lock !== null}
                       >
-                        <SelectTrigger className="w-56" aria-label="Capture cadence">
+                        <SelectTrigger className="w-56" aria-label="Screenshot frequency">
                           <SelectValue>
                             {(v) =>
                               CADENCE_OPTIONS.find((o) => o.value === v)
@@ -630,8 +630,8 @@ export function MonitoringTab() {
               </CardHeader>
               <CardContent className="space-y-0 pb-2">
                 <SettingRow
-                  label="Stop after inactivity"
-                  description="With no keyboard or mouse input for this long, the session ends — counted back to the last activity, so idle time is never billed. It starts again by itself on the next key press or mouse move."
+                  label="Stop when idle for"
+                  description="With no keyboard or mouse input for this long, the session ends — counted back to the last activity, so idle time is never counted as work. It starts again by itself on the next key press or mouse move."
                   disabled={!canManage}
                 >
                   <Controller
@@ -643,7 +643,7 @@ export function MonitoringTab() {
                         min={IDLE_MIN_MINUTES}
                         max={IDLE_MAX_MINUTES}
                         suffix="min"
-                        aria-label="Stop after this many minutes of inactivity"
+                        aria-label="Minutes idle before the session stops"
                         disabled={!canManage}
                         onChange={field.onChange}
                       />
@@ -660,13 +660,13 @@ export function MonitoringTab() {
             <CardHeader>
               <CardTitle>Agent updates</CardTitle>
               <CardDescription>
-                Manage how the desktop agent keeps itself up to date on employee devices.
+                How device agents keep themselves up to date on employee computers.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-0 pb-2">
               <SettingRow
                 label="Automatic updates"
-                description="Allow agents to self-update to the latest released version without manual intervention."
+                description="Device agents install each new WorkPulse release by themselves, with nothing for anyone to do."
                 disabled={!canManage}
               >
                 <Controller

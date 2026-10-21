@@ -59,8 +59,8 @@ export function useFleet(): FleetState {
 function messageOf(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.status === 401) return "Your session expired. Sign in again.";
-    if (e.status === 403) return "You don't have access to the device fleet.";
+    if (e.status === 403) return "You don't have access to device agents.";
     return e.message;
   }
-  return "Couldn't load the device fleet. Check your connection and retry.";
+  return "Couldn't load devices. Check your connection and retry.";
 }

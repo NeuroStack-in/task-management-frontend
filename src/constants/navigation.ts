@@ -94,7 +94,7 @@ export const NAV_GROUPS: NavGroup[] = [
         keywords: "home overview widgets summary productivity score my day",
       },
       {
-        label: "Time Tracking",
+        label: "Time tracking",
         href: "/time-tracking",
         icon: Timer,
         permission: "time-tracking:view",
@@ -191,7 +191,7 @@ export const NAV_GROUPS: NavGroup[] = [
         keywords: "preferences configuration options account organization admin hub",
       },
       {
-        label: "Help Center",
+        label: "Help center",
         href: "/help",
         icon: HelpCircle,
         permission: "help:view",
@@ -227,7 +227,7 @@ export const INSIGHTS_TABS: NavItem[] = [
     href: "/insights/activity",
     icon: Activity,
     permission: "activity:view",
-    description: "Active vs inactive, heatmaps, app & URL usage.",
+    description: "Active and idle time, heatmaps, and app and website usage.",
     keywords: "productivity idle heatmap apps websites usage monitoring keystrokes",
   },
   {
@@ -332,7 +332,7 @@ export const SETTINGS_SUBSECTIONS: NavItem[] = [
     keywords: "payslip payslips salary pay net gross wages",
   },
   // Personal security lives on Login & security, for every role; Settings → Security is the
-  // organisation's policies only (UX audit SET-08 — search used to send owners to a page outside their
+  // organization's policies only (UX audit SET-08 — search used to send owners to a page outside their
   // rail, and both pages carried the same MFA, password and session cards).
   {
     label: "Multi-factor authentication",
@@ -351,12 +351,22 @@ export const SETTINGS_SUBSECTIONS: NavItem[] = [
     description: "The devices you're signed in on.",
     keywords: "session device signed in browser sign out trusted remember",
   },
+  // Departments have their own tab on Organization now, and People links straight to it (UX audit
+  // 2026-10-16, PEOPLE-22) — so search should land there too, not on the Profile tab.
+  {
+    label: "Departments & teams",
+    href: "/settings/organization#departments",
+    icon: Users,
+    permission: "settings:view",
+    description: "Who belongs to each department, and the teams that span them.",
+    keywords: "department departments team teams structure org chart members move people",
+  },
   {
     label: "Session & access policies",
     href: "/settings/security#sessions",
     icon: ShieldCheck,
     permission: "security:view",
-    description: "Organisation-wide session lifetime and limits.",
+    description: "Organization-wide session lifetime and limits.",
     keywords: "session timeout concurrent access policy lifetime limit",
   },
 ];
@@ -375,8 +385,8 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         href: "/settings/organization",
         icon: Building2,
         permission: "settings:view",
-        description: "Organization info, departments, teams, working hours, and branding.",
-        keywords: "organization company department team workspace working hours branding logo timezone",
+        description: "Organization profile, departments and teams, schedule, places, and policies.",
+        keywords: "organization company department departments team teams structure working hours holidays policies time zone timezone",
       },
       {
         label: "Features",
@@ -395,7 +405,10 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         keywords: "invoice payment plan subscription seats card receipt billing cancel",
       },
       {
-        label: "Ownership & deletion",
+        // One name in the rail, search, the page title and the browser tab: "Ownership & closure".
+        // The rail said "& deletion" above a page titled "& closure" — and closing is reversible for
+        // 30 days, which "deletion" hides (UX audit 2026-10-16, SET-24 / XC-12).
+        label: "Ownership & closure",
         href: "/settings/ownership",
         icon: TriangleAlert,
         permission: "settings:manage",
@@ -444,7 +457,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         href: "/settings/security",
         icon: ShieldCheck,
         permission: "security:view",
-        description: "Organisation-wide: MFA policy, session limits, password policy and security events.",
+        description: "Organization-wide: MFA policy, session limits, password policy and security events.",
         keywords: "security center protect compliance events policy mfa password sessions",
       },
       {
@@ -475,9 +488,9 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         href: "/settings/agents",
         icon: MonitorSmartphone,
         permission: "agents:view",
-        description: "Device agent status, configuration, policies, and health.",
+        description: "Computers running a WorkPulse agent: status, health, and enrolling a device.",
         keywords:
-          "download install installer setup desktop app tracker agent fleet devices windows mac laptop computer monitor health heartbeat offline",
+          "download install installer setup desktop app background service tracker agent fleet devices windows mac laptop computer monitor health check-in offline enroll enrollment code",
       },
     ],
   },

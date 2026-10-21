@@ -201,7 +201,7 @@ function CategoriesPanel({
       {/* Which of the product's two "weights" controls does what (UX audit 2026-10-16, SET-07):
           these feed Quality only; the mix of the four parts is the Organization page's. */}
       <p className="text-xs text-muted-foreground">
-        These don&apos;t decide how much Quality counts in the score. That mix — Utilisation,
+        These don&apos;t decide how much Quality counts in the score. That mix — Utilization,
         Quality, Focus and Reliability as percentages — is set in{" "}
         {canOrg ? (
           <Link
@@ -294,7 +294,7 @@ function AppsPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Apps &amp; Websites</CardTitle>
+        <CardTitle>Apps &amp; websites</CardTitle>
         <CardDescription>
           Classify each application by its process name, and choose whether the agents track it.
           Names match case-insensitively, anywhere in the name, and the first matching rule in the
@@ -687,7 +687,7 @@ export function RulesEditor({
 
   const tabs: { key: TabKey; label: string; count?: number }[] = [
     ...(showCategories ? [{ key: "categories" as const, label: "Categories" }] : []),
-    { key: "apps", label: "Apps & Websites", count: draft.apps.length + draft.urls.length },
+    { key: "apps", label: "Apps & websites", count: draft.apps.length + draft.urls.length },
     {
       key: "lists",
       // Holds the not-tracked lists and the app lists too, not just restricted sites.
@@ -793,7 +793,7 @@ export function RulesEditor({
           />
           <ChipInput
             title="Restricted apps"
-            description="Using one during a running timer warns the employee on-screen and flags it for review; the managed agent, which has no timer, flags it without a warning. Process names."
+            description="Using one during a running timer warns the employee on-screen and flags it for review; the background service, which has no timer, flags it without a warning. Process names."
             accent="negative"
             placeholder="process.exe"
             validate={looksLikeProcess}
@@ -803,7 +803,7 @@ export function RulesEditor({
           />
           <ChipInput
             title="Restricted sites"
-            description="Visiting one during a running timer warns the employee on-screen and flags it for review; the managed agent, which has no timer, flags it without a warning. Matched against the window title, since the agents can't read page addresses yet. Domains."
+            description="Visiting one during a running timer warns the employee on-screen and flags it for review; the background service, which has no timer, flags it without a warning. Matched against the window title, since the agents can't read page addresses yet. Domains."
             accent="negative"
             placeholder="domain.com"
             validate={isDomain}

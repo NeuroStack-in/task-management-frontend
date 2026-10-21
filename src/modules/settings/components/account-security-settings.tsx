@@ -56,7 +56,7 @@ export function AccountSecuritySettings() {
         </Card>
       </div>
 
-      {/* Where the organisation's side lives, for the roles that have it. */}
+      {/* Where the organization's side lives, for the roles that have it. */}
       {can("security:view") ? (
         <p className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground">
           <Building2 className="mt-0.5 size-4 shrink-0" aria-hidden />

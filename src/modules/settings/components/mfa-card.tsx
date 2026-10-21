@@ -152,7 +152,7 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
       await confirmTotpEnrollment(code);
       setMfaStatus("on");
       closeSetup();
-      toast.success(`${MFA} enabled`, {
+      toast.success(`${MFA} turned on`, {
         description:
           "You'll be asked for a code the next time you sign in with your email and password.",
       });
@@ -274,7 +274,7 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
               <Loader2 className="size-4 animate-spin" /> Preparing…
             </>
           ) : (
-            "Enable"
+            "Turn on"
           )}
         </Button>
       )}
@@ -393,7 +393,7 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
                   <Loader2 className="size-4 animate-spin" /> Verifying…
                 </>
               ) : (
-                "Verify & enable"
+                "Verify and turn on"
               )}
             </Button>
           </DialogFooter>

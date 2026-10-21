@@ -171,7 +171,7 @@ export function WorkingHoursManager() {
       invalidateWorkingHours(next);
       toast.success("Working hours saved", {
         description:
-          "Productivity scores use the new expected day from the next recompute.",
+          "Productivity scores use the new expected day from their next update.",
       });
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
@@ -198,7 +198,7 @@ export function WorkingHoursManager() {
     try {
       const res = await recomputeAttendance(isoDaysAgo(45), isoDaysAgo(1));
       toast.success("Recent attendance recomputed", {
-        description: `Re-resolved ${res.recomputed} day record${res.recomputed === 1 ? "" : "s"} under the current schedule.`,
+        description: `${res.recomputed} day${res.recomputed === 1 ? "" : "s"} of attendance updated to the current schedule.`,
       });
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
@@ -333,7 +333,7 @@ export function WorkingHoursManager() {
                   {fmtDuration(expected ?? 480)}
                 </span>{" "}
                 — productivity is measured against this, so a shorter declared day is not
-                penalised.
+                penalized.
               </p>
             )}
 

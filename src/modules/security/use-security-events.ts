@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { formatDateTime, isUuid } from "@/lib/format";
 import { useAuthStore } from "@/stores/auth.store";
 import { listAllEmployees } from "@/modules/employees/services/employees.service";
 import { listFleet } from "@/modules/agents/services/fleet.service";
@@ -41,11 +42,15 @@ export interface SecurityEventsState {
   reload: () => void;
 }
 
-function fmt(tsSeconds: number): string {
-  const d = new Date(tsSeconds * 1000);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+/** The one date notation (UX audit XC-06) — it printed "2026-10-15 14:05". */
+const fmt = (tsSeconds: number): string => formatDateTime(tsSeconds * 1000);
+
+/**
+ * Said for an id the directory and the fleet can't name — a removed employee, or someone the reader's
+ * scope can't see. It printed the first eight characters of the id (UX audit SET-23 / XC-12: no raw
+ * ids); the device list says the same words for the same case.
+ */
+const UNRESOLVED = "Outside your directory";
 
 export function useSecurityEvents(enabled = true): SecurityEventsState {
   const currentUser = useAuthStore((s) => s.user);
@@ -83,11 +88,11 @@ export function useSecurityEvents(enabled = true): SecurityEventsState {
             ts: r.ts,
             timestamp: fmt(r.ts),
             actorId: r.actor,
-            actorName: names.get(r.actor) ?? devices.get(r.actor) ?? shortId(r.actor),
+            actorName: names.get(r.actor) ?? devices.get(r.actor) ?? UNRESOLVED,
             actorIsDevice: !names.has(r.actor) && devices.has(r.actor),
             action: auditActionLabel(r.action, r.target ?? null),
             actionCode: r.action,
-            target: resolveAuditTarget(r.target ?? null, names, devices),
+            target: nameTarget(resolveAuditTarget(r.target ?? null, names, devices)),
           })),
         );
       } catch (e) {
@@ -106,9 +111,9 @@ export function useSecurityEvents(enabled = true): SecurityEventsState {
   return { events, loading, error, reload };
 }
 
-/** A recognisable stub of an unresolved actor id — never a blank cell. */
-function shortId(id: string): string {
-  return id.length > 10 ? `${id.slice(0, 8)}…` : id;
+/** A target still carrying a bare id after resolution is shown as words, never the id. */
+function nameTarget(t: string | null): string | null {
+  return t && isUuid(t) ? UNRESOLVED : t;
 }
 
 function messageOf(e: unknown): string {

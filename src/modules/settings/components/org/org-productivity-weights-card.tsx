@@ -132,10 +132,10 @@ export function OrgProductivityWeightsCard() {
                 {/* A plain anchor: a hash on this same page switches the tab (the page follows
                     `hashchange`, which a router push doesn't fire). */}
                 <a
-                  href="#structure"
+                  href="#departments"
                   className="text-primary font-medium underline-offset-2 hover:underline"
                 >
-                  Structure → Departments
+                  Departments
                 </a>
                 . A department without its own uses these.
               </li>
@@ -173,7 +173,7 @@ export function OrgProductivityWeightsCard() {
             {usingDefaults ? (
               <p className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
                 No organization defaults set yet — showing the built-in defaults
-                (Utilisation&nbsp;25% · Quality&nbsp;40% · Focus&nbsp;15% · Reliability&nbsp;20%).
+                (Utilization&nbsp;25% · Quality&nbsp;40% · Focus&nbsp;15% · Reliability&nbsp;20%).
                 Save to make them your own.
               </p>
             ) : null}

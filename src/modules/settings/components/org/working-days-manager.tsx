@@ -114,7 +114,7 @@ export function WorkingDaysManager() {
       // Refresh the cached schedule so the attendance/insights surfaces agree without a reload.
       invalidateWorkingHours(next);
       toast.success("Working days saved", {
-        description: "Attendance will use this schedule from the next nightly close.",
+        description: "Attendance uses this schedule from tonight's daily update.",
       });
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {

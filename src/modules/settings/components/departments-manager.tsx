@@ -262,7 +262,7 @@ export function DepartmentsManager() {
       <CardHeader>
         <CardTitle>Departments</CardTitle>
         <CardDescription>
-          Who belongs to each part of the org. Everyone is in exactly one department &mdash; adding
+          Who belongs to each part of the organization. Everyone is in exactly one department &mdash; adding
           someone here moves them out of their current one.
         </CardDescription>
       </CardHeader>

@@ -154,7 +154,7 @@ export function CaptureNowButton({
   const landed = useCallback(() => {
     stopWatch();
     setPhase("idle");
-    toast.success("Screenshot added", { description: "The new frame is on this page." });
+    toast.success("Screenshot added", { description: "The new screenshot is on this page." });
   }, [stopWatch]);
 
   /**
@@ -178,8 +178,8 @@ export function CaptureNowButton({
           setPhase("idle");
           toast.info("Still waiting for the upload", {
             description:
-              "The device was asked, but the frame hasn't arrived yet. It lands with the agent's " +
-              "next batch — the page will pick it up on the next refresh.",
+              "The device was asked, but the screenshot hasn't arrived yet. It comes with the " +
+              "device's next upload — the page will pick it up on the next refresh.",
           });
           return;
         }

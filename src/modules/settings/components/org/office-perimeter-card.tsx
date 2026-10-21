@@ -147,7 +147,7 @@ export function OfficePerimeterCard() {
             included: with Save inside the enabled-only controls it vanished the moment the box was
             cleared, so turning the perimeter off could never be saved (QA audit 2026-10-08, WP-101).
             Cancel goes back to the saved perimeter, not the shipped placeholder (WP-535). The same
-            footer as every other organisation card (UX audit XC-11). */}
+            footer as every other organization card (UX audit XC-11). */}
         <CardSaveFooter
           dirty={canManage && dirty}
           saving={saving}
@@ -161,8 +161,8 @@ export function OfficePerimeterCard() {
 
         <p className="text-xs text-muted-foreground">
           {canManage
-            ? "Turn on “Move office”, drag the 🏢 pin (or click the map) to place your office, size it with the slider, then Save. The change applies org-wide and appears on the Analytics Locations map."
-            : "You can view the office perimeter here; changing it needs the monitoring-manage permission."}
+            ? "Turn on “Move office”, drag the 🏢 pin (or click the map) to place your office, size it with the slider, then Save. The change applies to the whole organization and appears on the Analytics Locations map."
+            : "You can view the office perimeter here; changing it needs the Manage monitoring settings permission."}
         </p>
       </CardContent>
     </Card>

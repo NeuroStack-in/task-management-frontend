@@ -71,9 +71,9 @@ export function TrackingModeDialog({
           <DialogTitle>Change how this organization tracks work</DialogTitle>
           <DialogDescription>
             Nothing you&apos;ve already recorded is deleted — switching modes
-            only shows or hides surfaces. Machine uptime needs the WorkPulse
-            Windows service installed on each computer it covers, using an
-            enrolment key from Agents.
+            only shows or hides pages. Machine uptime needs the WorkPulse
+            background service installed on each computer it covers, using an
+            enrollment code from Settings → Device agents.
           </DialogDescription>
         </DialogHeader>
 
@@ -133,7 +133,7 @@ export function TrackingModeDialog({
           <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
             <p>
               ⚠️ Any devices already running keep tracking. Changing this hides
-              or shows surfaces in the web app; it does not stop an installed
+              or shows pages in the web app; it does not stop an installed
               agent — revoke devices under{" "}
               {canAgents ? (
                 <Link
@@ -157,7 +157,7 @@ export function TrackingModeDialog({
               checked={ack}
               onCheckedChange={(v) => setAck(v === true)}
             />
-            I understand some surfaces will be hidden for everyone.
+            I understand some pages will be hidden for everyone.
           </label>
         )}
 

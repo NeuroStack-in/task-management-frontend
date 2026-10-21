@@ -48,7 +48,16 @@ describe("navItemForPath", () => {
   /** WP-328: a `#section` entry strips to its page's path; the page itself must win the tie. */
   it("prefers the page over a #section of it", () => {
     expect(navItemForPath("/settings/security")?.href).toBe("/settings/security");
-    expect(navItemForPath("/settings/ownership")?.label).toBe("Ownership & deletion");
+    expect(navItemForPath("/settings/ownership")?.label).toBe("Ownership & closure");
+    // The Departments search entry is a #section of Organization; the page keeps the path.
+    expect(navItemForPath("/settings/organization")?.href).toBe("/settings/organization");
+  });
+
+  /** UX audit SET-24: the rail, search and the page itself use one name for this page. */
+  it("names the ownership page the way the page does", () => {
+    const labels = ALL_NAV_ITEMS.map((i) => i.label);
+    expect(labels).toContain("Ownership & closure");
+    expect(labels.some((l) => /deletion/i.test(l))).toBe(false);
   });
 
   /** WP-509: search de-duplicates by href, so a second entry for the same href is never reachable. */

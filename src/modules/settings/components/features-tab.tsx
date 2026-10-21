@@ -115,7 +115,7 @@ interface ControlDef {
 }
 
 const CONTROLS: ControlDef[] = [
-  { icon: Timer, label: "Time tracking", description: "The desktop agent's timer, hours logged against projects, and the timesheet pages.", features: ["time.tracking"], page: "/time-tracking" },
+  { icon: Timer, label: "Time tracking", description: "The desktop app's timer, hours logged against projects, and the timesheet pages.", features: ["time.tracking"], page: "/time-tracking" },
   { icon: CalendarCheck, label: "Attendance", description: "Daily present/partial/absent status, computed nightly from recorded sessions.", features: ["attendance"], page: "/attendance" },
   { icon: Plane, label: "Leave", description: "Leave types, balances, requests and the approval queue.", features: ["leave"], page: "/leave-requests" },
   { icon: FolderKanban, label: "Projects & tasks", description: "Projects, tasks, assignments and per-project roles.", features: ["projects"], page: "/projects" },
@@ -134,10 +134,10 @@ const CONTROLS: ControlDef[] = [
   // (QA audit 2026-10-08, WP-332). It gates the scorer's anomaly flags and their reasons in the
   // attention list (`insights::scorer`, `attention_list`).
   { icon: TriangleAlert, label: "Anomaly detection", description: "Flags unusual activity patterns for a person to review in the attention list. Statistical, not AI — and it never acts on its own.", features: ["anomalies"] },
-  { icon: Bot, label: "AI assistant", description: "Ask questions about your workspace. Session-only — nothing is stored.", features: ["ai.assistant"], page: "page:assistant" },
+  { icon: Bot, label: "AI assistant", description: "Ask questions about your organization. Conversations aren't saved.", features: ["ai.assistant"], page: "page:assistant" },
   { icon: Plug, label: "Integrations", description: "Connect Slack so leave, joiner and payroll updates land in your channels.", features: ["integrations"] },
-  { icon: Bell, label: "Notifications", description: "The notification centre.", page: "/notifications" },
-  { icon: HelpCircle, label: "Help Center", description: "Help articles and support tickets.", page: "/help" },
+  { icon: Bell, label: "Notifications", description: "The notification center.", page: "/notifications" },
+  { icon: HelpCircle, label: "Help center", description: "Help articles and support tickets.", page: "/help" },
 ]
 
 const FEATURE_LIST: FeatureDef[] = [
@@ -146,7 +146,7 @@ const FEATURE_LIST: FeatureDef[] = [
     icon: Timer,
     label: "Time tracking",
     description:
-      "Let employees log hours against projects from the desktop agent's timer.",
+      "Let employees log hours against projects from the desktop app's timer.",
   },
   {
     key: "attendance",
@@ -207,7 +207,7 @@ const FEATURE_LIST: FeatureDef[] = [
     icon: Bot,
     label: "AI assistant",
     description:
-      "Ask questions about your workspace. Session-only — nothing is stored.",
+      "Ask questions about your organization. Conversations aren't saved.",
   },
   {
     key: "integrations",
@@ -221,7 +221,7 @@ const FEATURE_LIST: FeatureDef[] = [
     icon: TriangleAlert,
     label: "Anomaly detection",
     description:
-      "Flags unusual patterns for human review. Statistical, not AI — and never auto-actions.",
+      "Flags unusual patterns for a person to review. Statistical, not AI — and it never acts on its own.",
   },
 ]
 
@@ -404,7 +404,7 @@ export function FeaturesTab() {
       <div className="space-y-6">
         <PageHeader
           title="Features"
-          description="Enable or disable features organization-wide. Changes take effect once saved for everyone except organization owners."
+          description="Turn features on or off for the whole organization. Once you save, changes apply to everyone except owners."
         />
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
           <p className="text-sm text-muted-foreground">
@@ -422,7 +422,7 @@ export function FeaturesTab() {
     <div className="space-y-6">
       <PageHeader
         title="Features"
-        description="Enable or disable features organization-wide. Changes take effect once saved for everyone except organization owners."
+        description="Turn features on or off for the whole organization. Once you save, changes apply to everyone except owners."
       />
 
       {error && (
@@ -453,7 +453,7 @@ export function FeaturesTab() {
           <CardTitle>Features</CardTitle>
           <CardDescription>
             Turn a feature on or off for the whole organization. Off hides its pages and stops
-            the work behind it &mdash; Screenshots off stops the desktop agents capturing, AI off
+            the work behind it &mdash; Screenshots off stops device agents capturing, AI off
             stops summaries being generated and billed. Owners always keep access, so nothing can be
             switched off for good.
           </CardDescription>
@@ -625,7 +625,7 @@ export function FeaturesTab() {
                     off to tidy the sidebar should find that out here, not from an employee. */}
                 {off.some((l) => l === "Screenshots" || l === "Activity monitoring") && (
                   <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">
-                    This also stops the desktop agents capturing — not just hiding the page.
+                    This also stops device agents capturing — not just hiding the page.
                   </p>
                 )}
               </div>

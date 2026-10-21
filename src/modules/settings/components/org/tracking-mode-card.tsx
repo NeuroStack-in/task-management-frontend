@@ -99,7 +99,7 @@ export function TrackingModeCard() {
       <CardHeader>
         <CardTitle>How this organization tracks work</CardTitle>
         <CardDescription>
-          Which agent your team uses, and which surfaces this workspace shows.
+          Which agent your team uses, and which pages this organization shows.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

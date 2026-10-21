@@ -307,7 +307,7 @@ export function EnrollmentView() {
             text: `This organization isn't set to ${MANAGED_MODES} tracking, so a device can't be enrolled.`,
           });
         } else {
-          toast.error("Couldn't mint a code", { description: friendlyError(e) });
+          toast.error("Couldn't generate the code", { description: friendlyError(e) });
         }
       })
       .finally(() => setMinting(false));
@@ -336,7 +336,9 @@ export function EnrollmentView() {
 
   // Every state keeps the page's one <h1> (in-pane inside Settings): the guard states had only an
   // empty state's <h3>, so the page had no H1 at all (UX audit 2026-10-16, XC-10).
-  const heading = <PageHeader title="Enrol a device" />;
+  // "Enroll", "enrollment code" and "generate" throughout — the page said "Enrol", "enrolment key"
+  // and "mint" (UX audit SET-24 / XC-12, `Docs/UI-GLOSSARY.md`).
+  const heading = <PageHeader title="Enroll a device" />;
 
   if (!canManage) {
     return (
@@ -344,8 +346,8 @@ export function EnrollmentView() {
         {heading}
         <EmptyState
           icon={KeyRound}
-          title="Enrolment is admin-only"
-          description="You need the Manage device agents permission to mint enrolment codes."
+          title="You can't enroll devices"
+          description="Enrolling a device needs the Manage device agents permission. Ask an owner or admin for it."
         />
       </div>
     );
@@ -370,8 +372,8 @@ export function EnrollmentView() {
       {heading}
       <EmptyState
         icon={KeyRound}
-        title="Device enrolment isn't available in this mode"
-        description={`This organization tracks with “${TRACKING_MODE_META[mode].label}”. The background agent runs in ${MANAGED_MODES} tracking — the owner can switch it in Settings → Organization.`}
+        title="Device enrollment isn't available in this mode"
+        description={`This organization tracks with “${TRACKING_MODE_META[mode].label}”. The background service runs in ${MANAGED_MODES} tracking — the owner can switch it in Settings → Organization.`}
         action={
           // A link only for someone who can open the page (UX audit SET-15); the text above
           // still says where it is for everyone else.
@@ -389,8 +391,8 @@ export function EnrollmentView() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Enrol a device"
-        description="Mint a one-time code for an employee, then install the agent on their computer with it."
+        title="Enroll a device"
+        description="Generate a one-time enrollment code for an employee, then install the background service on their computer with it."
       />
 
       {modeKnown ? (
@@ -418,12 +420,12 @@ export function EnrollmentView() {
             The WorkPulse agent installer (WorkPulse.msi) hasn&apos;t been published for download
             yet. Ask WorkPulse support for it through{" "}
             <Link
-              href="/help"
+              href="/help#submit-ticket"
               className="text-foreground font-medium underline-offset-2 hover:underline"
             >
               Help → Submit a ticket
             </Link>
-            ; the enrolment code you create here works with it.
+            ; the enrollment code you create here works with it.
           </span>
         ) : (
           <span>
@@ -440,7 +442,7 @@ export function EnrollmentView() {
             automatic updates are on. If the download doesn&apos;t work, contact WorkPulse
             support through{" "}
             <Link
-              href="/help"
+              href="/help#submit-ticket"
               className="text-foreground font-medium underline-offset-2 hover:underline"
             >
               Help → Submit a ticket
@@ -542,7 +544,8 @@ export function EnrollmentView() {
           {minted && (
             <div className="border-primary/30 bg-primary/5 space-y-3 rounded-lg border p-4">
               <p className="text-sm font-medium">
-                Code for {nameOf(minted.user_id)} — this is the only time it&apos;s shown.
+                Enrollment code for {nameOf(minted.user_id)} — this is the only time it&apos;s
+                shown.
               </p>
               <div className="flex items-center gap-2">
                 <code className="bg-background flex-1 rounded px-3 py-2 font-mono text-sm break-all">

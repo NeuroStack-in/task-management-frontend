@@ -19,6 +19,7 @@ import { Loader } from "@/components/shared/loader";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ApiError } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 import {
   approveOrgRequest,
   listOrgRequests,
@@ -99,7 +100,7 @@ export function OrgRequestsQueue() {
     try {
       const out = await approveOrgRequest(r.id);
       setApproving(null);
-      toast.success(`${r.org_name} created`, { description: `Workspace: ${out.slug}` });
+      toast.success(`${r.org_name} created`, { description: `Organization address: ${out.slug}` });
       load();
     } catch (e) {
       // Nothing is half-done on failure: the request stays pending, so the operator can retry.
@@ -177,7 +178,7 @@ export function OrgRequestsQueue() {
                     <Badge
                       variant="secondary"
                       className="font-mono text-[11px]"
-                      title="Requested name — the workspace address adds a unique suffix"
+                      title="Requested name — the organization's address adds a unique suffix"
                     >
                       {r.slug}
                     </Badge>
@@ -203,13 +204,17 @@ export function OrgRequestsQueue() {
                   <p className="text-muted-foreground text-xs">
                     {[r.industry, r.size, r.timezone].filter(Boolean).join(" · ") || "—"}
                     {" · "}
-                    {new Date(r.requested_at).toLocaleString()}
+                    {formatDateTime(r.requested_at)}
                   </p>
                   {r.reason ? (
                     <p className="text-muted-foreground text-xs italic">Reason: {r.reason}</p>
                   ) : null}
+                  {/* Staff-only page: the id is what support looks an organization up by, so it
+                      stays — labeled, rather than a bare string (UX audit XC-12). */}
                   {r.tenant_id ? (
-                    <p className="text-muted-foreground font-mono text-[11px]">{r.tenant_id}</p>
+                    <p className="text-muted-foreground text-[11px]">
+                      Organization ID: <span className="font-mono select-all">{r.tenant_id}</span>
+                    </p>
                   ) : null}
                 </div>
 

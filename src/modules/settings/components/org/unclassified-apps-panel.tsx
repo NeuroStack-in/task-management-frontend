@@ -225,7 +225,7 @@ export function UnclassifiedAppsPanel({
 
       <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
         <RefreshCw className="size-3" />
-        Added rules apply on save, and affect scores from the next recompute.
+        Added rules apply on save, and affect scores from their next update.
       </p>
     </div>
   );

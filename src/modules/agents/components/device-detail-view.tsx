@@ -27,7 +27,7 @@ import { useRouter } from "next/navigation";
 import { ReleaseDeviceButton } from "./release-device-button";
 import { deviceStateLabel, isLiveDevice } from "../lib/device-state";
 import { effectiveUserId } from "../lib/presence";
-import { connMeta, lastSeen, Info, Meter } from "./fleet-view";
+import { connMeta, lastSeen, Info, Meter, UNNAMED_DEVICE, variantLabel } from "./fleet-view";
 import { REMOVED_PERSON } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -143,10 +143,11 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
           </span>
           <div className="min-w-0">
             <h2 className="truncate font-display text-2xl font-semibold leading-tight">
-              {device.hostname || device.agent_id}
+              {device.hostname || UNNAMED_DEVICE}
             </h2>
             <p className="text-sm text-feature-foreground/80">
-              {device.os} {device.os_version} · agent {device.agent_version}
+              {device.os} {device.os_version} · {variantLabel(device.variant)}{" "}
+              {device.agent_version ? `v${device.agent_version.replace(/^v/i, "")}` : ""}
             </p>
           </div>
         </div>
@@ -166,11 +167,13 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
 
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
         <div className="space-y-5">
-          {/* Owner — the person whose sign-in this agent reports as. */}
+          {/* The person whose sign-in this agent reports as. "Employee", not "Owner": an owner is the
+              organization role with every permission (UX audit XC-12 — one word per idea), and the
+              device list's column says the same. */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <UserIcon className="size-4" /> Owner
+                <UserIcon className="size-4" /> Employee
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -196,7 +199,7 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     {!effectiveUserId(device)
-                      ? "No signed-in user reported."
+                      ? "No one has signed in on this device yet."
                       : ownerMiss === "hidden"
                         ? "Outside your directory"
                         : ownerMiss === "gone"
@@ -248,13 +251,19 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
                 <Info label="Operating system" value={`${device.os} ${device.os_version}`} />
                 <Info label="Agent version" value={device.agent_version || "—"} />
                 <Info label="IP address" value={device.ip || "—"} mono />
-                <Info label="Agent id" value={device.agent_id} mono />
                 <Info
                   label="State"
                   value={deviceStateLabel(device.state)}
                 />
-                <Info label="Last heartbeat" value={lastSeen(device.last_heartbeat)} />
+                <Info label="Last check-in" value={lastSeen(device.last_heartbeat)} />
               </div>
+              {/* The raw id is gone from the grid (UX audit SET-23: "Agent id" was developer wording).
+                  It stays here, labeled for the one person who needs it — whoever quotes it in a
+                  help ticket. */}
+              <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+                Device reference, if you submit a help ticket:{" "}
+                <span className="break-all font-mono select-all">{device.agent_id}</span>
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -262,9 +271,9 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Clock className="size-4" /> Telemetry
+              <Clock className="size-4" /> Device health
               <span className="ml-auto text-xs font-normal text-muted-foreground">
-                last heartbeat
+                at last check-in
               </span>
             </CardTitle>
           </CardHeader>
@@ -272,16 +281,18 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
             <Meter label="CPU" value={offline ? 0 : device.cpu_pct} />
             <Meter label="Memory" value={offline ? 0 : device.mem_pct} />
             <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
-              <span className="text-muted-foreground">Unsent outbox</span>
+              {/* "Unsent outbox" was the agent's own word for it (UX audit SET-23). */}
+              <span className="text-muted-foreground">Data waiting to upload</span>
               <span className="font-medium tabular-nums">{device.outbox_mb.toFixed(1)} MB</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">User idle at last report</span>
+              <span className="text-muted-foreground">Idle at last check-in</span>
               <span className="font-medium">{device.idle ? "Yes" : "No"}</span>
             </div>
             {offline && (
               <p className="text-xs text-muted-foreground">
-                Utilization reads 0 while offline — the last heartbeat is {lastSeen(device.last_heartbeat)}.
+                CPU and memory read 0 while the device is offline. Last check-in:{" "}
+                {lastSeen(device.last_heartbeat)}.
               </p>
             )}
           </CardContent>

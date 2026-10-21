@@ -14,7 +14,7 @@
  * the server's shape but nothing writes it, so it shows only if it ever arrives.
  *
  * Rendered on Login & security (`/settings/login-security#sessions`) — personal sign-in security
- * lives there for every role; Settings → Security is organisation-only (UX audit SET-08).
+ * lives there for every role; Settings → Security is organization-only (UX audit SET-08).
  */
 import { useState } from "react";
 import { LogOut, Monitor } from "lucide-react";
@@ -116,7 +116,7 @@ export function SessionsList() {
       {/* A lost laptop or a shared computer: the one way to end the other sessions. */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
         <p className="text-xs text-muted-foreground">
-          Don&apos;t recognise a device? Sign out everywhere and change your password.
+          Don&apos;t recognize a device? Sign out everywhere and change your password.
         </p>
         <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
           <LogOut className="size-4" /> Sign out everywhere

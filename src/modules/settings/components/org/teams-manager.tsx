@@ -176,7 +176,8 @@ export function TeamsManager() {
   }
 
   return (
-    <Card>
+    // `#teams` on the Organization page opens the Departments tab and scrolls here (PEOPLE-22).
+    <Card id="teams" className="scroll-mt-24">
       <CardHeader>
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1.5">

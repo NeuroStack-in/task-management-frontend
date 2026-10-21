@@ -89,7 +89,7 @@ export function TimezonePicker({
         )}
       >
         <span className={cn("min-w-0 flex-1 truncate", !label && "text-muted-foreground")}>
-          {label ?? "Select a timezone…"}
+          {label ?? "Select a time zone…"}
         </span>
         <ChevronDown className="text-muted-foreground size-4 shrink-0" aria-hidden />
       </button>
@@ -99,7 +99,7 @@ export function TimezonePicker({
             <div
               ref={panelRef}
               role="dialog"
-              aria-label="Choose the organization's timezone"
+              aria-label="Choose the organization's time zone"
               className="bg-popover text-popover-foreground ring-foreground/10 fixed z-[60] flex flex-col rounded-lg border p-1.5 shadow-lg ring-1"
               style={{
                 top: pos.top,
@@ -114,7 +114,7 @@ export function TimezonePicker({
                   data-autofocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  aria-label="Search by city, timezone or UTC offset"
+                  aria-label="Search by city, time zone or UTC offset"
                   placeholder="Search city, zone or offset (+5:30)"
                   className="border-input bg-background focus-visible:ring-ring/40 h-8 w-full rounded-md border pr-2 pl-7 text-sm focus-visible:ring-2 focus-visible:outline-none"
                 />
@@ -128,7 +128,7 @@ export function TimezonePicker({
                 >
                   <LocateFixed className="text-primary size-4 shrink-0" aria-hidden />
                   <span className="min-w-0 flex-1 truncate">
-                    Use this browser&apos;s timezone · {zoneParts(mine).city}
+                    Use this browser&apos;s time zone · {zoneParts(mine).city}
                   </span>
                   <span className="text-muted-foreground text-xs tabular-nums">
                     {formatOffset(currentOffsetMinutes(mine))}
@@ -151,7 +151,7 @@ export function TimezonePicker({
                   ) : null}
                   {results.length === 0 ? (
                     <li className="text-muted-foreground px-2 py-6 text-center text-sm">
-                      No timezone matches “{query}”.
+                      No time zone matches “{query}”.
                     </li>
                   ) : (
                     results.map((o) => {

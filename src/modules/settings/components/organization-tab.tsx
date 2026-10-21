@@ -26,6 +26,7 @@ import { CardSaveFooter } from "./save-footer"
 import { TimezonePicker } from "./org/timezone-picker"
 import { SectionDirtyContext, withOwner, type SectionDirtyReporter } from "../lib/card-guard"
 import { browserZone, pickerZones, serverResolves, zoneParts } from "../lib/timezones"
+import { ORG_SECTIONS, sectionFromHash, type OrgSection } from "../lib/org-sections"
 import { OrgProductivityWeightsCard } from "./org/org-productivity-weights-card"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
@@ -151,29 +152,7 @@ function FieldGroup({
   )
 }
 
-/**
- * The page's sections (UX audit 2026-10-16, SET-06). It was one 4,400 px column of eleven cards with
- * no way to jump between them. Each card still saves on its own; the tabs only decide which are on
- * screen.
- */
-const ORG_SECTIONS = [
-  { key: "profile", label: "Profile", intro: "Who the organization is, and how it tracks work." },
-  { key: "structure", label: "Structure", intro: "Departments, and the teams that span them." },
-  { key: "schedule", label: "Schedule", intro: "The working week, working hours and holidays." },
-  { key: "places", label: "Places", intro: "Office locations and the office perimeter." },
-  {
-    key: "policies",
-    label: "Policies",
-    intro: "How work is scored, and the policies your people can read.",
-  },
-] as const
-
-type OrgSection = (typeof ORG_SECTIONS)[number]["key"]
-
-const sectionFromHash = (hash: string): OrgSection | null => {
-  const k = hash.replace(/^#/, "")
-  return ORG_SECTIONS.some((s) => s.key === k) ? (k as OrgSection) : null
-}
+// The tabs, and which one a URL hash opens (incl. old `#structure` links) — `lib/org-sections.ts`.
 
 export function OrganizationTab() {
   const { can } = usePermissions()
@@ -202,7 +181,13 @@ export function OrganizationTab() {
   useEffect(() => {
     const follow = () => {
       const k = sectionFromHash(window.location.hash)
-      if (k) show(k)
+      if (!k) return
+      show(k)
+      // A card anchor inside a tab (`#teams`): the panel mounts on this render, so scroll once it has.
+      const anchor = window.location.hash.replace(/^#/, "")
+      if (anchor !== k) {
+        window.setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ block: "start" }), 50)
+      }
     }
     follow()
     window.addEventListener("hashchange", follow)
@@ -241,7 +226,7 @@ export function OrganizationTab() {
    */
   const [dirtyCards, setDirtyCards] = useState<Record<OrgSection, string[]>>(() => ({
     profile: [],
-    structure: [],
+    departments: [],
     schedule: [],
     places: [],
     policies: [],
@@ -342,8 +327,8 @@ export function OrganizationTab() {
   const tzWarning = serverResolves(tz)
     ? null
     : tz
-      ? `WorkPulse doesn't recognise “${tz}”, so it uses UTC. Choose a timezone from the list.`
-      : "No timezone set, so WorkPulse uses UTC. Attendance, lateness and reports decide which day something happened — and who was late — in this timezone."
+      ? `WorkPulse doesn't recognize “${tz}”, so it uses UTC. Choose a time zone from the list.`
+      : "No time zone set, so WorkPulse uses UTC. Attendance, lateness and reports decide which day something happened — and who was late — in this time zone."
   // Offered in the warning: the browser's own zone. Read after mount (the server render has no
   // browser zone).
   const [browserTz, setBrowserTz] = useState<string | null>(null)
@@ -408,11 +393,8 @@ export function OrganizationTab() {
       setSaved(next)
       setDraft(next)
       setBaseVersion(updated.version)
-      toast.success("Organization saved", {
-        description: `Changes are live${
-          updated.slug ? ` for ${updated.slug}` : ""
-        }.`,
-      })
+      // No slug in the toast (UX audit XC-12): it read "Changes are live for acme-3f9a2b".
+      toast.success("Organization profile saved")
     } catch (e) {
       // `PATCH /v1/org` answers 409 for two unrelated reasons; every one used to read as "someone
       // else changed these settings", so a taken prefix sent the admin round a reload loop for good
@@ -452,14 +434,14 @@ export function OrganizationTab() {
     <div className="space-y-6">
       <PageHeader
         title="Organization"
-        description="Manage your organization's profile, structure, schedule, locations, holidays, and policies."
+        description="Your organization's profile, departments and teams, schedule, places, and policies."
       />
 
       {!canManage && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but saving requires the{" "}
-          <span className="font-medium text-foreground">Manage Settings</span>{" "}
+          <span className="font-medium text-foreground">Manage organization settings</span>{" "}
           permission.
         </div>
       )}
@@ -538,7 +520,7 @@ export function OrganizationTab() {
       {seeded ? (
       <Card className="overflow-hidden p-0">
         {/* The org's own name leads the card rather than sitting as the first of six identical
-            inputs. This page is *about* this organisation; six flat fields under one heading read
+            inputs. This page is *about* this organization; six flat fields under one heading read
             as a form to fill in, not a profile you already have. */}
         <div className="from-feature-tint/60 via-card to-card flex flex-wrap items-center gap-4 border-b bg-gradient-to-br p-5 sm:p-6">
           <span className="bg-primary/10 text-primary flex size-12 shrink-0 items-center justify-center rounded-xl">
@@ -595,7 +577,7 @@ export function OrganizationTab() {
 
           <FieldGroup label="Locale">
             <div className="space-y-1.5">
-              <Label htmlFor={`${ids}-timezone`}>Primary timezone</Label>
+              <Label htmlFor={`${ids}-timezone`}>Primary time zone</Label>
               <TimezonePicker
                 id={`${ids}-timezone`}
                 value={draft.timezone}
@@ -620,7 +602,7 @@ export function OrganizationTab() {
                         onClick={() => update({ timezone: suggestedZone })}
                         className="font-medium underline underline-offset-2 hover:no-underline"
                       >
-                        Use {zoneParts(suggestedZone).city}, this browser&apos;s timezone
+                        Use {zoneParts(suggestedZone).city}, this browser&apos;s time zone
                       </button>
                     ) : null}
                   </span>
@@ -725,7 +707,7 @@ export function OrganizationTab() {
       </OrgPanel>
 
       {/* Each of these is its own live-backend CRUD with its own Save. */}
-      <OrgPanel id="structure" {...panelProps("structure")}>
+      <OrgPanel id="departments" {...panelProps("departments")}>
         <DepartmentsManager />
         <TeamsManager />
       </OrgPanel>

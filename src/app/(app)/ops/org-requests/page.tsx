@@ -1,6 +1,7 @@
 "use client";
 
-import { ShieldOff } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, ShieldOff } from "lucide-react";
 import { usePlatformAdmin } from "@/modules/ops/use-platform-admin";
 import { OrgRequestsQueue } from "@/modules/ops/components/org-requests-queue";
 import { PageHeader } from "@/components/shared/page-header";
@@ -40,7 +41,7 @@ export default function Page() {
       <EmptyState
         icon={ShieldOff}
         title="Couldn't check your access"
-        description="Something went wrong confirming you're a platform-support operator. Try again in a moment."
+        description="Something went wrong confirming you're on the WorkPulse support team. Try again in a moment."
         action={
           <Button variant="outline" size="sm" onClick={retry}>
             Retry
@@ -51,14 +52,20 @@ export default function Page() {
     );
   }
 
+  // A way back (UX audit 2026-10-16, SET-25): the wall ended the page with nothing to press.
   if (!isAdmin) {
     return (
       <>
         {heading}
         <EmptyState
           icon={ShieldOff}
-          title="Not authorized"
-          description="This area is for WorkPulse platform-support operators only."
+          title="This page is for WorkPulse staff"
+          description="Only the WorkPulse support team can open it."
+          action={
+            <Button size="sm" render={<Link href="/dashboard" />} nativeButton={false}>
+              <ArrowLeft className="size-4" /> Back to dashboard
+            </Button>
+          }
         />
       </>
     );

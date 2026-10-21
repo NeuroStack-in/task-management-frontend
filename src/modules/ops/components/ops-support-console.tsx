@@ -139,7 +139,7 @@ export function OpsSupportConsole() {
     try {
       const updated = await setOpsStatus(t.tenant_id, t.user_id, t.ticket_id, next);
       if (seq === threadSeq.current) setThread(updated);
-      toast.success(`Ticket → ${next.replace("_", " ")}`);
+      toast.success(`Ticket marked ${next.replace("_", " ")}`);
       loadList(); // it may have left this status's queue
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Couldn't change the status.");
@@ -152,7 +152,7 @@ export function OpsSupportConsole() {
     <div className="space-y-5">
       <PageHeader
         title="Support desk"
-        description="Platform-operator view of every organization's support tickets."
+        description="Support tickets from every organization, for the WorkPulse support team."
       />
 
       {/* Status tabs */}

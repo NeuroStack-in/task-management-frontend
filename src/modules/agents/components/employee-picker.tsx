@@ -113,7 +113,7 @@ export function EmployeePicker({
         <div className="max-h-72 overflow-y-auto">
           {employees.length === 0 ? (
             <p className="text-muted-foreground px-2 py-3 text-center text-xs">
-              {loading ? "Loading the directory…" : "No active employees to enrol."}
+              {loading ? "Loading the directory…" : "No active employees to enroll."}
             </p>
           ) : shown.length === 0 ? (
             <p className="text-muted-foreground px-2 py-3 text-center text-xs">No one matches.</p>

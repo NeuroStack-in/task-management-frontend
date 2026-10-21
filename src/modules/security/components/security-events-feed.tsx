@@ -39,11 +39,11 @@ export function SecurityEventsFeed() {
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1.5">
-            <CardTitle>Security Events</CardTitle>
+            <CardTitle>Security events</CardTitle>
             {/* Only what the server records under `security`: no sign-ins and no role or permission
                 changes are written (QA audit 2026-10-08, WP-336). */}
             <CardDescription>
-              Authenticator resets, ownership changes, device enrolments and removals, and
+              Authenticator resets, ownership changes, device enrollments and removals, and
               on-demand screenshots — newest first.
             </CardDescription>
           </div>
@@ -71,7 +71,7 @@ export function SecurityEventsFeed() {
           <EmptyState
             icon={ShieldCheck}
             title="No security events yet"
-            description="Authenticator resets, ownership changes and device enrolments will appear here as they happen."
+            description="Authenticator resets, ownership changes and device enrollments will appear here as they happen."
           />
         ) : (
           <>

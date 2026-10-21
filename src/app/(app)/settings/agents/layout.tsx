@@ -31,7 +31,7 @@ export default function AgentsLayout({ children }: { children: React.ReactNode }
 
   const tabs = [
     { href: DEVICES, label: "Devices", icon: MonitorSmartphone, show: true },
-    { href: ENROL, label: "Enrol a device", icon: QrCode, show: showEnrol },
+    { href: ENROL, label: "Enroll a device", icon: QrCode, show: showEnrol },
   ].filter((t) => t.show);
 
   return (

@@ -97,7 +97,7 @@ export function ScreenshotExclusionsCard() {
         <CardTitle>Excluded from screenshots</CardTitle>
         <CardDescription>
           Screenshots of the people you pick are never shown for review, sent for AI analysis or
-          summarised. Their agent may still capture them; they age out under your retention setting.
+          summarized. Their agent may still capture them; they age out under your retention setting.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -112,7 +112,7 @@ export function ScreenshotExclusionsCard() {
           <Loader label="Loading people…" />
         ) : saved === null ? (
           <p className="text-sm text-muted-foreground">
-            Screenshot exclusions aren&apos;t available on this server yet.
+            Screenshot exclusions aren&apos;t available yet.
           </p>
         ) : (
           <>

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { EnrollmentView } from "@/modules/agents/components/enrollment-view";
 
-export const metadata: Metadata = { title: "Enrol a device · Settings" };
+export const metadata: Metadata = { title: "Enroll a device · Settings" };
 
 // The managed-agent enrolment flow (MANAGED-AGENT.md §6.2, Ph3-4): pick an employee → mint a
 // one-time code → reveal the code + install command → pending-codes worklist. A tab over the

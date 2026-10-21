@@ -153,7 +153,7 @@ export function OrgOwnersCard() {
       setAddId(null);
       setConfirmAdd(false);
       toast.success("Owner added", {
-        description: "They now have full, unrestricted access to this organisation.",
+        description: "They now have full, unrestricted access to this organization.",
       });
     } catch (e) {
       toast.error(
@@ -213,7 +213,7 @@ export function OrgOwnersCard() {
           <h3 className="font-heading text-base font-medium">Organization owners</h3>
           <p className="text-sm text-muted-foreground">
             Owners have full, unrestricted access — every permission, on everything.
-            An organisation must always have at least one.
+            An organization must always have at least one.
           </p>
         </div>
       </div>
@@ -298,7 +298,7 @@ export function OrgOwnersCard() {
         {loading || loadFailed ? null : (
           <p className="text-xs text-muted-foreground sm:ml-auto">
             {soleOwner
-              ? "This organisation has one owner."
+              ? "This organization has one owner."
               : `${owners.length} owners.`}
           </p>
         )}
@@ -313,8 +313,8 @@ export function OrgOwnersCard() {
             </DialogTitle>
             <DialogDescription>
               {confirmRemove?.is_you
-                ? "You lose owner powers straight away and stay in the organisation with the role below."
-                : "They lose owner powers straight away and stay in the organisation with the role below."}
+                ? "You lose owner powers straight away and stay in the organization with the role below."
+                : "They lose owner powers straight away and stay in the organization with the role below."}
             </DialogDescription>
           </DialogHeader>
           {/* Say which role, and let the remover pick it: the server takes any ordinary role as
@@ -354,7 +354,7 @@ export function OrgOwnersCard() {
                   {chosenTakeRole.permissions.length}{" "}
                   {chosenTakeRole.permissions.length === 1 ? "permission" : "permissions"},{" "}
                   {chosenTakeRole.scope === "org"
-                    ? "across the organisation"
+                    ? "across the organization"
                     : chosenTakeRole.scope === "team"
                       ? "within their department"
                       : "over their own data only"}

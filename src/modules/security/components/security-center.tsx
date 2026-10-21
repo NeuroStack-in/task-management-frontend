@@ -92,7 +92,7 @@ function PlatformFixed({ value }: { value: string }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 /**
- * Settings → Security — **organisation security only** (UX audit 2026-10-16, SET-08).
+ * Settings → Security — **organization security only** (UX audit 2026-10-16, SET-08).
  *
  * It used to mix the reader's own sign-in (their authenticator, password and sessions — the same
  * components Login & security renders) with the platform policies, because Owner/Admin had no
@@ -217,7 +217,7 @@ export function SecurityCenter() {
       */}
       <Card id="mfa" className="scroll-mt-24">
         <CardHeader>
-          <CardTitle>Multi-Factor Authentication</CardTitle>
+          <CardTitle>Multi-factor authentication</CardTitle>
           <CardDescription>
             {/* MFA is OPTIONAL and user-managed (product decision 2026-07-23): members enrol,
                 disable, and re-enrol their own authenticator under Settings → Login & security.
@@ -246,7 +246,8 @@ export function SecurityCenter() {
                 variant="outline"
                 onClick={() => setResetMfaOpen(true)}
               >
-                <RefreshCw className="size-3.5" /> Reset device
+                {/* "Reset device" named the phone, not what is reset (UX audit XC-12). */}
+                <RefreshCw className="size-3.5" /> Reset authenticator
               </Button>
             </SettingRow>
           ) : null}
@@ -257,11 +258,12 @@ export function SecurityCenter() {
       {/*
         Session lifetimes are Cognito pool-level and platform-fixed (LLD §15). The IP
         allowlist the mock let you edit has no backing route (deferred §15), so it's shown
-        as a planned capability rather than a control that silently saves nowhere.
+        as a planned capability rather than a control that silently saves nowhere — in plain
+        words: the row said "planned (§15)" and spoke of ID and refresh tokens (UX audit SET-23).
       */}
       <Card id="sessions" className="scroll-mt-24">
         <CardHeader>
-          <CardTitle>Session &amp; Access</CardTitle>
+          <CardTitle>Session &amp; access</CardTitle>
           <CardDescription>
             Session lifetimes are fixed by the platform and apply to every member.
           </CardDescription>
@@ -269,7 +271,7 @@ export function SecurityCenter() {
         <CardContent className="space-y-0 pb-2">
           <SettingRow
             label="Session lifetime"
-            description="Access and ID tokens expire after 15 minutes; a session refreshes silently until the refresh token expires."
+            description="Every 15 minutes WorkPulse re-checks a signed-in session in the background. After 30 days the member signs in again."
           >
             <PlatformFixed value="15 min · 30 days" />
           </SettingRow>
@@ -281,7 +283,7 @@ export function SecurityCenter() {
           </SettingRow>
           <SettingRow
             label="IP allowlist"
-            description="Restricting web sign-in to specific IP ranges is planned (§15) and isn't enforced yet."
+            description="Limiting web sign-in to your office networks isn't available yet."
           >
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Planned
@@ -301,9 +303,9 @@ export function SecurityCenter() {
       */}
       <Card>
         <CardHeader>
-          <CardTitle>Password Policy</CardTitle>
+          <CardTitle>Password policy</CardTitle>
           <CardDescription>
-            Set by the platform and applied to every member. Not org-configurable.
+            Set by WorkPulse and applied to every member. It can&apos;t be changed per organization.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-0 pb-2">
@@ -315,7 +317,7 @@ export function SecurityCenter() {
           </SettingRow>
           <SettingRow
             label="Required characters"
-            description="Upper-case, lower-case, and a number. Symbols are allowed but not required — length does more for strength than forced punctuation."
+            description="An uppercase letter, a lowercase letter and a number. Symbols are allowed but not required — length does more for strength than forced punctuation."
           >
             <PlatformFixed value="A · a · 0" />
           </SettingRow>
@@ -407,7 +409,7 @@ export function SecurityCenter() {
           </div>
           <DialogFooter showCloseButton>
             <Button disabled={!resetMfaUserId || resetting} onClick={confirmResetMfa}>
-              <RefreshCw className="size-4" /> {resetting ? "Resetting…" : "Reset device"}
+              <RefreshCw className="size-4" /> {resetting ? "Resetting…" : "Reset authenticator"}
             </Button>
           </DialogFooter>
         </DialogContent>

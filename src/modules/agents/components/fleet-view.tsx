@@ -113,12 +113,19 @@ export function lastSeen(ms: number): string {
   return `${d}d ago`;
 }
 
-/** Display label for the device variant. `service` → "Managed service", else "Interactive app". */
-function variantLabel(variant?: string): string {
-  return variant === "service" ? "Managed service" : "Interactive app";
+/**
+ * Display label for the device variant, in the glossary's words (`Docs/UI-GLOSSARY.md`, UX audit
+ * XC-12): the app employees install is the "desktop app" everywhere else in the product, and the
+ * login-less Windows service is the "background service". Shared with the device page.
+ */
+export function variantLabel(variant?: string): string {
+  return variant === "service" ? "Background service" : "Desktop app";
 }
 
-/** A labelled utilization bar (CPU/Memory from the last heartbeat). Shared with the detail page. */
+/** A device whose agent hasn't reported a computer name — never its raw id (UX audit SET-23). */
+export const UNNAMED_DEVICE = "Unnamed device";
+
+/** A labeled utilization bar (CPU/Memory from the last check-in). Shared with the detail page. */
 export function Meter({ label, value }: { label: string; value: number }) {
   const v = Math.max(0, Math.min(100, Math.round(value)));
   return (
@@ -179,9 +186,7 @@ function DeviceRow({
       // `presence_live` distinguishes an observed socket state from an inferred one — the tooltip
       // is the only place that difference is worth surfacing; the badge itself stays uncluttered.
       title={
-        d.presence_live
-          ? "Live connection status (push rail)"
-          : "Status inferred from the last check-in"
+        d.presence_live ? "Live connection status" : "Status from the last check-in"
       }
     >
       <TableCell className="pl-6">
@@ -196,10 +201,11 @@ function DeviceRow({
               onClick={(e) => e.stopPropagation()}
               className="block truncate rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {d.hostname || d.agent_id}
+              {d.hostname || UNNAMED_DEVICE}
             </Link>
             <p className="truncate text-xs text-muted-foreground">
-              {d.os} {d.os_version} · agent {d.agent_version}
+              {d.os} {d.os_version}
+              {d.agent_version ? ` · v${d.agent_version.replace(/^v/i, "")}` : ""}
               {behind && (
                 <span className="ml-1.5 inline-flex items-center gap-1 text-warning">
                   <AlertTriangle className="size-3" /> behind v{behind.replace(/^v/i, "")}
@@ -280,8 +286,8 @@ function DeviceRow({
 
 /** What each retired state means, for the badge's tooltip. */
 const RETIRED_HINT: Record<string, string> = {
-  released: "IT released this device: its credential is revoked and its employee can get another.",
-  revoked: "This device's credential was revoked. It can't report again.",
+  released: "IT released this device: its sign-in is revoked and its employee can get another.",
+  revoked: "This device's sign-in was revoked. It can't report again.",
   deactivated: "Its employee was deactivated, so this device stopped tracking.",
 };
 
@@ -292,11 +298,11 @@ const RETIRED_HINT: Record<string, string> = {
  */
 const EMPTY_FLEET_HINT: Record<TrackingMode, string> = {
   project:
-    "Employees install the WorkPulse desktop app from Download agent and sign in — their devices appear here with status and telemetry.",
+    "Employees install the WorkPulse desktop app from Download agent and sign in — their devices appear here with their status and health.",
   machine:
-    "Enrol a company computer under Enrol a device: mint a code for its employee and install the WorkPulse agent with it. Enrolled devices appear here with status and telemetry.",
+    "Enroll a company computer under Enroll a device: generate an enrollment code for its employee and install the background service with it. Enrolled devices appear here with their status and health.",
   both:
-    "Employees install the WorkPulse desktop app and sign in, or IT enrols a company computer under Enrol a device. Devices appear here with status and telemetry.",
+    "Employees install the WorkPulse desktop app and sign in, or IT enrolls a company computer under Enroll a device. Devices appear here with their status and health.",
 };
 
 export function FleetView() {
@@ -379,7 +385,7 @@ export function FleetView() {
   if (loading && !fleet) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader label="Loading device fleet…" />
+        <Loader label="Loading devices…" />
       </div>
     );
   }
@@ -405,13 +411,13 @@ export function FleetView() {
       : [
           hasApp && latest.app
             ? latest.appSource === "release"
-              ? `app: v${latest.app.replace(/^v/i, "")}, the current release`
-              : "app: newest in your fleet"
+              ? `desktop app: v${latest.app.replace(/^v/i, "")}, the current release`
+              : "desktop app: newest on your devices"
             : "",
           hasService && latest.service
             ? latest.serviceSource === "release"
-              ? `service: v${latest.service.replace(/^v/i, "")}, the current release`
-              : "service: newest in your fleet"
+              ? `background service: v${latest.service.replace(/^v/i, "")}, the current release`
+              : "background service: newest on your devices"
             : "",
         ]
           .filter(Boolean)
@@ -427,7 +433,7 @@ export function FleetView() {
       ) : null}
       {mode !== "project" && can("agents:manage") ? (
         <Button size="sm" render={<Link href="/settings/agents/enrollment" />} nativeButton={false}>
-          <KeyRound className="size-4" /> Enrol a device
+          <KeyRound className="size-4" /> Enroll a device
         </Button>
       ) : null}
     </div>
@@ -449,12 +455,12 @@ export function FleetView() {
           hint={retiredCount ? `active · ${retiredCount} retired not counted` : "enrolled"}
           featured
         />
-        <StatCard label="Online" value={onlineCount} icon={Wifi} hint="heartbeat in the last 10 min" />
+        <StatCard label="Online" value={onlineCount} icon={Wifi} hint="checked in within 10 min" />
         <StatCard
           label="Offline"
           value={live.length - onlineCount}
           icon={WifiOff}
-          hint="no recent heartbeat"
+          hint="no recent check-in"
         />
         <StatCard label="Behind latest" value={outdated} icon={AlertTriangle} hint={behindHint} />
       </div>
@@ -520,7 +526,7 @@ export function FleetView() {
           {devices.length === 0 ? (
             <EmptyState
               icon={MonitorSmartphone}
-              title="No agents enrolled yet"
+              title="No devices yet"
               description={EMPTY_FLEET_HINT[mode]}
               action={emptyActions}
               className="m-4 border-0"
@@ -559,12 +565,12 @@ export function FleetView() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="pl-6">Device</TableHead>
-                    <TableHead>Attributed to</TableHead>
+                    <TableHead>Employee</TableHead>
                     <TableHead className="hidden sm:table-cell">Type</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="hidden md:table-cell">CPU · Mem</TableHead>
+                    <TableHead className="hidden md:table-cell">CPU · Memory</TableHead>
                     <TableHead className="hidden lg:table-cell">IP</TableHead>
-                    <TableHead className="pr-6 text-right">Last seen</TableHead>
+                    <TableHead className="pr-6 text-right">Last check-in</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

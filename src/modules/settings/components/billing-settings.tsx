@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BadgeCheck, Check, CreditCard, FileText, UserPlus } from "lucide-react";
+import { BadgeCheck, Check, CreditCard, FileText, LifeBuoy, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -206,7 +206,11 @@ export function BillingSettings() {
                 <CreditCard className="size-5" />
               </span>
               <div>
-                <p className="font-heading font-semibold capitalize">{overview.plan} plan</p>
+                {/* Sentence case (UX audit XC-12): `capitalize` turned "enterprise plan" into
+                    "Enterprise Plan". The tier's own name, with "plan" left lowercase. */}
+                <p className="font-heading font-semibold">
+                  {tier?.name ?? overview.plan.charAt(0).toUpperCase() + overview.plan.slice(1)} plan
+                </p>
                 <p className="text-muted-foreground text-sm">
                   {tier?.blurb ?? "Your organization's current subscription."}
                 </p>
@@ -364,12 +368,28 @@ export function BillingSettings() {
           </section>
 
           {/* Cancellation — there is no billing period to run out (nothing is charged yet), so the
-              copy says what is true: self-serve cancellation isn't available (WP-526). */}
+              copy says what is true: self-serve cancellation isn't available (WP-526).
+
+              The Cancel button here only raised a toast saying "contact support", and nothing said
+              how (UX audit 2026-10-16, SET-23). There is no public support address (owner decision), so
+              the button goes where support is: Help → Submit a ticket. The other real way to stop —
+              closing the organization — is linked for those who can do it. */}
           <section className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold">Cancel plan</p>
               <p className="text-muted-foreground text-xs">
-                Self-serve cancellation isn&apos;t available yet. Contact support to cancel.
+                You can&apos;t cancel from this page yet. To cancel or change how you&apos;re billed,
+                submit a ticket in Help and the WorkPulse team will handle it.
+                {can("settings:manage") ? (
+                  <>
+                    {" "}
+                    To stop using WorkPulse altogether, an owner can close the organization in{" "}
+                    <Link href="/settings/ownership" className={linkClass}>
+                      Ownership &amp; closure
+                    </Link>
+                    .
+                  </>
+                ) : null}
               </p>
             </div>
             {/* Neutral, not red: nothing is being paid for, so there is nothing to lose (SET-01). */}
@@ -377,14 +397,10 @@ export function BillingSettings() {
               variant="outline"
               size="sm"
               className="shrink-0"
-              disabled={!canManage}
-              onClick={() =>
-                toast.info("Self-serve cancellation isn't enabled yet.", {
-                  description: "Contact support to change your plan.",
-                })
-              }
+              render={<Link href="/help#submit-ticket" />}
+              nativeButton={false}
             >
-              Cancel
+              <LifeBuoy className="size-3.5" /> Submit a ticket
             </Button>
           </section>
         </CardContent>
@@ -409,8 +425,8 @@ export function BillingSettings() {
                 </>
               ) : pending && target ? (
                 <>
-                  Your organization moves from the{" "}
-                  <span className="capitalize">{overview.plan}</span> plan to {target.name} (
+                  Your organization moves from the {tier?.name ?? overview.plan} plan to{" "}
+                  {target.name} (
                   {formatCurrency(priceFor(target, pending.cadence))}/seat/mo, billed{" "}
                   {cadenceWord(pending.cadence)}
                   {target.seatCap > 0
@@ -435,7 +451,7 @@ export function BillingSettings() {
                     <span className="text-destructive font-medium">Switched off for everyone now:</span>{" "}
                     {names(loss.switchedOff)}.
                     {stopsCapture
-                      ? " The desktop agents stop capturing screenshots and activity on every device."
+                      ? " Device agents stop capturing screenshots and activity on every device."
                       : ""}
                   </li>
                 ) : null}

@@ -66,7 +66,7 @@ export function ReleaseDeviceButton({
         // its next check-in (an asleep laptop, later); a managed device's credential is revoked.
         toast.success("Device released", {
           description: managed
-            ? "Its credential is revoked and the laptop can be enrolled again — for anyone."
+            ? "Its sign-in is revoked and the laptop can be enrolled again — for anyone."
             : `${Who} will be signed out of the desktop app at its next check-in.`,
         });
         setOpen(false);
@@ -95,8 +95,8 @@ export function ReleaseDeviceButton({
             <DialogDescription>
               {managed ? (
                 <>
-                  The monitoring service on this laptop loses its credential and stops reporting,
-                  and the laptop is free to enrol for someone else. Everything already recorded
+                  The background service on this laptop loses its sign-in and stops reporting,
+                  and the laptop is free to enroll for someone else. Everything already recorded
                   stays on {who}&apos;s record.
                 </>
               ) : (

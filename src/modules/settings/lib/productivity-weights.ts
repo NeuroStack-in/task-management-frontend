@@ -33,7 +33,7 @@ export const WEIGHT_META: Record<
   // Against time on the timer; the working day (Schedule tab) only when no timer ran — the scorer's
   // `u_denominator` (`score_compute/score.rs`), newer than PRODUCTIVITY.md §1's formula.
   u: {
-    label: "Utilisation",
+    label: "Utilization",
     blurb:
       "How much of the time on the timer was active at the computer — or of the working day, when no timer ran.",
   },

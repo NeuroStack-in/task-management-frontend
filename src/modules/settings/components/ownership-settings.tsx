@@ -44,6 +44,7 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { useOrgSlug } from "@/hooks/use-org";
 import { useAuthStore } from "@/stores/auth.store";
 import { useOrgMetaStore } from "@/stores/org-meta.store";
+import { formatDate } from "@/lib/format";
 
 /**
  * Ownership & lifecycle — the real backend (`identity` context, LLD §14).
@@ -85,7 +86,7 @@ const CONSEQUENCES = [
   },
   {
     icon: ReceiptText,
-    text: "The subscription is cancelled and billing for this organization stops.",
+    text: "The subscription is canceled and billing for this organization stops.",
   },
 ];
 
@@ -140,13 +141,13 @@ function reportError(e: unknown, fallback: string) {
   if (e instanceof ApiError) {
     if (e.status === 403) {
       toast.error("Owner only", {
-        description: "Only the current Organization Owner can do this.",
+        description: "Only an owner of this organization can do this.",
       });
       return;
     }
     if (e.status === 400) {
       toast.error("That didn't match", {
-        description: e.message || "The confirmation didn't match your workspace slug.",
+        description: "Type the confirmation text exactly as it's shown in the dialog.",
       });
       return;
     }
@@ -217,22 +218,29 @@ function ConfirmSlugDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
-          <Label htmlFor={inputId}>Workspace slug</Label>
           {/* Rendered selectable rather than as a copy button: the owner is being asked to type it
-              on purpose, and a one-click copy would turn a deliberate act back into a reflex. */}
-          {slug ? (
-            <p className="text-muted-foreground text-xs">
-              Your workspace slug is{" "}
-              <code className="text-foreground bg-muted rounded px-1 py-0.5 font-mono select-all">
-                {slug}
-              </code>
-            </p>
-          ) : null}
+              on purpose, and a one-click copy would turn a deliberate act back into a reflex.
+
+              The label names the action, not the value. It was "Workspace slug": "slug" is a
+              developer's word, and the product says "organization", never "workspace" (UX audit
+              XC-12, `Docs/UI-GLOSSARY.md`). */}
+          <Label htmlFor={inputId} className="flex-wrap">
+            {slug ? (
+              <>
+                Type{" "}
+                <code className="text-foreground bg-muted rounded px-1 py-0.5 font-mono select-all">
+                  {slug}
+                </code>{" "}
+                to confirm
+              </>
+            ) : (
+              "Type the confirmation text"
+            )}
+          </Label>
           <Input
             id={inputId}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder={slug ?? "your-workspace-slug"}
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}
@@ -416,8 +424,7 @@ export function OwnershipSettings() {
         requested_at: Date.now(),
       });
       toast.success("Export started", {
-        description:
-          "Walking your organization's data — download links appear here when done.",
+        description: "Download links appear on this page when it's ready.",
       });
     } catch (e) {
       reportError(e, "Couldn't start the export.");
@@ -494,14 +501,12 @@ export function OwnershipSettings() {
       const res = await closeOrg(slug);
       setCloseOpen(false);
       setAcknowledged(false);
-      const when =
-        typeof res.purge_after === "number"
-          ? ` Data is purged after ${new Date(
-              res.purge_after * 1000,
-            ).toLocaleDateString()}.`
-          : "";
+      // In words, not the raw status ("Status: closing.") — UX audit XC-12; one date notation (XC-06).
       toast.success("Organization closed", {
-        description: `Status: ${res.status}.${when}`,
+        description:
+          typeof res.purge_after === "number"
+            ? `Its data is permanently deleted after ${formatDate(res.purge_after * 1000)} unless you reopen it.`
+            : "Its data is permanently deleted in 30 days unless you reopen it.",
       });
       // Pick up `closing` + the purge date, so this page turns into the Reopen card at once.
       void loadOrg();
@@ -521,7 +526,7 @@ export function OwnershipSettings() {
       toast.success("Organization reopened", {
         // The server re-enables members' logins asynchronously (`OrgReopened`), so say "being".
         description:
-          "The scheduled deletion is cancelled. Sign-in is being restored for employees and admins — it can take a minute.",
+          "The scheduled deletion is canceled. Sign-in is being restored for employees and admins — it can take a minute.",
       });
     } catch (e) {
       reportError(e, "Couldn't reopen the organization.");
@@ -541,10 +546,8 @@ export function OwnershipSettings() {
       {!isOwner && (
         <div className="border-border bg-muted text-muted-foreground flex items-center gap-2.5 rounded-md border px-5 py-3 text-sm">
           <Lock className="size-4 shrink-0" />
-          Only an <span className="text-foreground font-medium">
-            Organization Owner
-          </span>{" "}
-          can manage owners, export data, or close the organization.
+          Only an <span className="text-foreground font-medium">owner</span> can manage owners,
+          export data, or close the organization.
         </div>
       )}
 
@@ -562,8 +565,8 @@ export function OwnershipSettings() {
               Export organization data
             </h3>
             <p className="text-muted-foreground text-sm">
-              Request a complete copy of your organization. The export runs as a
-              background job; you&apos;ll be able to download it once it finishes.
+              Request a complete copy of your organization&apos;s data. The export runs in
+              the background; you can download it here once it finishes.
             </p>
           </div>
         </div>
@@ -578,12 +581,12 @@ export function OwnershipSettings() {
           <div className="border-border border-t px-6 py-4">
             {exportTrouble === "forbidden" ? (
               <p className="text-muted-foreground text-sm">
-                Only an Organization Owner can follow this export.
+                Only an owner can follow this export.
               </p>
             ) : exportTrouble === "unreachable" ? (
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-destructive text-sm">
-                  We couldn&apos;t check on this export (job {exportJob.job_id}).
+                  We couldn&apos;t check on this export.
                 </p>
                 <Button
                   size="sm"
@@ -649,16 +652,16 @@ export function OwnershipSettings() {
               </div>
             ) : exportJob.status === "failed" ? (
               <p className="text-destructive text-sm">
-                {exportJob.error ??
-                  `Export ${exportJob.job_id} failed — request a new one.`}
+                {exportJob.error ?? "The export failed — request a new one."}
               </p>
             ) : (
               <div className="space-y-1">
                 <p className="text-muted-foreground flex items-center gap-2 text-sm">
                   <Loader2 className="size-4 animate-spin" />
-                  Export {exportJob.status}… walking your data (job {exportJob.job_id}).
-                  You can leave this page — it picks the export up again when you come
-                  back.
+                  {/* No job id and no raw status (UX audit SET-23 / XC-12). */}
+                  {exportJob.status === "accepted" ? "Export starting…" : "Export running…"}{" "}
+                  Gathering your data. You can leave this page — it picks the export up
+                  again when you come back.
                 </p>
                 {typeof exportJob.files_total === "number" &&
                 exportJob.files_total > 0 ? (
@@ -711,7 +714,7 @@ export function OwnershipSettings() {
                   <>
                     All of its data is permanently deleted after{" "}
                     <span className="text-foreground font-medium">
-                      {new Date(org.purge_after * 1000).toLocaleDateString()}
+                      {formatDate(org.purge_after * 1000)}
                     </span>
                     .
                   </>
@@ -792,7 +795,7 @@ export function OwnershipSettings() {
           <DialogHeader>
             <DialogTitle>Reopen this organization?</DialogTitle>
             <DialogDescription>
-              The scheduled deletion is cancelled, and employees and admins can sign in
+              The scheduled deletion is canceled, and employees and admins can sign in
               again.
             </DialogDescription>
           </DialogHeader>
@@ -818,9 +821,8 @@ export function OwnershipSettings() {
         title="Export organization data?"
         description={
           <>
-            This starts a background export of your entire organization. Type your{" "}
-            <span className="text-foreground font-medium">workspace slug</span> to
-            confirm.
+            This starts an export of all of your organization&apos;s data, in the
+            background.
           </>
         }
         confirmLabel={exportBusy ? "Starting…" : "Start export"}
@@ -834,9 +836,8 @@ export function OwnershipSettings() {
         title="Close organization?"
         description={
           <>
-            This closes the organization and schedules all data for deletion. Type your{" "}
-            <span className="text-foreground font-medium">workspace slug</span> to
-            confirm.
+            This closes the organization and schedules all of its data for deletion.
+            You can reopen it within 30 days.
           </>
         }
         confirmLabel={closeBusy ? "Closing…" : "Close organization"}
