@@ -72,7 +72,7 @@ export function OnboardingExperience() {
   if (hasOrg) {
     return (
       <AuthFrame
-        headline="Your workspace"
+        headline="Your organization"
         headlineAccent="is ready"
         copy="Four quick steps: your organization, your team, tracking and your dashboard. Every choice can be changed later in Settings."
       >
@@ -218,7 +218,7 @@ function PendingInvites({
         code === "resent_recently"
           ? "It was sent less than a minute ago — check your inbox (and spam) first."
           : e instanceof ApiError && e.status === 404
-            ? "That invite is no longer open. Ask your organisation for a new one."
+            ? "That invite is no longer open. Ask your organization for a new one."
             : friendlyError(e, "Couldn't send the invite again."),
       );
     } finally {

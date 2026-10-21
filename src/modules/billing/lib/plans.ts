@@ -119,7 +119,7 @@ export const PLAN_TIERS: PlanTier[] = [
       "Up to 25 seats",
       "Everything in Free",
       "Activity monitoring",
-      "Email support",
+      "Support tickets",
     ],
   },
   {

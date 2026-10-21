@@ -141,7 +141,7 @@ export function RouteGate({ children }: { children: React.ReactNode }) {
         <p>
           {canToggle
             ? "You can show it again under Settings → Features."
-            : `Someone with the ${PERMISSION_MAP["entitlements:manage"]?.label ?? "Manage Feature Toggles"} permission — usually an owner or admin — can show it again under Settings → Features.`}
+            : `Someone with the ${PERMISSION_MAP["entitlements:manage"]?.label ?? "Manage feature toggles"} permission — usually an owner or admin — can show it again under Settings → Features.`}
         </p>
       </AccessWall>
     );

@@ -8,7 +8,7 @@ import "@/app/marketing.css";
 import "@/app/auth.css";
 import { OnboardingExperience } from "@/modules/onboarding/components/onboarding-experience";
 
-export const metadata: Metadata = { title: "Set up your workspace" };
+export const metadata: Metadata = { title: "Set up your organization" };
 
 export default function OnboardingPage() {
   return <OnboardingExperience />;

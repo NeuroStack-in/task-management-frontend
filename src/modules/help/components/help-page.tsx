@@ -643,7 +643,18 @@ export function HelpPage() {
   const showableStep = useTourStepFilter()
 
   // Show the page title in the top navbar (this page has no PageHeader).
-  usePageTitle("Help Center", "Find answers, guides, and support.")
+  usePageTitle("Help center", "Find answers, guides, and support.")
+
+  // `/help#submit-ticket` — billing's cancel path and the enrollment page send people straight to
+  // the ticket form (UX audit SET-23). The card renders after the first paint, so the browser's own
+  // jump to the anchor found nothing and the page opened at the top.
+  useEffect(() => {
+    if (window.location.hash !== "#submit-ticket") return
+    const frame = requestAnimationFrame(() =>
+      document.getElementById("submit-ticket")?.scrollIntoView({ block: "start" }),
+    )
+    return () => cancelAnimationFrame(frame)
+  }, [])
 
   // Ticket form
   const {

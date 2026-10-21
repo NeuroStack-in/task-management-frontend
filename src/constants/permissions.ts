@@ -44,13 +44,13 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     label: "Dashboard",
     // No `dashboard:edit`: no server bit produces it and no gate reads it (QA audit 2026-10-08,
     // WP-511). Every member arranges their own dashboard.
-    permissions: [p("dashboard", "view", "View Dashboard")],
+    permissions: [p("dashboard", "view", "View dashboard")],
   },
   {
     module: "time-tracking",
-    label: "Time Tracking",
+    label: "Time tracking",
     permissions: [
-      p("time-tracking", "view", "View Time Tracking"),
+      p("time-tracking", "view", "View time tracking"),
       // Mirrors `Permission::TimeTrackSelf` (bit 110) in wp-contracts. It decides whether
       // the agent shows this user a timer at all — it is NOT a write-permission on time
       // entries. Time is agent-derived and immutable (LLD §4: no manual entries, no
@@ -63,67 +63,67 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     module: "tasks",
     label: "Tasks",
     permissions: [
-      p("tasks", "view", "View Tasks"),
-      p("tasks", "create", "Create Task"),
-      p("tasks", "edit", "Edit Task"),
-      p("tasks", "delete", "Delete Task"),
-      p("tasks", "assign", "Assign Task"),
+      p("tasks", "view", "View tasks"),
+      p("tasks", "create", "Create task"),
+      p("tasks", "edit", "Edit task"),
+      p("tasks", "delete", "Delete task"),
+      p("tasks", "assign", "Assign task"),
     ],
   },
   {
     module: "projects",
     label: "Projects",
     permissions: [
-      p("projects", "view", "View Projects"),
-      p("projects", "create", "Create Project"),
-      p("projects", "manage", "Manage Project"),
+      p("projects", "view", "View projects"),
+      p("projects", "create", "Create project"),
+      p("projects", "manage", "Manage project"),
     ],
   },
   {
     module: "employees",
     label: "Employees",
     permissions: [
-      p("employees", "view", "View Employees"),
-      p("employees", "manage", "Manage Employees"),
+      p("employees", "view", "View employees"),
+      p("employees", "manage", "Manage employees"),
       // `OrgManage` (bit 12) — department and team CRUD, apart from `settings:manage` (bit 13).
-      p("departments", "manage", "Manage Departments & Teams"),
+      p("departments", "manage", "Manage departments & teams"),
     ],
   },
   {
     module: "attendance",
     label: "Attendance",
     permissions: [
-      p("attendance", "view", "View Attendance"),
+      p("attendance", "view", "View attendance"),
       // Team/org oversight read (bits 34/35) — the roster view, like `time-tracking:manage`.
-      p("attendance", "manage", "Oversee Team Attendance"),
+      p("attendance", "manage", "Oversee team attendance"),
       // `AttendanceManage` (bit 36) — recompute and day overrides, the write path.
-      p("attendance", "edit", "Edit Attendance (recompute & day overrides)"),
+      p("attendance", "edit", "Edit attendance (recompute & day overrides)"),
     ],
   },
   {
     module: "payroll",
     label: "Payroll",
     permissions: [
-      p("payroll", "view", "View Payroll"),
-      p("payroll", "manage", "Run Payroll"),
-      p("payroll", "export", "Download Payslips"),
+      p("payroll", "view", "View payroll"),
+      p("payroll", "manage", "Run payroll"),
+      p("payroll", "export", "Download payslips"),
     ],
   },
   {
     module: "activity",
-    label: "Activity Monitoring",
+    label: "Activity monitoring",
     permissions: [
-      p("activity", "view", "View Activity"),
-      p("screenshots", "view", "View Screenshots"),
-      p("locations", "view", "View Employee Locations"),
+      p("activity", "view", "View activity"),
+      p("screenshots", "view", "View screenshots"),
+      p("locations", "view", "View employee locations"),
       // Both are read by live gates (Monitoring settings, office perimeter, Capture now; the
       // per-person app panel) but were missing here (QA audit 2026-10-08, WP-511).
-      p("monitoring", "manage", "Manage Monitoring Settings"),
+      p("monitoring", "manage", "Manage monitoring settings"),
       {
         id: "activity:apps:person",
         module: "activity",
         action: "view",
-        label: "See Which Apps a Person Used",
+        label: "See which apps a person used",
       },
     ],
   },
@@ -131,27 +131,27 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     module: "reports",
     label: "Reports",
     permissions: [
-      p("reports", "view", "View Reports"),
-      p("reports", "export", "Download Reports"),
+      p("reports", "view", "View reports"),
+      p("reports", "export", "Download reports"),
     ],
   },
   {
     module: "approvals",
     label: "Approvals",
     permissions: [
-      p("approvals", "view", "View Approvals"),
-      p("approvals", "approve", "Approve Requests"),
+      p("approvals", "view", "View approvals"),
+      p("approvals", "approve", "Approve requests"),
     ],
   },
   {
     module: "leave",
     label: "Leave",
     permissions: [
-      p("leave", "view", "View Leave Requests"),
-      p("leave", "request", "Submit Leave Request"),
-      p("leave", "approve", "Approve Leave Requests"),
+      p("leave", "view", "View leave requests"),
+      p("leave", "request", "Submit leave request"),
+      p("leave", "approve", "Approve leave requests"),
       // Mirrors `Permission::LeaveManage` (bit 42) in wp-contracts: leave-type config + allowances.
-      p("leave", "manage", "Manage Leave Types & Allowances"),
+      p("leave", "manage", "Manage leave types & allowances"),
     ],
   },
   {
@@ -173,22 +173,22 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
   {
     module: "notifications",
     label: "Notifications",
-    permissions: [p("notifications", "view", "View Notifications")],
+    permissions: [p("notifications", "view", "View notifications")],
   },
   {
     module: "integrations",
     label: "Integrations",
     permissions: [
-      p("integrations", "view", "View Integrations"),
-      p("integrations", "manage", "Manage Integrations"),
+      p("integrations", "view", "View integrations"),
+      p("integrations", "manage", "Manage integrations"),
     ],
   },
   {
     module: "billing",
     label: "Billing",
     permissions: [
-      p("billing", "view", "View Billing"),
-      p("billing", "manage", "Manage Subscription"),
+      p("billing", "view", "View billing"),
+      p("billing", "manage", "Manage subscription"),
     ],
   },
   {
@@ -201,45 +201,45 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
   {
     module: "roles",
-    label: "Roles & Permissions",
+    label: "Roles & permissions",
     permissions: [
-      p("roles", "view", "View Roles"),
-      p("roles", "manage", "Manage Roles"),
+      p("roles", "view", "View roles"),
+      p("roles", "manage", "Manage roles"),
     ],
   },
   {
     module: "security",
     label: "Security",
     permissions: [
-      p("security", "view", "View Security"),
-      p("security", "manage", "Manage Security"),
+      p("security", "view", "View security"),
+      p("security", "manage", "Manage security"),
     ],
   },
   {
     module: "audit-logs",
-    label: "Audit Logs",
-    permissions: [p("audit-logs", "view", "View Audit Logs")],
+    label: "Audit logs",
+    permissions: [p("audit-logs", "view", "View audit logs")],
   },
   {
     module: "settings",
     label: "Settings",
     permissions: [
-      p("settings", "view", "View Settings"),
-      p("settings", "manage", "Manage Organization Settings"),
+      p("settings", "view", "View settings"),
+      p("settings", "manage", "Manage organization settings"),
       // `entitlements:manage` is its own bit (wp-contracts 73), not part of settings:manage —
       // filed under Settings because that is where the backend files it and where the tab lives.
       {
         id: "entitlements:manage",
         module: "settings",
         action: "manage",
-        label: "Manage Feature Toggles",
+        label: "Manage feature toggles",
       },
     ],
   },
   {
     module: "help",
-    label: "Help Center",
-    permissions: [p("help", "view", "View Help Center")],
+    label: "Help center",
+    permissions: [p("help", "view", "View help center")],
   },
 ];
 

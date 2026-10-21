@@ -83,7 +83,7 @@ export const SYSTEM_ROLES: Role[] = [
   {
     id: "role-employee",
     name: "Employee",
-    description: "Personal workspace: time tracking, tasks, and reports.",
+    description: "Your own time tracking, tasks and reports.",
     system: true,
     scope: "self",
     permissions: [

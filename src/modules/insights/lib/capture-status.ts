@@ -173,7 +173,7 @@ export function explainEmptyCaptureDay({
     return userId
       ? {
           title: `No agent enrolled for ${who}`,
-          description: `${who} has no active desktop agent, so nothing is captured for them. Install the agent on their computer and sign it in (or enrol their managed device) to start.`,
+          description: `${who} has no active desktop agent, so nothing is captured for them. Install the agent on their computer and sign it in (or enroll their managed device) to start.`,
           links: [LINK.agents, LINK.download],
         }
       : {

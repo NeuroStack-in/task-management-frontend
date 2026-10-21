@@ -196,7 +196,7 @@ export function FirstRunGate() {
         <DialogHeader>
           <DialogTitle>Finish setting up your profile</DialogTitle>
           <DialogDescription>
-            These details go on your employee record, which your organisation&apos;s admins and HR
+            These details go on your employee record, which your organization&apos;s admins and HR
             can see. WorkPulse uses them for nothing else. We&apos;ll ask until they&apos;re filled
             in — or put it off for now.
           </DialogDescription>
@@ -206,7 +206,7 @@ export function FirstRunGate() {
           <Field
             id="frg-phone"
             label="Contact number"
-            hint="So your organisation can reach you about work."
+            hint="So your organization can reach you about work."
             error={errors.phone}
           >
             <PhoneInput

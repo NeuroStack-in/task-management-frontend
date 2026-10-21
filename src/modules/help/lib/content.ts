@@ -72,7 +72,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Set up your organization, invite your team, and get the desktop app tracking.",
     readMins: 4,
-    body: "Start with your organization's details in Settings → Organization, then invite your team from the Employees page — each invite carries a role, a department and a job title. Once people accept, they install the WorkPulse desktop app from Download agent in the top bar and sign in with their WorkPulse email and password. Time, attendance and activity all come from what that app records while its timer runs, and the dashboard fills in as it reports. (Organizations that track company computers with the managed service enrol those computers under Settings → Device agents instead.) A small pilot group is a good way to settle your monitoring settings in Settings → Monitoring before everyone joins.",
+    body: "Start with your organization's details in Settings → Organization, then invite your team from the Employees page — each invite carries a role, a department and a job title. Once people accept, they install the WorkPulse desktop app from Download agent in the top bar and sign in with their WorkPulse email and password. Time, attendance and activity all come from what that app records while its timer runs, and the dashboard fills in as it reports. (Organizations that track company computers with the managed service enroll those computers under Settings → Device agents instead.) A small pilot group is a good way to settle your monitoring settings in Settings → Monitoring before everyone joins.",
   },
   {
     slug: "invite-employees",
@@ -105,7 +105,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: "getting-started",
     excerpt: "Download the WorkPulse desktop app, sign in, and start your timer.",
     readMins: 4,
-    body: "The WorkPulse desktop app is what records your work. Download it from Download agent in the top bar — it's available for Windows 10 and 11, macOS 12 and later, and Ubuntu/Debian (a .deb or an AppImage). Install it and sign in with the same WorkPulse email and password you use here; there's no separate setup. While it runs, a WorkPulse icon sits in the system tray, and it records activity only while your timer is on. Admins see every device, with its version and connectivity, under Settings → Device agents, and set capture and update policies under Settings → Monitoring. Organizations that track company computers with the managed service enrol them under Settings → Device agents instead — there is nothing for employees to install.",
+    body: "The WorkPulse desktop app is what records your work. Download it from Download agent in the top bar — it's available for Windows 10 and 11, macOS 12 and later, and Ubuntu/Debian (a .deb or an AppImage). Install it and sign in with the same WorkPulse email and password you use here; there's no separate setup. While it runs, a WorkPulse icon sits in the system tray, and it records activity only while your timer is on. Admins see every device, with its version and connectivity, under Settings → Device agents, and set capture and update policies under Settings → Monitoring. Organizations that track company computers with the managed service enroll them under Settings → Device agents instead — there is nothing for employees to install.",
   },
   {
     slug: "notifications-guide",
@@ -148,7 +148,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "How often screenshots are captured, how long they're kept, and who can see them.",
     readMins: 3,
-    body: "The desktop app captures screenshots while it's tracking, at the cadence an admin sets in Settings → Monitoring → Screenshot capture → Capture cadence: off, every 3, 5 or 10 minutes, or a custom interval of 1 to 60 minutes. Every 5 minutes is the default. Screenshots are kept for the Retention period on the same card — 7, 30, 90, 180 or 365 days, 90 unless it's changed — and then deleted automatically. They're reviewed in Analytics → Screenshots by people whose role includes it; employees don't see captures in the app.",
+    body: "The desktop app captures screenshots while it's tracking, at the frequency an admin sets in Settings → Monitoring → Screenshot capture → Screenshot frequency: off, every 3, 5 or 10 minutes, or a custom interval of 1 to 60 minutes. Every 5 minutes is the default. Screenshots are kept for the Retention period on the same card — 7, 30, 90, 180 or 365 days, 90 unless it's changed — and then deleted automatically. They're reviewed in Analytics → Screenshots by people whose role includes it; employees don't see captures in the app.",
   },
   {
     slug: "productivity-scores",
@@ -237,7 +237,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "Is WorkPulse GDPR compliant?",
-    a: "WorkPulse is designed with GDPR in mind. Data is encrypted in transit and at rest; screenshot retention is configurable in Settings → Monitoring, and screenshots are deleted automatically when it runs out; and the Owner can export the organization's data from Settings → Ownership & deletion. Employees don't see the activity and screenshots collected about them in the app, and there's no in-app request for deleting someone's data. For a Data Processing Agreement (DPA), contact WorkPulse support.",
+    a: "WorkPulse is designed with GDPR in mind. Data is encrypted in transit and at rest; screenshot retention is configurable in Settings → Monitoring, and screenshots are deleted automatically when it runs out; and the Owner can export the organization's data from Settings → Ownership & closure. Employees don't see the activity and screenshots collected about them in the app, and there's no in-app request for deleting someone's data. For a Data Processing Agreement (DPA), contact WorkPulse support.",
   },
 ];
 

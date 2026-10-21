@@ -87,7 +87,7 @@ export function TourOfferCard() {
           variant="ghost"
           onClick={() => {
             remember("declined");
-            if (canHelp) toast("You can take the tour any time from Help Center → Tutorials.");
+            if (canHelp) toast("You can take the tour any time from Help center → Tutorials.");
           }}
         >
           Not now

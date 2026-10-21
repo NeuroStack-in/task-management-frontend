@@ -75,7 +75,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [hydrated, isAuthenticated, hasOrg]);
 
   if (!hydrated || !isAuthenticated) {
-    return <Loader label="Loading your workspace…" />;
+    return <Loader label="Loading your organization…" />;
   }
 
   // No org yet — don't flash the app shell before the onboarding redirect lands.
