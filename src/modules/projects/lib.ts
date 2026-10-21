@@ -11,7 +11,7 @@ import type {
   TaskPatch,
 } from "./services/projects.service";
 import type { TaskFormValues } from "./forms";
-import { isOpenTaskStatus, type Project, type Task, type TaskAssignee, type TaskPriority, type TaskStatus } from "./types";
+import { TASK_PRIORITY_META, isOpenTaskStatus, type Project, type Task, type TaskAssignee, type TaskPriority, type TaskStatus } from "./types";
 
 const DAY = 86_400_000;
 
@@ -251,6 +251,17 @@ export function dueLabel(
   return { text: formatDate(iso), overdue: false };
 }
 
+/**
+ * A due label as a phrase that stands on its own — "Due in 3d", "Due today", "Due Oct 12",
+ * "2d overdue" — for a compact line on a phone where there is no "Due" column header to read it
+ * under (UX audit PROJ-23).
+ */
+export function duePhrase(label: { text: string; overdue: boolean }): string {
+  if (label.overdue) return label.text;
+  if (label.text === "Today") return "Due today";
+  return `Due ${label.text}`;
+}
+
 /* ------------------------------- health ------------------------------- */
 
 export type Tone = "primary" | "success" | "warning" | "muted" | "negative";
@@ -297,6 +308,26 @@ export function projectStats(projects: Project[]): ProjectStats {
 export function isTaskOverdue(t: Pick<Task, "dueDate" | "status">): boolean {
   if (!t.dueDate || !isOpenTaskStatus(t.status)) return false;
   return daysUntil(t.dueDate) < 0;
+}
+
+/**
+ * The order tasks sit in **within** a board column or a status group: most urgent priority first,
+ * then the earliest due date, undated last; ties keep the server's order (the sort is stable).
+ *
+ * A column was in whatever order the server happened to return, so a high-priority task due today
+ * could sit under five low ones (UX audit PROJ-22). Returns a new array.
+ */
+export function sortWithinColumn<T extends Pick<Task, "priority" | "dueDate">>(tasks: T[]): T[] {
+  const rank = (p: TaskPriority) => TASK_PRIORITY_META[p]?.rank ?? TASK_PRIORITY_META.medium.rank;
+  const due = (iso: string | null) => (iso ? new Date(iso).getTime() : Infinity);
+  return [...tasks].sort((a, b) => {
+    const byPriority = rank(a.priority) - rank(b.priority);
+    if (byPriority !== 0) return byPriority;
+    const x = due(a.dueDate);
+    const y = due(b.dueDate);
+    // Compared, not subtracted: two undated tasks are `Infinity - Infinity`, which is NaN.
+    return x === y ? 0 : x < y ? -1 : 1;
+  });
 }
 
 /**

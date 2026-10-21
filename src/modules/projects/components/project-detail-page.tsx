@@ -15,6 +15,7 @@ import { friendlyError } from "@/lib/errors";
 import { Gauge } from "@/components/shared/gauge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
 import { formatDate as formatDay, formatDateRange, formatDuration, personName } from "@/lib/format";
@@ -22,11 +23,11 @@ import type { ProjectFormValues } from "@/modules/projects/forms";
 import type { TaskFormValues } from "@/modules/projects/forms";
 import { useProjectDetail } from "../use-project-detail";
 import { useQueryState } from "../use-query-state";
-import { PROJECT_STATUS_META, TASK_PRIORITY_META, TASK_STATUS_META, TASK_STATUS_ORDER, TASK_STATUS_SETTABLE, type SettableTaskStatus, type Task, type TaskStatus } from "../types";
-import { OVERSIGHT_TARGETS, STATUS_WEIGHT, canDeleteTask, canMoveTask, canWorkOnTasks, canReviewTask, moveOptions, settableStatuses, taskCounts, taskLoadByPerson, taskTotals, daysUntil, dueLabel, isAtRisk, selectablePeople, toneDot, toneSoft, type MoveOption, type UserMini } from "../lib";
+import { PROJECT_STATUS_META, TASK_STATUS_META, TASK_STATUS_ORDER, TASK_STATUS_SETTABLE, type SettableTaskStatus, type Task, type TaskStatus } from "../types";
+import { OVERSIGHT_TARGETS, STATUS_WEIGHT, canDeleteTask, canMoveTask, canWorkOnTasks, canReviewTask, moveOptions, settableStatuses, taskCounts, taskLoadByPerson, taskTotals, daysUntil, dueLabel, duePhrase, isAtRisk, selectablePeople, sortWithinColumn, type MoveOption, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
-import { Segmented, StatusBadge } from "./parts";
+import { PriorityBadge, PriorityIcon, Segmented, StatusBadge, StatusMark, TaskStatusBadge } from "./parts";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { TaskReviewDialog } from "./task-review-dialog";
 import { TaskFormDialog } from "./task-form-dialog";
@@ -88,6 +89,27 @@ const columnKeyboardCoordinates: KeyboardCoordinateGetter = (event, { context, c
 };
 
 export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
+  // Everything the page can hold open, declared first so the data hook can hold its poll off while
+  // any of it is (UX audit PROJ-20): a re-read must never land under a form, a confirmation or a
+  // card in mid-drag.
+  const [reviewTarget, setReviewTarget] = useState<Task | null>(null);
+  /**
+   * The open task's id. The task itself is read from the board on every render, so a move or an
+   * edit made from the view shows in it at once rather than the snapshot taken when it opened — the
+   * view now carries actions (UX audit PROJ-14).
+   */
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  /** The card being dragged, so the columns can say which take it — and why not (UX audit PROJ-07). */
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [teamOpen, setTeamOpen] = useState(false);
+  const holding = Boolean(
+    reviewTarget || viewingId || draggingId || editOpen || confirmOpen || taskOpen || taskToDelete || teamOpen,
+  );
+
   // Real backend. The server 404s a project the caller isn't a member of (no oversight bit), so the
   // "no access" case is `notFound` — there's no client-side scope check anymore.
   const {
@@ -109,7 +131,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     deleteTask,
     authority,
     reviewerIds,
-  } = useProjectDetail(id);
+  } = useProjectDetail(id, { paused: holding });
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
 
   /**
@@ -173,16 +195,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
    * board and changes nothing, so no Add, Edit, drag or Delete is offered (WP-302).
    */
   const canWork = canWorkOnTasks(authority);
-  const [reviewTarget, setReviewTarget] = useState<Task | null>(null);
-  /**
-   * The open task's id. The task itself is read from the board on every render, so a move or an
-   * edit made from the view shows in it at once rather than the snapshot taken when it opened — the
-   * view now carries actions (UX audit PROJ-14).
-   */
-  const [viewingId, setViewingId] = useState<string | null>(null);
   const viewingTask = viewingId ? (tasks.find((t) => t.id === viewingId) ?? null) : null;
-  /** The card being dragged, so the columns can say which take it — and why not (UX audit PROJ-07). */
-  const [draggingId, setDraggingId] = useState<string | null>(null);
   /** The Progress card's "How is this counted?" (UX audit PROJ-13). */
   const [showWeights, setShowWeights] = useState(false);
   /**
@@ -221,15 +234,11 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     }
   }, [viewingId, loading, tasks, setTaskParam]);
 
-  const [editOpen, setEditOpen] = useState(false);
   // A manager who has just handed their own project over is no longer its manager once the page
   // re-reads; the Edit dialog would only offer them saves the server now refuses.
   useEffect(() => {
     if (!canManageProject) setEditOpen(false);
   }, [canManageProject]);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [taskOpen, setTaskOpen] = useState(false);
-  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Separate from `deleting` above, which belongs to the task-delete dialog — one shared flag would
   // let an in-flight task delete disable the project dialog's buttons.
@@ -238,7 +247,6 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const [createStatus, setCreateStatus] = useState<SettableTaskStatus>("todo");
   // In the URL, so Back from a task's project page and a shared link keep the view (WP-502).
   const [taskView, setTaskView] = useQueryState("view", "board", TASK_VIEWS);
-  const [teamOpen, setTeamOpen] = useState(false);
   // The board announced itself as keyboard-draggable while only a pointer could drag, and on a phone
   // a swipe that began on a card dragged it — into the next column — instead of scrolling the page
   // (QA audit 2026-10-08, WP-500). Mouse: a short move picks a card up. Touch: press and hold, so a
@@ -489,6 +497,19 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     ? "Only people on this project can be assigned. Add someone to the team from Edit project."
     : "Only people on this project can be assigned. To add someone, ask the project manager.";
 
+  /** Tasks this person signs off that are waiting on them (PROJ-22). */
+  const awaitingYou = tasks.filter(canReview).length;
+  /** To the In review column — on the board, which the list may have replaced. */
+  const showReviewQueue = () => {
+    setTaskView("board");
+    // After the board has rendered; `inline` brings the column in on a phone's swiped board.
+    window.setTimeout(() => {
+      document
+        .getElementById(columnDomId("in_review"))
+        ?.scrollIntoView({ behavior: "smooth", block: "start", inline: "start" });
+    }, 60);
+  };
+
   const downloadReport = () => {
     // A failed jsPDF chunk load used to be an unhandled rejection and a button that did nothing
     // (QA audit 2026-10-08, WP-507).
@@ -632,6 +653,9 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         title={project.name}
         actions={
           <div className="hidden items-center gap-2 sm:flex">
+            {/* A teammate's move showed only after a browser reload (UX audit PROJ-20). The page
+                also re-reads itself every 30 s while it is open and nothing is held. */}
+            <RefreshButton onRefresh={reload} refreshing={loading} />
             <Button variant="outline" className="gap-1.5" onClick={downloadReport}>
               <FileDown className="size-4" />
               Report (PDF)
@@ -668,36 +692,44 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           <ArrowLeft className="size-4" />
           All projects
         </Link>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-8 sm:hidden"
-                aria-label="Project actions"
-              />
-            }
-          >
-            <MoreHorizontal className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-auto min-w-44">
-            <DropdownMenuItem onClick={downloadReport}>
-              <FileDown className="size-4" /> Report (PDF)
-            </DropdownMenuItem>
-            {canManageProject ? (
-              <>
-                <DropdownMenuItem onClick={() => setEditOpen(true)}>
-                  <Pencil className="size-4" /> Edit project
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onClick={() => setConfirmOpen(true)}>
-                  <Trash2 className="size-4" /> Delete project
-                </DropdownMenuItem>
-              </>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2 sm:hidden">
+          {/* Finger-sized on a touch screen (UX audit PROJ-24). */}
+          <RefreshButton
+            onRefresh={reload}
+            refreshing={loading}
+            className="pointer-coarse:size-10"
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8 pointer-coarse:size-10"
+                  aria-label="Project actions"
+                />
+              }
+            >
+              <MoreHorizontal className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-auto min-w-44">
+              <DropdownMenuItem onClick={downloadReport}>
+                <FileDown className="size-4" /> Report (PDF)
+              </DropdownMenuItem>
+              {canManageProject ? (
+                <>
+                  <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                    <Pencil className="size-4" /> Edit project
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={() => setConfirmOpen(true)}>
+                    <Trash2 className="size-4" /> Delete project
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Hero — filled with the active palette's feature colour */}
@@ -883,7 +915,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   key={s}
                   label={TASK_STATUS_META[s].label}
                   value={counts[s]}
-                  dot={toneDot[TASK_STATUS_META[s].tone]}
+                  mark={<StatusMark status={s} className="size-1.5" />}
                 />
               ))}
             </div>
@@ -895,8 +927,13 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               <span className="bg-border h-px flex-1" />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <TaskStat label="Done · signed off" value={totals.done} dot="bg-success" />
-              <TaskStat label="Blocked" value={totals.blocked} dot="bg-warning" />
+              <TaskStat
+                label="Done · signed off"
+                value={totals.done}
+                mark={<StatusMark status="done" className="size-1.5" />}
+              />
+              {/* Red with a stop sign, as on the board — it was amber, like In review (PROJ-21). */}
+              <TaskStat label="Blocked" value={totals.blocked} mark={<StatusMark status="blocked" />} />
             </div>
           </div>
         </div>
@@ -984,6 +1021,24 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           </p>
         ) : null}
 
+        {/* The reviewer's own queue, said: nothing told the project's lead or manager that work
+            was waiting on them (UX audit PROJ-22). Counted by the same rule as the card's "Review
+            & sign off" button — in review, theirs to sign, not their own. */}
+        {awaitingYou > 0 ? (
+          <button
+            type="button"
+            onClick={showReviewQueue}
+            className="border-warning/40 bg-warning/10 hover:bg-warning/15 flex w-full items-center gap-2 rounded-xl border px-4 py-2.5 text-left text-sm transition-colors sm:w-fit pointer-coarse:min-h-11"
+          >
+            <Star className="text-warning size-4 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <span className="font-semibold tabular-nums">{awaitingYou}</span>{" "}
+              {awaitingYou === 1 ? "task" : "tasks"} awaiting your review
+            </span>
+            <span className="text-primary shrink-0 font-medium">Show</span>
+          </button>
+        ) : null}
+
         <TaskFlowGuide />
 
         {taskView === "board" ? (
@@ -1009,7 +1064,8 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                 <KanbanColumn
                   key={col}
                   col={col}
-                  tasks={tasks.filter((t) => t.status === col)}
+                  // Most urgent first, then soonest due — not the server's order (PROJ-22).
+                  tasks={sortWithinColumn(tasks.filter((t) => t.status === col))}
                   userMap={userMap}
                   // No "add" on Done: the column shows what has been signed off, not new work. Nor
                   // on Blocked for anyone who couldn't create a task there — the server refuses a
@@ -1330,11 +1386,11 @@ function Mono({ children }: { children: React.ReactNode }) {
   );
 }
 
-function TaskStat({ label, value, dot }: { label: string; value: number; dot: string }) {
+function TaskStat({ label, value, mark }: { label: string; value: number; mark: React.ReactNode }) {
   return (
     <div className="bg-muted/30 min-w-0 rounded-xl border px-2.5 py-2.5">
       <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-        <span className={cn("size-1.5 shrink-0 rounded-full", dot)} />
+        {mark}
         <span className="truncate">{label}</span>
       </p>
       <p className="font-heading mt-1 text-xl font-semibold tabular-nums">{value}</p>
@@ -1402,9 +1458,12 @@ function KanbanColumn({
   return (
     <div
       ref={setNodeRef}
+      id={columnDomId(col)}
       aria-disabled={refused || undefined}
       className={cn(
-        "bg-muted/40 flex min-h-[140px] w-[85%] shrink-0 snap-start flex-col rounded-2xl border p-3 transition-[background-color,opacity,box-shadow] sm:w-auto",
+        // `scroll-mt-24` keeps the column clear of the sticky top bar when "awaiting your review"
+        // scrolls to it (PROJ-22).
+        "bg-muted/40 flex min-h-[140px] w-[85%] shrink-0 scroll-mt-24 snap-start flex-col rounded-2xl border p-3 transition-[background-color,opacity,box-shadow] sm:w-auto",
         // While dragging: the columns that take the card are outlined, the ones that don't recede.
         drop && drop.via !== "origin" && !refused && "ring-primary/30 ring-1",
         refused && "opacity-55",
@@ -1413,7 +1472,8 @@ function KanbanColumn({
     >
       <div className="mb-3 px-1">
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
-          <span className={cn("size-2 rounded-full", toneDot[meta.tone])} />
+          {/* Blocked's stop sign, not only its colour (PROJ-21). */}
+          <StatusMark status={col} />
           {meta.label}
           <span className="text-muted-foreground tabular-nums">{tasks.length}</span>
           {refused ? <Lock className="text-muted-foreground size-3" aria-hidden="true" /> : null}
@@ -1466,6 +1526,11 @@ function KanbanColumn({
   );
 }
 
+/** A board column's element id — "awaiting your review" scrolls to In review (PROJ-22). */
+function columnDomId(col: TaskStatus): string {
+  return `board-column-${col}`;
+}
+
 /** One line under a column's name, for the columns whose rule isn't obvious from the name. */
 const COLUMN_HINT: Partial<Record<TaskStatus, string>> = {
   in_review: "Finished work, waiting for the project lead or manager",
@@ -1473,6 +1538,20 @@ const COLUMN_HINT: Partial<Record<TaskStatus, string>> = {
 };
 
 const stopPropagation = (e: React.SyntheticEvent) => e.stopPropagation();
+
+/** A task's own address — this page with the task open (`?task=`, PROJ-03). */
+function taskHref(t: Pick<Task, "id" | "projectId">): string {
+  return `/projects/${encodeURIComponent(t.projectId)}?task=${encodeURIComponent(t.id)}`;
+}
+
+/**
+ * An unmodified left click — the one a task link handles itself, opening the task in place. Any
+ * other (Ctrl/⌘, Shift, Alt) is left to the browser: a new tab or window (UX audit PROJ-23). A
+ * middle click never reaches `onClick` at all.
+ */
+function isPlainClick(e: React.MouseEvent): boolean {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}
 
 /** On a card's own buttons: a press is a click, never the start of a drag — for every sensor. */
 const KEEP_OFF_THE_CARD = {
@@ -1536,6 +1615,17 @@ function TaskCard({
     if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6) return;
     onView(task);
   };
+  /**
+   * The title is a real link to the task (UX audit PROJ-23): a plain click opens it here, like the
+   * rest of the card; Ctrl/⌘-click, a middle click or "Open in new tab" open it in another tab.
+   */
+  const openFromTitle = (e: React.MouseEvent) => {
+    if (!isPlainClick(e)) return;
+    e.preventDefault();
+    const p = pressedAt.current;
+    if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6) return;
+    onView(task);
+  };
   const hasMenu = Boolean(
     actions.onEdit || actions.onDelete || actions.onReview || actions.moves?.length,
   );
@@ -1594,7 +1684,7 @@ function TaskCard({
           <TaskActionsMenu title={task.title} stopDrag={KEEP_OFF_THE_CARD} {...actions} />
         </div>
       ) : null}
-      <TaskCardContent task={task} userMap={userMap} />
+      <TaskCardContent task={task} userMap={userMap} onTitleClick={openFromTitle} />
       {/* Sent back with a note (UX audit PROJ-02): the assignee reads what to change on the card
           itself, not only in a notification. Open the task for the whole note. */}
       {task.changes ? (
@@ -1615,7 +1705,8 @@ function TaskCard({
           type="button"
           {...KEEP_OFF_THE_CARD}
           onClick={() => onReview(task)}
-          className="bg-warning/12 text-warning hover:bg-warning/20 focus-visible:ring-ring mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:outline-none"
+          // 40 px tall on a touch screen, from 28 (UX audit PROJ-24).
+          className="bg-warning/12 text-warning hover:bg-warning/20 focus-visible:ring-ring mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:outline-none pointer-coarse:min-h-10"
         >
           <Star className="size-3.5" />
           Review &amp; sign off
@@ -1660,19 +1751,12 @@ function TaskListView({
     );
   }
 
-  const order: Record<TaskStatus, number> = {
-    todo: 0,
-    in_progress: 1,
-    in_review: 2,
-    done: 3,
-    blocked: 4,
-  };
-  const sorted = [...tasks].sort((a, b) => {
-    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
-    const ad = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-    const bd = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-    return ad - bd;
-  });
+  // By column, then — within one — as the board orders it: most urgent first, then soonest due
+  // (UX audit PROJ-22). A status this build doesn't know goes last rather than vanishing.
+  const sorted = [
+    ...TASK_STATUS_ORDER.flatMap((s) => sortWithinColumn(tasks.filter((t) => t.status === s))),
+    ...tasks.filter((t) => !TASK_STATUS_ORDER.includes(t.status)),
+  ];
 
   return (
     <div className="bg-card overflow-hidden rounded-2xl border">
@@ -1684,40 +1768,56 @@ function TaskListView({
         <span className="w-24 shrink-0">Status</span>
         <span className="w-44 shrink-0">Assignees</span>
         {/* Spacer keeping the header aligned with the row's trailing action cell. */}
-        <span className="w-8 shrink-0" aria-hidden />
+        <span className="w-8 shrink-0 pointer-coarse:w-10" aria-hidden />
       </div>
 
       <ul className="divide-y">
         {sorted.map((t) => {
-          const prio = TASK_PRIORITY_META[t.priority];
-          const status = TASK_STATUS_META[t.status];
           const due = dueLabel(t.dueDate, t.status === "done");
           const deletable = canDelete(t);
           return (
-            // The row is a flex container rather than one big button: a delete control nested
-            // inside a button is invalid HTML and doesn't reliably receive the click.
+            // The row is a flex container rather than one big link: a delete control nested inside
+            // it is invalid HTML and doesn't reliably receive the click.
             <li
               key={t.id}
               className="group/row hover:bg-muted/50 flex items-center pr-4 transition-colors"
             >
-              <button
-                type="button"
-                onClick={() => onOpen(t)}
+              {/* A link to the task, not a button (UX audit PROJ-23): a plain click opens it here,
+                  Ctrl/⌘-click or a middle click in a new tab. */}
+              <Link
+                href={taskHref(t)}
+                onClick={(e) => {
+                  if (!isPlainClick(e)) return;
+                  e.preventDefault();
+                  onOpen(t);
+                }}
                 className="flex min-w-0 flex-1 items-center gap-4 py-3 pl-4 text-left"
               >
                 {/* Task */}
                 <span className="flex min-w-0 flex-1 items-center gap-3">
-                  <span
-                    className={cn("size-2 shrink-0 rounded-full", toneDot[prio.tone])}
-                    title={`${prio.label} priority`}
-                  />
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-sm font-medium",
-                      t.status === "done" && "text-muted-foreground line-through",
-                    )}
-                  >
-                    {t.title}
+                  {/* An arrow, not a coloured dot (PROJ-21). */}
+                  <PriorityIcon priority={t.priority} />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span
+                      className={cn(
+                        "truncate text-sm font-medium",
+                        t.status === "done" && "text-muted-foreground line-through",
+                      )}
+                    >
+                      {t.title}
+                    </span>
+                    {/* The Due column is gone below `sm`; a phone still needs the date
+                        (UX audit PROJ-23). */}
+                    {t.dueDate ? (
+                      <span
+                        className={cn(
+                          "text-[0.7rem] tabular-nums sm:hidden",
+                          due.overdue ? "text-destructive" : "text-muted-foreground",
+                        )}
+                      >
+                        {duePhrase(due)}
+                      </span>
+                    ) : null}
                   </span>
                   <SubtaskCount progress={t.subtaskProgress} />
                 </span>
@@ -1737,20 +1837,13 @@ function TaskListView({
                 </span>
 
                 {/* Priority */}
-                <span className="hidden w-24 shrink-0 md:block">
-                  <span
-                    className={cn(
-                      "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
-                      toneSoft[prio.tone],
-                    )}
-                  >
-                    {prio.label}
-                  </span>
+                <span className="hidden w-24 shrink-0 items-center md:flex">
+                  <PriorityBadge priority={t.priority} />
                 </span>
 
                 {/* Status */}
-                <span className="w-24 shrink-0">
-                  <StatusBadge tone={status.tone} label={status.label} />
+                <span className="flex w-24 shrink-0 items-center">
+                  <TaskStatusBadge status={t.status} />
                 </span>
 
                 {/* Assignees — a stack from sm, the first name added at lg. Only one name is
@@ -1774,16 +1867,17 @@ function TaskListView({
                     </>
                   )}
                 </span>
-              </button>
+              </Link>
 
               {/* Always occupies its cell so rows stay aligned whether or not the action shows. */}
-              <span className="ml-4 flex w-8 shrink-0 items-center justify-center">
+              <span className="ml-4 flex w-8 shrink-0 items-center justify-center pointer-coarse:w-10">
                 {deletable ? (
+                  // Shown without hover on a touch screen, and finger-sized there (UX audit PROJ-24).
                   <button
                     type="button"
                     onClick={() => onDelete(t)}
                     aria-label={`Delete ${t.title}`}
-                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex size-7 items-center justify-center rounded-md opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex size-7 items-center justify-center rounded-md opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100 pointer-coarse:size-10 [@media(hover:none)]:opacity-100"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -1818,16 +1912,33 @@ function SubtaskCount({ progress }: { progress: Task["subtaskProgress"] }) {
 function TaskCardContent({
   task,
   userMap,
+  onTitleClick,
 }: {
   task: Task;
   userMap: Record<string, UserMini>;
+  /** The title link's click — a plain one opens the task in place (PROJ-23). */
+  onTitleClick: (e: React.MouseEvent) => void;
 }) {
-  const prio = TASK_PRIORITY_META[task.priority];
   // Signed-off work past its date was finished, not late (WP-377).
   const due = dueLabel(task.dueDate, task.status === "done");
   return (
     <>
-      <p className="pr-9 text-sm leading-snug font-medium">{task.title}</p>
+      {/* Clear of the "⋯" button, which grows to 40 px on a touch screen (PROJ-24) — beside it,
+          and below it: a one-line title would otherwise put the avatar under its corner. */}
+      <p className="pr-9 text-sm leading-snug font-medium pointer-coarse:min-h-9 pointer-coarse:pr-12">
+        {/* A link, so the task can be opened in a new tab (PROJ-23). Not a tab stop — the card is
+            one, and Enter on it opens the task — and not natively draggable, which would fight the
+            board's own drag. */}
+        <Link
+          href={taskHref(task)}
+          onClick={onTitleClick}
+          draggable={false}
+          tabIndex={-1}
+          className="hover:underline"
+        >
+          {task.title}
+        </Link>
+      </p>
 
       {/* Who signed this off, on the card itself — the question the review step exists to answer,
           so it should not need a click. `reviewer_name` was resolved server-side at review time, so
@@ -1881,14 +1992,8 @@ function TaskCardContent({
       ) : null}
 
       <div className="mt-2.5 flex items-center justify-between gap-2">
-        <span
-          className={cn(
-            "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium",
-            toneSoft[prio.tone],
-          )}
-        >
-          {prio.label}
-        </span>
+        {/* An outlined tag with an arrow — not an amber pill like In review's (PROJ-21). */}
+        <PriorityBadge priority={task.priority} className="text-[0.65rem]" />
         <div className="flex min-w-0 items-center gap-2">
           {task.dueDate ? (
             <span

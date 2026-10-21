@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { STATUS_WEIGHT, boardTasks, canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, daysUntil, deriveProjectKey, dueLabel, isTaskOverdue, moveOptions, settableStatuses, taskLoadByPerson, taskPatchFrom, taskTotals, teamWithRoles, toAssignees } from "./lib";
+import { STATUS_WEIGHT, boardTasks, canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, daysUntil, deriveProjectKey, dueLabel, duePhrase, isTaskOverdue, sortWithinColumn, moveOptions, settableStatuses, taskLoadByPerson, taskPatchFrom, taskTotals, teamWithRoles, toAssignees } from "./lib";
 import type { Task, TaskStatus } from "./types";
 import type { TaskFormValues } from "./forms";
 import type { ApiBoardTask } from "./services/projects.service";
@@ -551,5 +551,54 @@ describe("teamWithRoles (PROJ-08)", () => {
     expect(teamWithRoles(["u-a", "u-mgr"], "u-mgr", "u-lead")).toEqual(["u-mgr", "u-lead", "u-a"]);
     expect(teamWithRoles([], "u-mgr", "")).toEqual(["u-mgr"]);
     expect(teamWithRoles(["u-a"], "", "")).toEqual(["u-a"]);
+  });
+});
+
+describe("sortWithinColumn (PROJ-22)", () => {
+  const t = (id: string, priority: Task["priority"], dueDate: string | null) => ({
+    id,
+    priority,
+    dueDate,
+  });
+
+  it("puts the most urgent priority first, then the soonest due date", () => {
+    const sorted = sortWithinColumn([
+      t("low-soon", "low", "2026-10-22"),
+      t("high-late", "high", "2026-12-01"),
+      t("med-undated", "medium", null),
+      t("high-soon", "high", "2026-10-23"),
+      t("med-soon", "medium", "2026-10-25"),
+    ]);
+    expect(sorted.map((x) => x.id)).toEqual([
+      "high-soon",
+      "high-late",
+      "med-soon",
+      "med-undated",
+      "low-soon",
+    ]);
+  });
+
+  it("keeps the server's order for ties, undated ones included, and leaves the input alone", () => {
+    const input = [t("a", "medium", null), t("b", "medium", null), t("c", "medium", "2026-11-01")];
+    expect(sortWithinColumn(input).map((x) => x.id)).toEqual(["c", "a", "b"]);
+    expect(input.map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("treats an unknown priority as medium rather than crashing", () => {
+    const odd = { id: "odd", priority: "urgent" as Task["priority"], dueDate: null };
+    expect(sortWithinColumn([t("low", "low", null), odd, t("high", "high", null)]).map((x) => x.id)).toEqual([
+      "high",
+      "odd",
+      "low",
+    ]);
+  });
+});
+
+describe("duePhrase (PROJ-23)", () => {
+  it("reads on its own, without a Due column header above it", () => {
+    expect(duePhrase({ text: "in 3d", overdue: false })).toBe("Due in 3d");
+    expect(duePhrase({ text: "Today", overdue: false })).toBe("Due today");
+    expect(duePhrase({ text: "Oct 12", overdue: false })).toBe("Due Oct 12");
+    expect(duePhrase({ text: "2d overdue", overdue: true })).toBe("2d overdue");
   });
 });

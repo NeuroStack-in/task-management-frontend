@@ -46,6 +46,7 @@ import {
 } from "../types";
 import type { ProjectFormValues } from "@/modules/projects/forms";
 import { AddFromTeam } from "./add-from-team";
+import { DIM_UNDER_PROMPT, DiscardChangesDialog, useDiscardGuard } from "./discard-changes";
 import {
   listTeamMembers,
   listTeams,
@@ -242,7 +243,7 @@ export function ProjectFormDialog({
     setValue,
     watch,
     control,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<FormShape>({
     resolver: zodResolver(schemaFor(minDue, !isEdit)),
     defaultValues: { ...blank(), ...initialForm },
@@ -253,6 +254,13 @@ export function ProjectFormDialog({
     if (open) reset({ ...blank(), ...initialForm });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Esc, an outside click or the X ask before throwing an edited form away (UX audit PROJ-19).
+  // `isDirty` counts the team too: its `setValue` calls pass `shouldDirty`.
+  const guard = useDiscardGuard(open, isDirty, () => {
+    reset({ ...blank(), ...initialForm });
+    onOpenChange(false);
+  });
 
   const memberIds = watch("memberIds");
   const managerId = watch("managerId");
@@ -320,11 +328,14 @@ export function ProjectFormDialog({
       onOpenChange={(o) => {
         // Not while a save is in flight: closing then would lose the form if the save fails.
         if (!o && submitting) return;
-        if (!o) reset({ ...blank(), ...initialForm });
-        onOpenChange(o);
+        // Esc, an outside click and the X: straight closed when untouched, asked first when not.
+        if (!o) guard.requestClose();
+        else onOpenChange(o);
       }}
     >
-      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl">
+      <DialogContent className={cn("flex max-h-[90vh] flex-col sm:max-w-2xl", DIM_UNDER_PROMPT)}>
+        {/* Inside the content, so it nests: Esc closes the question, not the form (PROJ-19). */}
+        <DiscardChangesDialog {...guard.prompt} />
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit project" : "New project"}</DialogTitle>
           <DialogDescription>
@@ -629,7 +640,7 @@ export function ProjectFormDialog({
                 setValue(
                   "memberIds",
                   Array.from(new Set([...memberIds, ...ids])),
-                  { shouldValidate: true },
+                  { shouldValidate: true, shouldDirty: true },
                 )
               }
             />
@@ -640,7 +651,7 @@ export function ProjectFormDialog({
               value={team}
               locked={locked}
               onChange={(ids) =>
-                setValue("memberIds", ids, { shouldValidate: true })
+                setValue("memberIds", ids, { shouldValidate: true, shouldDirty: true })
               }
             />
             {peopleNote ? (

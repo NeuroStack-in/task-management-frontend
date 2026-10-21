@@ -37,7 +37,7 @@ import {
   type Task,
   type TaskStatus,
 } from "../types";
-import { isTaskOverdue, projectStats, selectablePeople, toneDot, type UserMini } from "../lib";
+import { isTaskOverdue, projectStats, selectablePeople, toneDot, toneText, type UserMini } from "../lib";
 import { useProjectsData } from "../use-projects-data";
 import { useQueryState } from "../use-query-state";
 import { ProjectCard } from "./project-card";
@@ -45,7 +45,7 @@ import { ProjectsList } from "./projects-list";
 import { ProjectsStatBand } from "./projects-stat-band";
 import { TasksView, type TaskScope } from "./tasks-view";
 import { ProjectFormDialog } from "./project-form-dialog";
-import { Segmented } from "./parts";
+import { Segmented, TASK_STATUS_ICON } from "./parts";
 
 type View = "projects" | "tasks";
 type Layout = "grid" | "list";
@@ -267,7 +267,9 @@ export function ProjectsView() {
   const membersFor = (p: Project): UserMini[] =>
     p.memberIds.map((id) => userMap[id]).filter(Boolean) as UserMini[];
 
-  const openProject = (id: string) => router.push(`/projects/${id}`);
+  // A real address for each project, so cards and rows are links — Ctrl/⌘-click, a middle click
+  // and "Open in new tab" work; they navigated in code before (UX audit PROJ-23).
+  const projectHref = (id: string) => `/projects/${encodeURIComponent(id)}`;
 
   const handleCreate = async (values: ProjectFormValues) => {
     let created;
@@ -426,6 +428,9 @@ export function ProjectsView() {
                   label={TASK_STATUS_META[s].label}
                   count={tasksPending ? undefined : taskCounts[s]}
                   dot={toneDot[TASK_STATUS_META[s].tone]}
+                  // Blocked's stop sign in place of the dot (UX audit PROJ-21).
+                  icon={TASK_STATUS_ICON[s]}
+                  iconClass={toneText[TASK_STATUS_META[s].tone]}
                 />
               ))}
               <FilterChip
@@ -525,7 +530,7 @@ export function ProjectsView() {
                     members={membersFor(p)}
                     doneCount={summary.done}
                     totalCount={summary.total}
-                    onOpen={() => openProject(p.id)}
+                    href={projectHref(p.id)}
                   />
                 );
               })}
@@ -535,7 +540,7 @@ export function ProjectsView() {
               projects={filteredProjects}
               userMap={userMap}
               taskSummary={taskSummary}
-              onOpen={openProject}
+              hrefFor={projectHref}
             />
           )
         ) : (
@@ -570,10 +575,8 @@ export function ProjectsView() {
           scope={taskScope}
           onShowEveryone={() => setScope("all")}
           // Straight to the task: its project page opens the task's dialog from `?task=` (PROJ-03).
-          onOpenTask={(t) =>
-            router.push(
-              `/projects/${encodeURIComponent(t.projectId)}?task=${encodeURIComponent(t.id)}`,
-            )
+          taskHref={(t) =>
+            `/projects/${encodeURIComponent(t.projectId)}?task=${encodeURIComponent(t.id)}`
           }
         />
       )}
@@ -619,7 +622,8 @@ function LayoutToggleButton({
       aria-pressed={active}
       title={label}
       className={cn(
-        "flex size-7 items-center justify-center rounded-md transition-colors",
+        // 40 px on a touch screen, from 28 (UX audit PROJ-24).
+        "flex size-7 items-center justify-center rounded-md transition-colors pointer-coarse:size-10",
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -636,6 +640,8 @@ function FilterChip({
   label,
   count,
   dot,
+  icon: Icon,
+  iconClass,
 }: {
   active: boolean;
   onClick: () => void;
@@ -643,6 +649,10 @@ function FilterChip({
   /** Omitted while the number isn't known yet — a "0" there would be a claim. */
   count?: number;
   dot?: string;
+  /** Drawn in place of the dot, for a status whose colour alone isn't enough (PROJ-21). */
+  icon?: LucideIcon;
+  /** The icon's colour while the chip isn't active. */
+  iconClass?: string;
 }) {
   return (
     <button
@@ -651,13 +661,19 @@ function FilterChip({
       // The active filter was told by colour alone (WP-508).
       aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+        // A toggle too: 40 px tall on a touch screen, from 26 (UX audit PROJ-24).
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors pointer-coarse:min-h-10 pointer-coarse:px-3.5",
         active
           ? "border-transparent bg-primary text-primary-foreground"
           : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
     >
-      {dot ? (
+      {Icon ? (
+        <Icon
+          className={cn("size-3 shrink-0", active ? "text-primary-foreground/80" : iconClass)}
+          aria-hidden="true"
+        />
+      ) : dot ? (
         <span
           className={cn(
             "size-1.5 rounded-full",

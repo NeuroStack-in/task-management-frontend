@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Sparkline } from "@/components/shared/sparkline";
@@ -20,7 +21,8 @@ interface ProjectCardProps {
   members: UserMini[];
   doneCount: number;
   totalCount: number;
-  onOpen: () => void;
+  /** The project's page. The card is a link to it — see below. */
+  href: string;
 }
 
 export function ProjectCard({
@@ -28,119 +30,116 @@ export function ProjectCard({
   members,
   doneCount,
   totalCount,
-  onOpen,
+  href,
 }: ProjectCardProps) {
   const status = PROJECT_STATUS_META[project.status];
   // A completed project past its end date finished — it isn't late (WP-377).
   const due = dueLabel(project.dueDate, project.status === "completed");
 
   return (
-    <Card
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className={cn(
-        "relative cursor-pointer gap-4 pl-6 outline-none transition-all duration-200",
-        "hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-24px_rgb(0_0_0/0.35)]",
-        "focus-visible:ring-3 focus-visible:ring-ring/50",
-      )}
+    // A link, not a `role="button"` that navigated in code: Ctrl/⌘-click, a middle click and "Open
+    // in new tab" now work, and the browser shows where it goes (UX audit PROJ-23).
+    <Link
+      href={href}
+      className="group/card block rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
-      {/* Status accent rail */}
-      <span
-        aria-hidden
+      <Card
         className={cn(
-          "absolute inset-y-3 left-2 w-1 rounded-full transition-all duration-200 group-hover/card:inset-y-2",
-          toneRail[status.tone],
+          "relative h-full gap-4 pl-6 transition-all duration-200",
+          "group-hover/card:-translate-y-0.5 group-hover/card:shadow-[0_18px_40px_-24px_rgb(0_0_0/0.35)]",
         )}
-      />
+      >
+        {/* Status accent rail */}
+        <span
+          aria-hidden
+          className={cn(
+            "absolute inset-y-3 left-2 w-1 rounded-full transition-all duration-200 group-hover/card:inset-y-2",
+            toneRail[status.tone],
+          )}
+        />
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 px-5">
-        <div className="min-w-0">
-          {/* Both optional on the server: an empty badge pill and a dangling "·" read as faults
-              (QA audit 2026-10-08, WP-305). */}
-          {project.key || project.department ? (
-            <div className="flex items-center gap-2">
-              {project.key ? (
-                <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-[0.7rem] font-semibold tracking-wide text-accent-foreground">
-                  {project.key}
-                </span>
-              ) : null}
-              {project.department ? (
-                <span className="truncate text-xs text-muted-foreground">
-                  {project.key ? "· " : ""}
-                  {project.department}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          <h3
-            className={cn(
-              "truncate font-heading text-base font-semibold tracking-tight transition-colors group-hover/card:text-primary",
-              (project.key || project.department) && "mt-1.5",
-            )}
-          >
-            {project.name}
-          </h3>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 px-5">
+          <div className="min-w-0">
+            {/* Both optional on the server: an empty badge pill and a dangling "·" read as faults
+                (QA audit 2026-10-08, WP-305). */}
+            {project.key || project.department ? (
+              <div className="flex items-center gap-2">
+                {project.key ? (
+                  <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-[0.7rem] font-semibold tracking-wide text-accent-foreground">
+                    {project.key}
+                  </span>
+                ) : null}
+                {project.department ? (
+                  <span className="truncate text-xs text-muted-foreground">
+                    {project.key ? "· " : ""}
+                    {project.department}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            <h3
+              className={cn(
+                "truncate font-heading text-base font-semibold tracking-tight transition-colors group-hover/card:text-primary",
+                (project.key || project.department) && "mt-1.5",
+              )}
+            >
+              {project.name}
+            </h3>
+          </div>
+          <StatusBadge tone={status.tone} label={status.label} />
         </div>
-        <StatusBadge tone={status.tone} label={status.label} />
-      </div>
 
-      {/* Progress */}
-      <div className="space-y-1.5 px-5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">Progress</span>
-          <span className="font-medium tabular-nums">{project.progress}%</span>
+        {/* Progress */}
+        <div className="space-y-1.5 px-5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Progress</span>
+            <span className="font-medium tabular-nums">{project.progress}%</span>
+          </div>
+          <ProgressTrack value={project.progress} />
         </div>
-        <ProgressTrack value={project.progress} />
-      </div>
 
-      {/* Tasks + due meta */}
-      <div className="grid grid-cols-2 gap-3 px-5 text-xs">
-        <div>
-          <p className="text-muted-foreground">Tasks</p>
-          <p className="mt-0.5 font-medium tabular-nums">
-            {doneCount}
-            {/* "signed off", not "completed". The bar above is WEIGHTED — a task in review counts
-                75% — so it can read 75% while nothing has been signed off. Calling this pair
-                "completed" beside that bar makes one of the two look broken; they answer different
-                questions, and the label is where that gets said. */}
-            <span className="text-muted-foreground"> / {totalCount} signed off</span>
-          </p>
+        {/* Tasks + due meta */}
+        <div className="grid grid-cols-2 gap-3 px-5 text-xs">
+          <div>
+            <p className="text-muted-foreground">Tasks</p>
+            <p className="mt-0.5 font-medium tabular-nums">
+              {doneCount}
+              {/* "signed off", not "completed". The bar above is WEIGHTED — a task in review counts
+                  75% — so it can read 75% while nothing has been signed off. Calling this pair
+                  "completed" beside that bar makes one of the two look broken; they answer different
+                  questions, and the label is where that gets said. */}
+              <span className="text-muted-foreground"> / {totalCount} signed off</span>
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-muted-foreground">Due</p>
+            <p
+              className={cn(
+                "mt-0.5 font-medium",
+                due.overdue ? "text-destructive" : "text-foreground",
+              )}
+            >
+              {due.text}
+            </p>
+          </div>
         </div>
-        <div className="text-right">
-          <p className="text-muted-foreground">Due</p>
-          <p
-            className={cn(
-              "mt-0.5 font-medium",
-              due.overdue ? "text-destructive" : "text-foreground",
-            )}
-          >
-            {due.text}
-          </p>
-        </div>
-      </div>
 
-      {/* Footer: members + pulse */}
-      <div className="flex items-center justify-between gap-3 px-5">
-        <MemberStack members={members} />
-        <div className="flex items-center gap-2">
-          <Sparkline
-            data={project.velocity}
-            width={72}
-            height={26}
-            showDot={false}
-            className="text-primary/80"
-          />
-          <ArrowUpRight className="size-4 text-muted-foreground transition-transform group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5 group-hover/card:text-primary" />
+        {/* Footer: members + pulse */}
+        <div className="flex items-center justify-between gap-3 px-5">
+          <MemberStack members={members} />
+          <div className="flex items-center gap-2">
+            <Sparkline
+              data={project.velocity}
+              width={72}
+              height={26}
+              showDot={false}
+              className="text-primary/80"
+            />
+            <ArrowUpRight className="size-4 text-muted-foreground transition-transform group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5 group-hover/card:text-primary" />
+          </div>
         </div>
-      </div>
-    </Card>
+      </Card>
+    </Link>
   );
 }

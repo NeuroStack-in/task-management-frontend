@@ -8,10 +8,15 @@
  * (`GET .../tasks`), maps them to the `Project`/`Task` shapes the page renders, and resolves member
  * names from the employee directory (best-effort). Every mutation calls the real endpoint and
  * re-reads, so the KPI block (which the Streams aggregator recomputes on task changes) stays fresh.
+ *
+ * **It also re-reads every 30 s** while the tab is visible, as the dashboards do — a teammate's move
+ * was invisible until a reload (UX audit PROJ-20). Quietly: no spinner, and nothing re-renders when
+ * the answer hasn't changed. Never under a dialog or a drag (`paused`), nor across a write in flight.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
+import { LIVE_REFRESH_MS, useLiveRefresh } from "@/hooks/use-live-refresh";
 import { friendlyError } from "@/lib/errors";
 import {
   getProject,
@@ -65,6 +70,7 @@ export interface ProjectDetailData {
   refreshError: string | null;
   /** Distinguishes a 404 (gone / not a member) from a transport error. */
   notFound: boolean;
+  /** A visible re-read — the Refresh button, Retry. `loading` is true while it runs. */
   reload: () => void;
   updateProject: (values: ProjectFormValues) => Promise<void>;
   /** Delete the project and every task, member and KPI under it. Irreversible. */
@@ -77,7 +83,19 @@ export interface ProjectDetailData {
   deleteTask: (taskId: string) => Promise<void>;
 }
 
-export function useProjectDetail(id: string): ProjectDetailData {
+export interface ProjectDetailOptions {
+  /**
+   * True while the page holds something a re-read must not disturb — a dialog open, a card held
+   * mid-drag. The 30 s poll skips its ticks meanwhile (UX audit PROJ-20), and re-reads as soon as
+   * it is let go if it skipped one.
+   */
+  paused?: boolean;
+}
+
+export function useProjectDetail(
+  id: string,
+  { paused = false }: ProjectDetailOptions = {},
+): ProjectDetailData {
   const { can } = usePermissions();
   const readsDirectory = can("employees:view");
   const managesAll = can("projects:manage");
@@ -93,11 +111,48 @@ export function useProjectDetail(id: string): ProjectDetailData {
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [nonce, setNonce] = useState(0);
   /** The project id the page last loaded successfully — a failure after that is a refresh failure. */
   const loadedFor = useRef<string | null>(null);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  // ── Freshness (UX audit PROJ-20) ──
+  /** A read is in flight — a poll tick then has nothing to add. */
+  const reading = useRef(false);
+  /** Writes in flight: a poll waits for them, since each re-reads when it lands. */
+  const writing = useRef(0);
+  /**
+   * Bumped by every optimistic move. A read that began before one is older than what the board now
+   * shows, and painting it would spring the card back until the move's own re-read lands.
+   */
+  const optimisticGen = useRef(0);
+  const pausedRef = useRef(paused);
+  /** A tick was skipped for `paused` — re-read the moment it lifts. */
+  const missedTick = useRef(false);
+  /** The last read, serialised: a poll that finds nothing new leaves the page alone. */
+  const lastRead = useRef<string | null>(null);
+
+  // Polling stops on a 404: the project is gone, or this person was taken off it.
+  const { nonce, reload, refresh, isBackground } = useLiveRefresh(
+    notFound ? null : LIVE_REFRESH_MS,
+    {
+      isBusy: () => {
+        if (pausedRef.current) {
+          missedTick.current = true;
+          return true;
+        }
+        return reading.current || writing.current > 0;
+      },
+    },
+  );
+
+  /** Run a write with the poll held off until it settles. */
+  const whileWriting = useCallback(async <T,>(write: () => Promise<T>): Promise<T> => {
+    writing.current += 1;
+    try {
+      return await write();
+    } finally {
+      writing.current -= 1;
+    }
+  }, []);
 
   // The org directory, read once per visit rather than on every re-read: each drag, save, delete or
   // review re-reads the project, and walking every department partition again to redraw a board was
@@ -125,9 +180,17 @@ export function useProjectDetail(id: string): ProjectDetailData {
 
   useEffect(() => {
     let live = true;
-    setLoading(true);
-    setError(null);
-    setNotFound(false);
+    // A poll is quiet: no spinner, and the page's state stays as it is until the answer is in — an
+    // error screen must not flash away and back while it asks again.
+    const background = isBackground();
+    const gen = optimisticGen.current;
+    reading.current = true;
+    missedTick.current = false;
+    if (!background) {
+      setLoading(true);
+      setError(null);
+      setNotFound(false);
+    }
 
     (async () => {
       try {
@@ -136,11 +199,22 @@ export function useProjectDetail(id: string): ProjectDetailData {
         // a project whose tasks had all been deleted (QA audit 2026-10-08, WP-302).
         const [detail, board] = await Promise.all([getProject(id), getBoard(id)]);
         if (!live) return;
-        setProject(toProject(detail));
-        setAuthority(detail.authority);
-        setMembers(detail.members);
-        setTasks(boardTasks(board, detail.id));
+        // A card moved while this was out: the move's own re-read follows, and this one would
+        // spring it back in the meantime.
+        if (optimisticGen.current !== gen) return;
+        // The projects API serves no ETag, so a poll can't be answered 304; comparing the answer is
+        // the next best thing — an unchanged board isn't re-rendered twice a minute.
+        const read = JSON.stringify([detail, board]);
+        if (!background || read !== lastRead.current) {
+          setProject(toProject(detail));
+          setAuthority(detail.authority);
+          setMembers(detail.members);
+          setTasks(boardTasks(board, detail.id));
+        }
+        lastRead.current = read;
         setRefreshError(null);
+        setError(null);
+        setNotFound(false);
         loadedFor.current = id;
       } catch (e) {
         if (!live) return;
@@ -151,14 +225,27 @@ export function useProjectDetail(id: string): ProjectDetailData {
         else if (loadedFor.current === id) setRefreshError(messageOf(e));
         else setError(messageOf(e));
       } finally {
-        if (live) setLoading(false);
+        if (live) {
+          setLoading(false);
+          reading.current = false;
+        }
       }
     })();
 
     return () => {
       live = false;
     };
-  }, [id, nonce]);
+  }, [id, nonce, isBackground]);
+
+  // After the effect above, so a re-read that a save has just started has cleared `missedTick`.
+  useEffect(() => {
+    pausedRef.current = paused;
+    // Let go after a tick was skipped for it: catch up now, not up to 30 s later.
+    if (!paused && missedTick.current) {
+      missedTick.current = false;
+      refresh();
+    }
+  }, [paused, refresh]);
 
   // Names come from the project itself first, the org directory second. `GET /v1/employees` needs
   // `EmployeesRead`, which an Employee doesn't have — it 403s, and the team dialog used to show a
@@ -180,8 +267,8 @@ export function useProjectDetail(id: string): ProjectDetailData {
    * flip the page into its not-found state. The caller navigates away instead.
    */
   const deleteProject = useCallback(async () => {
-    await apiDeleteProject(id);
-  }, [id]);
+    await whileWriting(() => apiDeleteProject(id));
+  }, [id, whileWriting]);
 
   const updateProject = useCallback(
     async (v: ProjectFormValues) => {
@@ -211,38 +298,42 @@ export function useProjectDetail(id: string): ProjectDetailData {
       const key = v.key?.trim().toUpperCase() ?? "";
       // "" clears a key the project had (WP-413); unchanged keys aren't sent.
       if (key !== (project.key ?? "")) patch.key = key;
-      await apiUpdateProject(id, patch);
+      await whileWriting(async () => {
+        await apiUpdateProject(id, patch);
 
-      // Membership and roles are separate resources the same dialog edits. Without these the PATCH
-      // succeeded, the toast said "saved", and the member just added or the lead just picked was
-      // never written — the edit silently lost half of itself.
-      try {
-        await saveTeam(id, project, v);
-      } finally {
-        // Re-read whatever happened: a partial save must show what did go through, and the next
-        // attempt must compute its changes from the truth rather than from this stale copy.
-        reload();
-      }
+        // Membership and roles are separate resources the same dialog edits. Without these the
+        // PATCH succeeded, the toast said "saved", and the member just added or the lead just picked
+        // was never written — the edit silently lost half of itself.
+        try {
+          await saveTeam(id, project, v);
+        } finally {
+          // Re-read whatever happened: a partial save must show what did go through, and the next
+          // attempt must compute its changes from the truth rather than from this stale copy.
+          reload();
+        }
+      });
     },
-    [id, project, reload],
+    [id, project, reload, whileWriting],
   );
 
   const createTask = useCallback(
     async (v: TaskFormValues) => {
-      await apiCreateTask(id, {
-        title: v.title,
-        description: v.description,
-        status: v.status,
-        assignee_ids: v.assigneeIds,
-        due: v.dueDate || undefined,
-        priority: v.priority,
-        // Omitted when there is none: an estimate of zero is a different statement.
-        ...(v.estimateHours !== null ? { estimate_hours: v.estimateHours } : {}),
-        attachments: v.attachments,
-      });
+      await whileWriting(() =>
+        apiCreateTask(id, {
+          title: v.title,
+          description: v.description,
+          status: v.status,
+          assignee_ids: v.assigneeIds,
+          due: v.dueDate || undefined,
+          priority: v.priority,
+          // Omitted when there is none: an estimate of zero is a different statement.
+          ...(v.estimateHours !== null ? { estimate_hours: v.estimateHours } : {}),
+          attachments: v.attachments,
+        }),
+      );
       reload();
     },
-    [id, reload],
+    [id, reload, whileWriting],
   );
 
   const updateTask = useCallback(
@@ -251,7 +342,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
       // Nothing changed — and the server refuses an empty PATCH.
       if (!patch) return;
       try {
-        await apiUpdateTask(id, before.id, patch);
+        await whileWriting(() => apiUpdateTask(id, before.id, patch));
       } catch (e) {
         // Changed (409 `task_changed`) or deleted since the board was read: re-read, so the person
         // decides again looking at what is actually there.
@@ -260,7 +351,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
       }
       reload();
     },
-    [id, reload],
+    [id, reload, whileWriting],
   );
 
   const reviewerIds = useMemo(
@@ -274,7 +365,9 @@ export function useProjectDetail(id: string): ProjectDetailData {
   const moveTask = useCallback(
     async (taskId: string, status: TaskStatus) => {
       // Optimistic: the card should snap columns instantly on drop; the re-read reconciles. A review
-      // belongs to Done, so it doesn't travel with the card out of it.
+      // belongs to Done, so it doesn't travel with the card out of it. A read already out is now
+      // older than the board (see `optimisticGen`).
+      optimisticGen.current += 1;
       setTasks((prev) =>
         prev.map((t) =>
           t.id === taskId
@@ -283,22 +376,22 @@ export function useProjectDetail(id: string): ProjectDetailData {
         ),
       );
       try {
-        await apiUpdateTask(id, taskId, { status });
+        await whileWriting(() => apiUpdateTask(id, taskId, { status }));
       } finally {
         // On success, fresh KPIs; on a refusal, the truth — the card goes back, and the caller says
         // why (the move used to spring back with no word at all — QA audit 2026-10-08, WP-303).
         reload();
       }
     },
-    [id, reload],
+    [id, reload, whileWriting],
   );
 
   const deleteTask = useCallback(
     async (taskId: string) => {
-      await apiDeleteTask(id, taskId);
+      await whileWriting(() => apiDeleteTask(id, taskId));
       reload();
     },
-    [id, reload],
+    [id, reload, whileWriting],
   );
 
   return {

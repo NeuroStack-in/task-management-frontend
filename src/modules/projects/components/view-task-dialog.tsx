@@ -18,7 +18,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { cn } from "@/lib/utils";
 import { formatDate, formatDuration, formatHours, isoDay, personName } from "@/lib/format";
 import {
-  TASK_PRIORITY_META,
   TASK_STATUS_META,
   type Attachment,
   type Subtask,
@@ -26,9 +25,9 @@ import {
   type Task,
   type TaskStatus,
 } from "../types";
-import { toneSoft, type UserMini } from "../lib";
+import { type UserMini } from "../lib";
 import { AssignedByLine } from "./assignees";
-import { StatusBadge } from "./parts";
+import { PriorityBadge, TaskStatusBadge } from "./parts";
 import { getAttachmentDownloadUrl, listSubtasks } from "../services/projects.service";
 import { getRange } from "@/modules/time-tracking/services/timesheet.service";
 import { TaskActionsBar, type TaskActionHandlers } from "./task-actions";
@@ -344,8 +343,6 @@ export function ViewTaskDialog({
 
   if (!task) return null;
 
-  const status = TASK_STATUS_META[task.status];
-  const prio = TASK_PRIORITY_META[task.priority];
 
   const closeViewer = () => {
     viewSeq.current += 1;
@@ -391,15 +388,10 @@ export function ViewTaskDialog({
               {task.title}
             </DialogTitle>
             <DialogDescription className="flex flex-wrap items-center gap-2 pt-1">
-              <StatusBadge tone={status.tone} label={status.label} />
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                  toneSoft[prio.tone],
-                )}
-              >
-                {prio.label} priority
-              </span>
+              {/* Blocked with its stop sign, priority as an outlined tag with an arrow — the three
+                  ambers used to be told apart by nothing but the words (UX audit PROJ-21). */}
+              <TaskStatusBadge status={task.status} />
+              <PriorityBadge priority={task.priority} suffix=" priority" />
             </DialogDescription>
           </DialogHeader>
 

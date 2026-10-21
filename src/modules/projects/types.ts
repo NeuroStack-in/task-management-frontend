@@ -196,7 +196,7 @@ export const PROJECT_STATUS_ORDER: ProjectStatus[] = ["active", "on_hold", "comp
 
 export interface TaskStatusMeta {
   label: string;
-  tone: "muted" | "primary" | "warning" | "success";
+  tone: "muted" | "primary" | "warning" | "success" | "negative";
 }
 
 export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
@@ -204,7 +204,10 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
   in_progress: { label: "In progress", tone: "primary" },
   in_review: { label: "In review", tone: "warning" },
   done: { label: "Done", tone: "success" },
-  blocked: { label: "Blocked", tone: "warning" },
+  // Red, not amber: Blocked, In review and Medium priority all wore the same amber, so a stuck task
+  // read as one waiting for sign-off (UX audit PROJ-21). It also carries an icon wherever it shows
+  // (`TASK_STATUS_ICON` in `components/parts.tsx`), so colour is never the only signal.
+  blocked: { label: "Blocked", tone: "negative" },
 };
 
 // `blocked` sits last — an exception state, not a stage in the flow (LLD §5).
@@ -249,9 +252,12 @@ export function isOpenTaskStatus(status: string): boolean {
 
 export const TASK_PRIORITY_META: Record<
   TaskPriority,
-  { label: string; tone: "muted" | "warning" | "negative" }
+  { label: string; tone: "muted" | "warning" | "negative"; rank: number }
 > = {
-  low: { label: "Low", tone: "muted" },
-  medium: { label: "Medium", tone: "warning" },
-  high: { label: "High", tone: "negative" },
+  // `rank` orders a board column, most urgent first (UX audit PROJ-22). The colour is backed by an
+  // arrow (`PRIORITY_ICON` in `components/parts.tsx`) — Medium shared its amber with In review and
+  // Blocked, and colour was the only way to tell them apart (PROJ-21).
+  low: { label: "Low", tone: "muted", rank: 2 },
+  medium: { label: "Medium", tone: "warning", rank: 1 },
+  high: { label: "High", tone: "negative", rank: 0 },
 };

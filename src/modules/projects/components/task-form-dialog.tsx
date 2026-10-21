@@ -5,7 +5,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2, Paperclip, X } from "lucide-react";
+import { Loader2, Paperclip, X, type LucideIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -35,8 +35,10 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "../types";
-import { toneDot, type UserMini } from "../lib";
+import { toneDot, toneText, type UserMini } from "../lib";
 import { AssigneePicker } from "./assignees";
+import { DIM_UNDER_PROMPT, DiscardChangesDialog, useDiscardGuard } from "./discard-changes";
+import { PRIORITY_ICON, TASK_STATUS_ICON } from "./parts";
 import {
   presignTaskAttachment,
   uploadFileToPresignedUrl,
@@ -234,7 +236,7 @@ export function TaskFormDialog({
     handleSubmit,
     reset,
     control,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<FormShape>({
     resolver: zodResolver(schemaWithMinDue(minDue)),
     defaultValues: { ...EMPTY, ...formInitial },
@@ -251,6 +253,21 @@ export function TaskFormDialog({
 
   const isEdit = mode === "edit";
   const uploading = pending.length > 0;
+
+  /**
+   * Has anything been edited since the form opened? The fields, or the files — which live outside
+   * the form — added, removed or still uploading. Esc, an outside click or the X then ask before
+   * throwing it away (UX audit PROJ-19).
+   */
+  const initialFileIds = (initial?.attachments ?? []).map((a) => a.id).sort().join(",");
+  const edited =
+    isDirty ||
+    uploading ||
+    attachments.map((a) => a.id).sort().join(",") !== initialFileIds;
+  const guard = useDiscardGuard(open, edited, () => {
+    reset({ ...EMPTY, ...formInitial });
+    onOpenChange(false);
+  });
 
   /** Validate, presign, and upload each file, then record it. Enforces the per-task file cap. */
   const processFiles = async (files: File[]) => {
@@ -365,11 +382,14 @@ export function TaskFormDialog({
       onOpenChange={(o) => {
         // Not while a save is in flight: closing then would lose the form if the save fails.
         if (!o && submitting) return;
-        if (!o) reset({ ...EMPTY, ...formInitial });
-        onOpenChange(o);
+        // Esc, an outside click and the X: straight closed when untouched, asked first when not.
+        if (!o) guard.requestClose();
+        else onOpenChange(o);
       }}
     >
-      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-md">
+      <DialogContent className={cn("flex max-h-[90vh] flex-col sm:max-w-md", DIM_UNDER_PROMPT)}>
+        {/* Inside the content, so it nests: Esc closes the question, not the form (PROJ-19). */}
+        <DiscardChangesDialog {...guard.prompt} />
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit task" : "Add task"}</DialogTitle>
           <DialogDescription>
@@ -426,6 +446,7 @@ export function TaskFormDialog({
                             <TonePill
                               tone={TASK_STATUS_META[v as TaskStatus]?.tone}
                               label={TASK_STATUS_META[v as TaskStatus]?.label}
+                              icon={TASK_STATUS_ICON[v as TaskStatus]}
                             />
                           )}
                         </SelectValue>
@@ -436,6 +457,7 @@ export function TaskFormDialog({
                             <TonePill
                               tone={TASK_STATUS_META[s].tone}
                               label={TASK_STATUS_META[s].label}
+                              icon={TASK_STATUS_ICON[s]}
                             />
                           </SelectItem>
                         ))}
@@ -460,6 +482,7 @@ export function TaskFormDialog({
                             <TonePill
                               tone={TASK_PRIORITY_META[v as TaskPriority]?.tone}
                               label={TASK_PRIORITY_META[v as TaskPriority]?.label}
+                              icon={PRIORITY_ICON[v as TaskPriority]}
                             />
                           )}
                         </SelectValue>
@@ -470,6 +493,7 @@ export function TaskFormDialog({
                             <TonePill
                               tone={TASK_PRIORITY_META[p].tone}
                               label={TASK_PRIORITY_META[p].label}
+                              icon={PRIORITY_ICON[p]}
                             />
                           </SelectItem>
                         ))}
@@ -644,10 +668,26 @@ export function TaskFormDialog({
   );
 }
 
-function TonePill({ tone, label }: { tone?: string; label?: string }) {
+function TonePill({
+  tone,
+  label,
+  icon: Icon,
+}: {
+  tone?: string;
+  label?: string;
+  /** Blocked's stop sign, a priority's arrow — so the option isn't told by colour alone (PROJ-21). */
+  icon?: LucideIcon;
+}) {
   return (
     <span className="flex items-center gap-2">
-      {tone ? <span className={cn("size-2 rounded-full", toneDot[tone as keyof typeof toneDot])} /> : null}
+      {Icon ? (
+        <Icon
+          className={cn("size-3.5 shrink-0", toneText[tone as keyof typeof toneText])}
+          aria-hidden="true"
+        />
+      ) : tone ? (
+        <span className={cn("size-2 rounded-full", toneDot[tone as keyof typeof toneDot])} />
+      ) : null}
       {label ?? "Select"}
     </span>
   );

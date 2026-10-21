@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -11,6 +12,7 @@ import {
 } from "../types";
 import {
   dueLabel,
+  duePhrase,
   toneDot,
   type UserMini,
 } from "../lib";
@@ -26,7 +28,8 @@ interface ProjectsListProps {
   projects: Project[];
   userMap: Record<string, UserMini>;
   taskSummary: Record<string, TaskSummary>;
-  onOpen: (id: string) => void;
+  /** A project's page — each row is a link to it (UX audit PROJ-23). */
+  hrefFor: (id: string) => string;
 }
 
 const ROW =
@@ -36,7 +39,7 @@ export function ProjectsList({
   projects,
   userMap,
   taskSummary,
-  onOpen,
+  hrefFor,
 }: ProjectsListProps) {
   const [collapsed, setCollapsed] = useState<Set<ProjectStatus>>(new Set());
 
@@ -120,10 +123,11 @@ export function ProjectsList({
                   const summary = taskSummary[p.id] ?? { done: 0, total: 0 };
 
                   return (
-                    <button
+                    // A link, not a button that navigated in code: it opens in a new tab like any
+                    // other (UX audit PROJ-23).
+                    <Link
                       key={p.id}
-                      type="button"
-                      onClick={() => onOpen(p.id)}
+                      href={hrefFor(p.id)}
                       className={cn(
                         ROW,
                         "w-full border-b text-left transition-colors last:border-b-0 hover:bg-muted/40",
@@ -179,20 +183,29 @@ export function ProjectsList({
                         </p>
                       </div>
 
-                      {/* Due */}
-                      <div className="hidden text-right md:block">
+                      {/* Due — on a phone too, beside the progress bar: the column was hidden below
+                          `md` and the date went with it (UX audit PROJ-23). No column header there,
+                          so it reads as a phrase. */}
+                      <div className="text-right">
                         <span
                           className={cn(
-                            "text-xs font-medium tabular-nums",
+                            "text-xs font-medium whitespace-nowrap tabular-nums",
                             due.overdue
                               ? "text-destructive"
                               : "text-muted-foreground",
                           )}
                         >
-                          {due.text}
+                          {p.dueDate ? (
+                            <>
+                              <span className="md:hidden">{duePhrase(due)}</span>
+                              <span className="hidden md:inline">{due.text}</span>
+                            </>
+                          ) : (
+                            "No end date"
+                          )}
                         </span>
                       </div>
-                    </button>
+                    </Link>
                   );
                 })}
               </div>

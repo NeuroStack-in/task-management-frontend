@@ -1,20 +1,20 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { ListChecks } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
-  TASK_PRIORITY_META,
   TASK_STATUS_META,
   type Project,
   type Task,
   type TaskStatus,
 } from "../types";
-import { dueLabel, isTaskOverdue, toneDot, toneSoft, type UserMini } from "../lib";
+import { dueLabel, duePhrase, isTaskOverdue, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
-import { StatusBadge } from "./parts";
+import { PriorityBadge, PriorityIcon, TaskStatusBadge } from "./parts";
 
 type Filter = TaskStatus | "all" | "overdue";
 
@@ -36,10 +36,11 @@ interface TasksViewProps {
   /** Offered from the empty "Assigned to me" state. */
   onShowEveryone?: () => void;
   /**
-   * Open this task. A row used to open its **project**, leaving the person to find the task on the
-   * board (UX audit PROJ-03); the caller now links straight to it.
+   * Where a row goes — the task itself. A row used to open its **project**, leaving the person to
+   * find the task on the board (UX audit PROJ-03). Now a real link rather than a button that
+   * navigated in code, so it opens in a new tab like any other (PROJ-23).
    */
-  onOpenTask: (task: Task) => void;
+  taskHref: (task: Task) => string;
 }
 
 export function TasksView({
@@ -50,7 +51,7 @@ export function TasksView({
   userMap,
   scope,
   onShowEveryone,
-  onOpenTask,
+  taskHref,
 }: TasksViewProps) {
   const visible = useMemo(() => {
     const list =
@@ -122,24 +123,16 @@ export function TasksView({
       <ul className="divide-y">
         {visible.map((t) => {
           const project = projectMap[t.projectId];
-          const prio = TASK_PRIORITY_META[t.priority];
-          const status = TASK_STATUS_META[t.status];
           // Signed-off work past its date was finished, not late (WP-377).
           const due = dueLabel(t.dueDate, t.status === "done");
           return (
             <li key={t.id}>
-              <button
-                type="button"
-                onClick={() => onOpenTask(t)}
+              <Link
+                href={taskHref(t)}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
               >
-                <span
-                  className={cn(
-                    "size-2 shrink-0 rounded-full",
-                    toneDot[prio.tone],
-                  )}
-                  title={`${prio.label} priority`}
-                />
+                {/* An arrow, not a coloured dot (UX audit PROJ-21). */}
+                <PriorityIcon priority={t.priority} />
                 <div className="min-w-0 flex-1">
                   <p
                     className={cn(
@@ -171,6 +164,17 @@ export function TasksView({
                       </span>
                     ) : null}
                   </p>
+                  {/* The due column is hidden below `sm`; a phone still needs the date (PROJ-23). */}
+                  {t.dueDate ? (
+                    <p
+                      className={cn(
+                        "mt-0.5 text-[0.7rem] tabular-nums sm:hidden",
+                        due.overdue ? "text-destructive" : "text-muted-foreground",
+                      )}
+                    >
+                      {duePhrase(due)}
+                    </p>
+                  ) : null}
                 </div>
                 <span
                   className={cn(
@@ -180,14 +184,7 @@ export function TasksView({
                 >
                   {due.text}
                 </span>
-                <span
-                  className={cn(
-                    "hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium md:inline-flex",
-                    toneSoft[prio.tone],
-                  )}
-                >
-                  {prio.label}
-                </span>
+                <PriorityBadge priority={t.priority} className="hidden md:inline-flex" />
                 {/* Who it's on — the tab had no assignee anywhere (PROJ-03). */}
                 <AssigneeStack
                   assignees={t.assignees}
@@ -196,12 +193,8 @@ export function TasksView({
                   ringClass="ring-card"
                   className="shrink-0"
                 />
-                <StatusBadge
-                  tone={status.tone}
-                  label={status.label}
-                  className="shrink-0"
-                />
-              </button>
+                <TaskStatusBadge status={t.status} className="shrink-0" />
+              </Link>
             </li>
           );
         })}

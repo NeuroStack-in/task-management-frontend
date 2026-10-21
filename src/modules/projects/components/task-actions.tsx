@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { TASK_STATUS_META, type TaskStatus } from "../types";
-import { toneDot, type MoveOption } from "../lib";
+import { type MoveOption } from "../lib";
+import { StatusMark } from "./parts";
 
 /** The actions a caller grants — each absent when this person may not take it. */
 export interface TaskActionHandlers {
@@ -51,10 +52,10 @@ function MoveItems({ moves, onMove }: { moves: MoveOption[]; onMove: (s: TaskSta
             // A disabled item still reads its reason — the label carries it.
             className={cn("items-start", refused && "data-disabled:opacity-100")}
           >
-            <span
-              className={cn("mt-1.5 size-2 shrink-0 rounded-full", toneDot[meta.tone], refused && "opacity-50")}
-              aria-hidden="true"
-            />
+            {/* Blocked's stop sign, not only its colour (UX audit PROJ-21). */}
+            <span className="flex h-5 shrink-0 items-center">
+              <StatusMark status={m.status} className={cn(refused && "opacity-50")} />
+            </span>
             <span className="flex min-w-0 flex-col leading-snug">
               <span className={cn(refused && "text-muted-foreground")}>
                 {meta.label}
@@ -103,8 +104,9 @@ export function TaskActionsMenu({
         className={cn(
           "bg-card text-muted-foreground hover:bg-muted hover:text-foreground flex size-7 items-center justify-center rounded-lg border shadow-sm transition-opacity",
           "opacity-0 group-hover/task:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100",
-          // A touch screen has no hover: always shown, and a finger-sized target (PROJ-24).
-          "[@media(hover:none)]:size-9 [@media(hover:none)]:opacity-100",
+          // A touch screen has no hover: always shown, and a finger-sized target — 40 px, from 28
+          // (UX audit PROJ-24).
+          "pointer-coarse:size-10 [@media(hover:none)]:opacity-100",
         )}
       >
         <MoreHorizontal className="size-4" />
