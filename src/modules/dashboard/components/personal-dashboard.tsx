@@ -2,12 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  Clock,
-  ListChecks,
-  FolderKanban,
-  ArrowRight,
-} from "lucide-react";
+import { Clock, ArrowRight } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { TimerStatCard } from "./timer-stat-card";
 import { MeetingHoursCard } from "@/modules/integrations/components/meeting-hours-card";
@@ -218,8 +213,15 @@ export function PersonalDashboard() {
       {/* Is my device connected? Renders nothing while that is unknown (EMP-09). */}
       <DeviceStatusCard />
 
-      {/* Personal KPI strip */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="dash:kpis">
+      {/* Personal KPI strip — time only. "Open tasks" and "My projects" tiles used to sit here
+          too, repeating the two cards below (their counts now ride those cards' headers), and on
+          a phone the strip took ≈ 560 px before the first task (UX audit 2026-10-16, SHELL-19).
+          `auto-fit` so the two or three tiles left fill the row instead of leaving empty slots;
+          one column on a phone. */}
+      <div
+        className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-4"
+        data-tour="dash:kpis"
+      >
         {showTimer && (
           <TimerStatCard running={tracked.runningRow} settledSec={tracked.todaySettledSec} />
         )}
@@ -235,24 +237,6 @@ export function PersonalDashboard() {
           // sending someone to a page that shows a different figure is how the two get mistrusted.
           href="/time-tracking"
         />
-        {showProjects && (
-          <>
-            <StatCard
-              label="Open Tasks"
-              value={workUnknown ? "—" : openTasks.length}
-              icon={ListChecks}
-              hint={workUnknown ? "couldn't load" : `${doneCount} completed`}
-              href="/projects"
-            />
-            <StatCard
-              label="My Projects"
-              value={workUnknown ? "—" : myProjects.length}
-              icon={FolderKanban}
-              hint={workUnknown ? "couldn't load" : "you're a member of"}
-              href="/projects"
-            />
-          </>
-        )}
       </div>
 
       {/* The week card is attendance and logged time — nothing to do with Projects — so it no longer
@@ -266,6 +250,9 @@ export function PersonalDashboard() {
             className="xl:col-span-2"
             error={work.error}
             onRetry={work.reload}
+            // The counts the "Open tasks" tile carried (SHELL-19). Unknown after a failed read —
+            // the card says so itself — so no count is shown then, never a confident 0.
+            summary={workUnknown ? undefined : `${openTasks.length} open · ${doneCount} completed`}
           />
         )}
 
@@ -276,9 +263,10 @@ export function PersonalDashboard() {
         >
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">This week</h2>
+            {/* The palette's link colour, not a fixed blue that matched no palette (SHELL-19). */}
             <Link
               href="/attendance"
-              className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
+              className="text-primary flex items-center gap-1 text-sm font-medium underline-offset-2 hover:underline"
             >
               Details <ArrowRight className="size-3.5" />
             </Link>
@@ -345,11 +333,19 @@ export function PersonalDashboard() {
         {/* My projects */}
         {showProjects && (
         <Card className="gap-0 p-0 [--card-spacing:0px] xl:col-span-3">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
-            <h2 className="font-display text-base font-semibold tracking-tight">My projects</h2>
+          <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h2 className="font-display text-base font-semibold tracking-tight">My projects</h2>
+              {/* The count the "My projects" tile carried (SHELL-19) — the list below stops at six. */}
+              {!workUnknown && myProjects.length > 0 ? (
+                <span className="text-muted-foreground text-xs tabular-nums">
+                  {myProjects.length} {myProjects.length === 1 ? "project" : "projects"}
+                </span>
+              ) : null}
+            </div>
             <Link
               href="/projects"
-              className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
+              className="text-primary flex shrink-0 items-center gap-1 text-sm font-medium underline-offset-2 hover:underline"
             >
               View all <ArrowRight className="size-3.5" />
             </Link>

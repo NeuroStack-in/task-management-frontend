@@ -20,6 +20,13 @@ import {
 } from "@/modules/insights/services/insights.service";
 import { type DashboardRange } from "../lib/dashboard-data";
 import { Markdown } from "@/components/shared/markdown";
+import {
+  canRegenerate,
+  deptSummaryProvenance,
+  formatGeneratedAt,
+  provenanceLine,
+  type Provenance,
+} from "@/modules/insights/lib/ai-provenance";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { useAssistantAccess } from "@/hooks/use-assistant-access";
 
@@ -87,6 +94,11 @@ export function OrgAiSummaryWidget({
   const canAsk = useAssistantAccess().chat;
   const [narrative, setNarrative] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState<number | null>(null);
+  /** Did anyone in the window get a score? With nobody scored the server writes its own fixed
+   *  sentence and never calls the model, so a re-run could only repeat it (MON-21). */
+  const [hasData, setHasData] = useState(false);
+  /** Who wrote the narrative — the AI mark and the "generated" line follow it (XC-08, MON-08). */
+  const [provenance, setProvenance] = useState<Provenance>({ kind: "none" });
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,8 +128,15 @@ export function OrgAiSummaryWidget({
   // dropdown never changes which orgs can read a summary. The plain GET serves the server-cached
   // narrative; Regenerate forces a fresh model run.
   const fetchSummary = useCallback(
-    async (force: boolean): Promise<{ narrative: string; generatedAt: number | null }> => {
-      if (!from || !to) throw new Error("No window to summarise.");
+    async (
+      force: boolean,
+    ): Promise<{
+      narrative: string;
+      generatedAt: number | null;
+      scored: number;
+      provenance: Provenance;
+    }> => {
+      if (!from || !to) throw new Error("No window to summarize.");
       const args: DeptSummaryArgs = {
         department,
         label: departmentLabel,
@@ -126,7 +145,15 @@ export function OrgAiSummaryWidget({
         period: rangeLabel,
       };
       const r = force ? await regenerateDeptSummary(args) : await getDeptSummary(args);
-      return { narrative: r.narrative, generatedAt: r.generated_at };
+      return {
+        narrative: r.narrative,
+        generatedAt: r.generated_at,
+        scored: r.metrics?.scored_people ?? 0,
+        provenance: deptSummaryProvenance({
+          ...r,
+          metrics: { scored_people: r.metrics?.scored_people ?? 0 },
+        }),
+      };
     },
     [department, departmentLabel, from, to, rangeLabel],
   );
@@ -142,6 +169,8 @@ export function OrgAiSummaryWidget({
     if (!from || !to) {
       setNarrative(null);
       setGeneratedAt(null);
+      setHasData(false);
+      setProvenance({ kind: "none" });
       setLoading(false);
       return;
     }
@@ -151,6 +180,8 @@ export function OrgAiSummaryWidget({
         if (id !== ticket.current) return;
         setNarrative(r.narrative);
         setGeneratedAt(r.generatedAt);
+        setHasData(r.scored > 0);
+        setProvenance(r.provenance);
       })
       .catch((e) => {
         if (id === ticket.current) setError(errorMessage(e, "Couldn't load the AI summary."));
@@ -160,8 +191,15 @@ export function OrgAiSummaryWidget({
       });
   }, [fetchSummary, from, to]);
 
+  /**
+   * Regenerate is a fresh, billed model run, so it is offered only when there is something to
+   * analyse and text on screen to replace — the shared rule every AI card follows (UX audit
+   * 2026-10-16, MON-21). It stays up while a run is in flight so its spinner has somewhere to be.
+   */
+  const offerRegenerate = regenerating || canRegenerate(hasData, narrative);
+
   async function regenerate() {
-    if (regenerating || loading || !from || !to) return;
+    if (regenerating || loading || !from || !to || !canRegenerate(hasData, narrative)) return;
     const id = ++ticket.current;
     setRegenerating(true);
     setError(null);
@@ -170,6 +208,8 @@ export function OrgAiSummaryWidget({
       if (id !== ticket.current) return; // the window changed while the model ran
       setNarrative(r.narrative);
       setGeneratedAt(r.generatedAt);
+      setHasData(r.scored > 0);
+      setProvenance(r.provenance);
     } catch (e) {
       // Keep the previous narrative on screen — a failed re-run shouldn't blank a good summary.
       if (id === ticket.current) setError(errorMessage(e, "Couldn't regenerate the summary."));
@@ -188,7 +228,15 @@ export function OrgAiSummaryWidget({
           other action at the foot of the card instead. */}
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Sparkles className="size-4" /> AI summary
+          {/* The AI mark only on model output (UX audit XC-08): with nobody scored the server sends its
+              own fixed sentence, which was presented as an "AI summary" with the sparkle. */}
+          {provenance.kind === "computed" ? (
+            "Summary"
+          ) : (
+            <>
+              <Sparkles className="size-4" /> AI summary
+            </>
+          )}
           {PERIOD_NOTE[range] ? (
             <span className="text-[11px] font-normal text-feature-foreground/60">
               · {PERIOD_NOTE[range]}
@@ -206,9 +254,13 @@ export function OrgAiSummaryWidget({
             {/* The prompt returns a markdown bullet list; a bare <p> printed the "- " literally
                 and ran every bullet into one line. */}
             <Markdown className="flex-1">{narrative}</Markdown>
-            {generatedAt ? (
+            {/* Who wrote it, in the line every AI card prints (`provenanceLine`, MON-08); the one
+                date-time notation either way (`formatGeneratedAt` → `formatDateTime`, XC-06). */}
+            {provenance.kind !== "none" ? (
+              <p className="text-[11px] text-feature-foreground/60">{provenanceLine(provenance)}</p>
+            ) : formatGeneratedAt(generatedAt) ? (
               <p className="text-[11px] text-feature-foreground/60">
-                Generated {new Date(generatedAt).toLocaleString()}
+                Generated {formatGeneratedAt(generatedAt)}
               </p>
             ) : null}
           </>
@@ -222,7 +274,7 @@ export function OrgAiSummaryWidget({
               type="button"
               onClick={() =>
                 openAssistant(
-                  `Summarise ${rangeLabel ?? "this week"}'s productivity and flag any burnout risks.`,
+                  `Summarize ${rangeLabel ?? "this week"}'s productivity and flag any burnout risks.`,
                 )
               }
               className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
@@ -230,16 +282,18 @@ export function OrgAiSummaryWidget({
               Ask the assistant <ArrowUpRight className="size-3.5" />
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={regenerate}
-            disabled={loading || regenerating}
-            title="Regenerate summary"
-            className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-feature-foreground/80 transition-colors hover:bg-white/15 hover:text-feature-foreground disabled:pointer-events-none disabled:opacity-50"
-          >
-            <RefreshCw className={`size-3.5 ${regenerating ? "animate-spin" : ""}`} />
-            {regenerating ? "Regenerating…" : "Regenerate"}
-          </button>
+          {offerRegenerate ? (
+            <button
+              type="button"
+              onClick={regenerate}
+              disabled={loading || regenerating}
+              title="Regenerate summary"
+              className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-feature-foreground/80 transition-colors hover:bg-white/15 hover:text-feature-foreground disabled:pointer-events-none disabled:opacity-50"
+            >
+              <RefreshCw className={`size-3.5 ${regenerating ? "animate-spin" : ""}`} />
+              {regenerating ? "Regenerating…" : "Regenerate"}
+            </button>
+          ) : null}
         </div>
       </CardContent>
     </Card>

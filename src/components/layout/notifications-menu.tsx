@@ -123,12 +123,16 @@ export function NotificationsMenu() {
                   className="hover:bg-accent flex w-full flex-col items-start gap-0.5 rounded-none px-3 py-2.5 text-left"
                 >
                   <div className="flex w-full items-center gap-2">
+                    {/* Read/unread was the dot's colour alone; the words are for a screen reader
+                        (UX audit 2026-10-16, SHELL-20). */}
                     <span
                       className={cn(
                         "size-2 shrink-0 rounded-full",
                         n.read ? "bg-transparent" : "bg-primary",
                       )}
-                    />
+                    >
+                      {!n.read ? <span className="sr-only">Unread:</span> : null}
+                    </span>
                     <span className="flex-1 truncate text-sm font-medium">{n.title}</span>
                     <span className="text-muted-foreground shrink-0 text-[11px]">
                       {timeAgo(n.createdAt)}

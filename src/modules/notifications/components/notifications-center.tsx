@@ -29,6 +29,12 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useNotifications } from "../use-notifications";
 import { NOTIFICATION_TYPE_META } from "@/modules/notifications/lib/type-meta";
+import {
+  countByType,
+  emptyCopy,
+  typeFilters,
+  type NotificationFilter,
+} from "@/modules/notifications/lib/filters";
 import { timeAgo } from "@/lib/format";
 import type { NotificationType } from "@/types";
 import type { PermissionId } from "@/types/rbac";
@@ -82,9 +88,7 @@ export function NotificationsCenter() {
   const { markRead, markAllRead, dismiss, loading, error, reload } = useNotifications();
   const { can } = usePermissions();
 
-  const [filter, setFilter] = useState<NotificationType | "all" | "unread">(
-    "all",
-  );
+  const [filter, setFilter] = useState<NotificationFilter>("all");
 
   const router = useRouter();
 
@@ -116,6 +120,10 @@ export function NotificationsCenter() {
     if (filter === "unread") return !n.read;
     return n.type === filter;
   });
+
+  // A type gets a filter only when the feed holds one of it (UX audit 2026-10-16, SHELL-20).
+  const typeCounts = countByType(allowed);
+  const shownTypes = typeFilters(TYPES.filter(canType), typeCounts, filter);
 
   // Publish the notification counts + active filter to the assistant.
   useAssistantPageContext({
@@ -184,8 +192,9 @@ export function NotificationsCenter() {
 
       {/* Feed */}
       <div className="space-y-4">
-        {/* Filter pills */}
-          <div className="flex flex-wrap gap-2">
+        {/* Filter pills — toggle buttons, so each says whether it is on (`aria-pressed`), not only
+            its colour. */}
+          <div role="group" aria-label="Filter notifications" className="flex flex-wrap gap-2">
             <FilterPill
               label={`All${allowed.length ? ` · ${allowed.length}` : ""}`}
               active={filter === "all"}
@@ -196,10 +205,10 @@ export function NotificationsCenter() {
               active={filter === "unread"}
               onClick={() => setFilter("unread")}
             />
-            {TYPES.filter(canType).map((t) => (
+            {shownTypes.map((t) => (
               <FilterPill
                 key={t}
-                label={NOTIFICATION_TYPE_META[t].label}
+                label={`${NOTIFICATION_TYPE_META[t].label}${typeCounts.get(t) ? ` · ${typeCounts.get(t)}` : ""}`}
                 active={filter === t}
                 onClick={() => setFilter(t)}
               />
@@ -222,10 +231,17 @@ export function NotificationsCenter() {
               }
             />
           ) : visible.length === 0 ? (
+            // Said for the filter that is on (SHELL-20).
             <EmptyState
               icon={BellOff}
-              title="Nothing here"
-              description="You're all caught up. New notifications will show up here."
+              {...emptyCopy(filter, allowed.length)}
+              action={
+                filter !== "all" && allowed.length > 0 ? (
+                  <Button variant="outline" size="sm" onClick={() => setFilter("all")}>
+                    Show all notifications
+                  </Button>
+                ) : undefined
+              }
             />
           ) : (
             <Card className="p-0 [--card-spacing:0px]">
@@ -257,8 +273,11 @@ export function NotificationsCenter() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
+                          {/* The dot is colour alone; the words are for a screen reader (SHELL-20). */}
                           {!n.read ? (
-                            <span className="size-2 shrink-0 rounded-full bg-primary" />
+                            <span className="size-2 shrink-0 rounded-full bg-primary">
+                              <span className="sr-only">Unread:</span>
+                            </span>
                           ) : null}
                           <span className="flex-1 truncate text-sm font-medium">
                             {n.title}

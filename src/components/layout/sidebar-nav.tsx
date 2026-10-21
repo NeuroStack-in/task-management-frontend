@@ -356,7 +356,7 @@ export function SidebarNav({
                 org's queue. Show its platform role, not the tenant its login happens to be minted in. */}
             {opsOnly ? (
               <span className="text-muted-foreground truncate text-xs leading-tight">
-                Platform Support
+                Platform support
               </span>
             ) : orgName ? (
               <span className="text-muted-foreground truncate text-xs leading-tight">

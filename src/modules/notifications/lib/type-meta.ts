@@ -16,11 +16,18 @@ import type { NotificationType } from "@/types";
 
 export const NOTIFICATION_TYPE_META: Record<
   NotificationType,
-  { label: string; icon: LucideIcon; className: string }
+  {
+    label: string;
+    /** Lower-case singular for running text — "No task notifications" (UX audit SHELL-20). */
+    noun: string;
+    icon: LucideIcon;
+    className: string;
+  }
 > = {
-  task: { label: "Tasks", icon: ListTodo, className: "bg-feature-tint text-primary" },
+  task: { label: "Tasks", noun: "task", icon: ListTodo, className: "bg-feature-tint text-primary" },
   approval: {
     label: "Approvals",
+    noun: "approval",
     icon: CheckCircle2,
     className: "bg-success/15 text-success",
   },
@@ -28,18 +35,26 @@ export const NOTIFICATION_TYPE_META: Record<
   // generic bell, although Settings has a "Security alerts" toggle (WP-381).
   security: {
     label: "Security",
+    noun: "security",
     icon: ShieldAlert,
     className: "bg-destructive/10 text-destructive",
   },
   productivity: {
     label: "Productivity",
+    noun: "productivity",
     icon: TrendingDown,
     className: "bg-warning/15 text-warning",
   },
   billing: {
     label: "Billing",
+    noun: "billing",
     icon: CreditCard,
     className: "bg-chart-2/15 text-chart-2",
   },
-  system: { label: "System", icon: Bell, className: "bg-muted text-muted-foreground" },
+  system: {
+    label: "System",
+    noun: "system",
+    icon: Bell,
+    className: "bg-muted text-muted-foreground",
+  },
 };

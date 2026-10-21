@@ -145,14 +145,14 @@ export function PaletteSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" size="icon" aria-label="Change colour palette" />
+          <Button variant="ghost" size="icon" aria-label="Change color palette" />
         }
       >
         <Palette className="size-5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
         <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-          Colour palette
+          Color palette
         </p>
         {PALETTES.map((p) => {
           const isActive = active === p.id;

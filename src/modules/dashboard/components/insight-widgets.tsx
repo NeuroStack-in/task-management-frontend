@@ -52,14 +52,14 @@ export function ProductivityHeatmap({
             <p className="text-sm font-medium">Too many captures to chart here</p>
             <p className="text-muted-foreground max-w-xs text-xs">
               This window holds more screenshots than the dashboard reads per day, so a pattern
-              drawn from them would show only a few people. Every capture is in the Screenshot
-              Center.
+              drawn from them would show only a few people. Every capture is under Analytics →
+              Screenshots.
             </p>
             <Link
               href="/insights/screenshots"
               className="text-primary text-xs font-medium hover:underline"
             >
-              Open Screenshot Center
+              Open screenshots
             </Link>
           </div>
         </CardContent>

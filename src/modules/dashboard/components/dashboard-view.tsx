@@ -350,13 +350,13 @@ function OrgDashboard() {
             When nobody reported, there is no score: render the absence, never a confident 0%. */}
         {!isFeatureAllowed("monitoring.activity") ? (
           <UpgradeStatCard
-            label="Productivity Score"
+            label="Productivity score"
             description="Activity monitoring scores each day 0–100."
             featured
           />
         ) : (
         <StatCard
-          label="Productivity Score"
+          label="Productivity score"
           value={
             data.productivityCoverage.scored === 0
               ? "—"
@@ -377,7 +377,10 @@ function OrgDashboard() {
               : `${data.productivityCoverage.scored} of ${data.productivityCoverage.team} reporting · ${rangeLabel}`
           }
           trend={kpis.productivity.trend}
-          href="/insights/reports"
+          // The activity breakdown behind the score (UX audit 2026-10-16, SHELL-18). It linked to
+          // `/insights/reports`, a legacy route that only redirects to AI reports. No link for a
+          // role that can't open Analytics → Activity, rather than one that ends on a wall.
+          href={can("activity:view") ? "/insights/activity" : undefined}
           featured
         />
         )}
@@ -394,7 +397,7 @@ function OrgDashboard() {
                 "Upgrade to see" card on Free while Time Tracking showed the same hours one click
                 away (QA audit 2026-10-08, WP-199). Today is always readable — see `hoursAvailable`. */}
             <StatCard
-              label="Hours Tracked"
+              label="Hours tracked"
               value={liveHoursText}
               icon={Clock}
               hint="logged today"
@@ -438,7 +441,7 @@ function OrgDashboard() {
                 hours are rather than print a zero (QA audit 2026-10-08, WP-199). */}
             {data.hoursAvailable ? (
               <StatCard
-                label="Hours Tracked"
+                label="Hours tracked"
                 value={liveHoursText}
                 icon={Clock}
                 hint={rangeLabel}
@@ -446,7 +449,7 @@ function OrgDashboard() {
               />
             ) : (
               <StatCard
-                label="Hours Tracked"
+                label="Hours tracked"
                 value="—"
                 icon={Clock}
                 hint={`${rangeLabel} · open Time Tracking`}
@@ -457,7 +460,7 @@ function OrgDashboard() {
                 close, so a window covering only today has nothing to measure. Showing 0% there put
                 "nobody attended" beside a live productivity score for the same people. */}
             <StatCard
-              label="Attendance Rate"
+              label="Attendance rate"
               value={
                 data.attendanceResolvedDays === 0 ? "—" : `${kpis.attendance.value}%`
               }
@@ -471,7 +474,7 @@ function OrgDashboard() {
                 within the selected window. Only a legacy org with no join dates on record falls back
                 to the honest "—" — never a confident "0" that reads as "nobody was hired". */}
             <StatCard
-              label="New Hires"
+              label="New hires"
               value={data.newHiresTracked ? kpis.newHires.value.toLocaleString() : "—"}
               icon={UserPlus}
               hint={data.newHiresTracked ? rangeLabel : "join date not tracked yet"}

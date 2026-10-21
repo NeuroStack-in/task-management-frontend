@@ -11,6 +11,7 @@ import { useUiStore } from "@/stores/ui.store";
 import { titleForPath } from "@/lib/rbac";
 import { useAgentRelease } from "@/hooks/use-agent-release";
 import { useTrackingMode } from "@/hooks/use-features";
+import { usePermissions } from "@/hooks/use-permissions";
 import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 import { useMyDevices } from "@/modules/dashboard/use-my-devices";
 import { desktopAppBehind, hasDesktopApp } from "@/modules/dashboard/lib/device-status";
@@ -73,6 +74,15 @@ export function TopNavbar() {
   const showUpdateCue = appBehind && unseenRelease;
   const showDownloadChip =
     pathname !== "/download" && mode !== "machine" && !(hasApp === true && !appBehind);
+  /**
+   * Only someone who runs a personal timer needs the app for their own work (UX audit 2026-10-16,
+   * SHELL-17). For everyone else — an owner or admin by default — the chip was still the strongest
+   * button in the header, outranking every page's own primary action, so it drops to an outline
+   * button there. `time-tracking:self` is the contributor-only bit (wp-contracts 110) the wildcard
+   * deliberately does not grant, so an owner who also tracks time (a role granting it) keeps the
+   * filled chip.
+   */
+  const runsOwnTimer = usePermissions().can("time-tracking:self");
 
   /* ── Search: ⌘K / Ctrl+K / "/" anywhere, and a button on screens without the sidebar ──────── */
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
@@ -339,6 +349,7 @@ export function TopNavbar() {
           <Button
             render={<Link href="/download" />}
             nativeButton={false}
+            variant={runsOwnTimer ? "default" : "outline"}
             size="sm"
             // `relative` anchors the dot; `overflow-visible` because the pill's rounded-full clips
             // the badge that sits proud of its top-right corner.
@@ -362,15 +373,21 @@ export function TopNavbar() {
               <>
                 {/* The version rides the button on wide screens — "something is new" is a weaker
                     message than "0.1.7 is out", and it costs no extra row. */}
-                <span className="bg-primary-foreground/20 ml-0.5 hidden rounded-full px-1.5 py-px text-[0.65rem] font-semibold tabular-nums lg:inline">
+                <span
+                  className={cn(
+                    "ml-0.5 hidden rounded-full px-1.5 py-px text-[0.65rem] font-semibold tabular-nums lg:inline",
+                    runsOwnTimer ? "bg-primary-foreground/20" : "bg-muted text-foreground",
+                  )}
+                >
                   v{agentVersion}
                 </span>
                 {/* Below lg the label has no room, so the state degrades to a dot rather than
-                    disappearing. Steady, not pulsing: an update the app installs itself is news,
-                    not an alarm. `aria-hidden` — the accessible name above already says it. */}
+                    disappearing. Steady, not pulsing, and the info colour — not red, not the
+                    button's own fill: an update the app installs itself is news, not an error
+                    (UX audit SHELL-17). `aria-hidden` — the accessible name above already says it. */}
                 <span
                   aria-hidden
-                  className="bg-primary ring-background absolute -top-0.5 -right-0.5 size-2.5 rounded-full ring-2 lg:hidden"
+                  className="bg-info ring-background absolute -top-0.5 -right-0.5 size-2.5 rounded-full ring-2 lg:hidden"
                 />
               </>
             ) : null}

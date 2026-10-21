@@ -88,6 +88,7 @@ export function MyTasksCard({
   className,
   error = null,
   onRetry,
+  summary,
 }: {
   tasks: MyTask[];
   className?: string;
@@ -97,6 +98,11 @@ export function MyTasksCard({
    */
   error?: string | null;
   onRetry?: () => void;
+  /**
+   * A short count line beside the heading, e.g. "4 open · 12 completed" — the personal dashboard's
+   * "Open tasks" tile used to carry it, repeating this card (UX audit 2026-10-16, SHELL-19).
+   */
+  summary?: string;
 }) {
   const router = useRouter();
   return (
@@ -104,11 +110,17 @@ export function MyTasksCard({
       data-tour="dash:tasks"
       className={cn("flex flex-col gap-0 p-0 [--card-spacing:0px]", className)}
     >
-      <div className="border-border flex items-center justify-between border-b px-5 py-4">
-        <h2 className="font-display text-base font-semibold tracking-tight">My tasks</h2>
+      <div className="border-border flex items-center justify-between gap-3 border-b px-5 py-4">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h2 className="font-display text-base font-semibold tracking-tight">My tasks</h2>
+          {summary ? (
+            <span className="text-muted-foreground truncate text-xs tabular-nums">{summary}</span>
+          ) : null}
+        </div>
+        {/* The palette's link colour, not a fixed blue that matched no palette (SHELL-19). */}
         <Link
           href={MY_TASKS_HREF}
-          className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
+          className="text-primary flex shrink-0 items-center gap-1 text-sm font-medium underline-offset-2 hover:underline"
         >
           View all <ArrowRight className="size-3.5" />
         </Link>

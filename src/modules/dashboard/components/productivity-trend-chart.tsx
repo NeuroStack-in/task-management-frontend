@@ -93,7 +93,7 @@ export function ProductivityTrendChart({
         <CardTitle className="flex items-center gap-1.5">
           Productivity trends
           <ChartLegendInfo
-            label="What Productivity score means"
+            label="What the productivity score means"
             terms={[
               {
                 term: "Productivity score",
@@ -102,7 +102,7 @@ export function ProductivityTrendChart({
                     A 0–100 score for the day, blended from four parts:
                     <ul className="mt-1 list-disc space-y-0.5 pl-4">
                       <li>
-                        <strong>Utilisation (25%)</strong> — how much of the time on the
+                        <strong>Utilization (25%)</strong> — how much of the time on the
                         timer was active at the computer
                       </li>
                       <li>
