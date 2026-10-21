@@ -163,11 +163,11 @@ export const FEATURE_BLOCKS: FeatureBlock[] = [
     kicker: "Intelligence",
     icon: BrainCircuit,
     title: "Your day, read back in plain language.",
-    body: "A daily summary written over your own hours, tasks and attendance — not generic advice. Ask the assistant a question about your workspace and it answers from the same record, so the numbers in the answer are the numbers on the page.",
+    body: "A daily summary written over your own hours, tasks and attendance — not generic advice. Ask the assistant a question about your organization and it answers from the same record, so the numbers in the answer are the numbers on the page.",
     bullets: [
       "Daily summary over your real data",
       "Ask the assistant in plain language",
-      "Grounded in your workspace, not the web",
+      "Grounded in your organization's records, not the web",
     ],
     visual: "ai",
     slug: "ai-insights",
@@ -309,7 +309,7 @@ export interface Step {
 export const STEPS: Step[] = [
   {
     n: "01",
-    title: "Request your workspace",
+    title: "Request your organization",
     body: "Tell us about your organization — we review every request within one business day. Then invite your team by email; everyone joins with a role, so access is right from the first sign-in.",
   },
   {
@@ -499,5 +499,5 @@ export const FOOTER_COLUMNS: { title: string; links: NavLink[] }[] = [
     })),
   },
   { title: "Solutions", links: SOLUTIONS },
-  { title: "Resources", links: [...RESOURCES, { label: "Log in", href: "/login" }] },
+  { title: "Resources", links: [...RESOURCES, { label: "Sign in", href: "/login" }] },
 ];

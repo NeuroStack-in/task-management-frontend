@@ -37,7 +37,12 @@ export interface AuthFeature {
   body: string;
 }
 
-/** The product story, identical on every auth screen — recognition depends on it not moving. */
+/**
+ * The product story. Shown in full where someone is choosing to sign in or sign up; the short utility
+ * screens (forgot / reset password, MFA, invite, the sign-in callback) use `variant="compact"` and
+ * keep only the brand and one line (UX audit PUB-07). Recognition rests on the frame — logo, dark
+ * panel, clock, cards, light form column — and that stays identical on every screen.
+ */
 const FEATURES: AuthFeature[] = [
   {
     icon: Clock,
@@ -66,6 +71,7 @@ export function AuthFrame({
   headline,
   headlineAccent,
   copy,
+  variant = "full",
 }: {
   children: React.ReactNode;
   /** First line of the brand headline. */
@@ -73,9 +79,16 @@ export function AuthFrame({
   /** Second line, set in teal — the reference layout's two-tone display. */
   headlineAccent: string;
   copy: string;
+  /**
+   * `full` (sign in, sign up): headline, copy, the four-feature story and the trust row.
+   * `compact` (the utility screens): headline and one reassuring line only — a password reset is
+   * not the moment for a feature list (UX audit PUB-07).
+   */
+  variant?: "full" | "compact";
 }) {
+  const full = variant === "full";
   return (
-    <div className="m-root m-auth">
+    <div className={`m-root m-auth${full ? "" : " m-auth--compact"}`}>
       {/* ---- Form column (FIRST in the DOM; grid moves it right on desktop) ---- */}
       <main className="m-auth__form">
         <div className="m-auth__mobile-brand">
@@ -115,68 +128,6 @@ export function AuthFrame({
           intensity={0.34}
         />
 
-        {/* Floating product cards. Purely decorative, so they are hidden from assistive tech —
-            they restate what the feature list already says in words. They sit inside the panel's
-            `overflow: hidden`, which is what keeps them from widening the page. */}
-        <div className="m-auth__cards" aria-hidden="true">
-          <article className="m-authcard m-authcard--a">
-            <header>
-              <span className="m-authcard__icon">
-                <Clock />
-              </span>
-              This week
-            </header>
-            <div className="m-authcard__row">
-              <span>Tracked</span>
-              <strong>32h 40m</strong>
-            </div>
-            <div className="m-authcard__bar">
-              <span style={{ width: "68%" }} />
-            </div>
-            <div className="m-authcard__tags">
-              <span>Acme website</span>
-              <span>Onboarding</span>
-            </div>
-          </article>
-
-          <article className="m-authcard m-authcard--b">
-            <header>
-              <span className="m-authcard__icon">
-                <Users />
-              </span>
-              Team
-              <span className="m-authcard__live">
-                <i /> LIVE
-              </span>
-            </header>
-            <div className="m-authcard__lines">
-              <span />
-              <span />
-            </div>
-            <div className="m-authcard__people">
-              <i>P</i>
-              <i>M</i>
-              <i>S</i>
-              <em>4 tracking now</em>
-            </div>
-          </article>
-
-          <article className="m-authcard m-authcard--c">
-            <header>
-              <span className="m-authcard__icon">
-                <CheckSquare />
-              </span>
-              Today
-            </header>
-            <ul className="m-authcard__todo">
-              <li className="is-done">Design review</li>
-              <li className="is-done">Standup notes</li>
-              <li>Payroll check</li>
-            </ul>
-            <span className="m-authcard__chip">2 of 3 done</span>
-          </article>
-        </div>
-
         <div className="m-auth__brand-inner">
           <Link href="/" className="inline-flex" aria-label="WorkPulse home">
             <Logo className="text-white" size="lg" />
@@ -191,33 +142,104 @@ export function AuthFrame({
 
           <p className="m-auth__lede">{copy}</p>
 
-          <ul className="m-auth__features">
-            {FEATURES.map((f) => (
-              <li key={f.title}>
-                <span className="m-auth__feature-icon">
-                  <f.icon aria-hidden="true" />
-                </span>
-                <span>
-                  <strong>{f.title}</strong>
-                  <em>{f.body}</em>
-                </span>
-              </li>
-            ))}
-          </ul>
+          {full ? (
+            <>
+              <ul className="m-auth__features">
+                {FEATURES.map((f) => (
+                  <li key={f.title}>
+                    <span className="m-auth__feature-icon">
+                      <f.icon aria-hidden="true" />
+                    </span>
+                    <span>
+                      <strong>{f.title}</strong>
+                      <em>{f.body}</em>
+                    </span>
+                  </li>
+                ))}
+              </ul>
 
-          <div className="m-auth__trust">
-            <span className="m-auth__avatars" aria-hidden="true">
-              <i>A</i>
-              <i>P</i>
-              <i>M</i>
-              <i>S</i>
-            </span>
-            Invite-only access · every change audited
-          </div>
+              <div className="m-auth__trust">
+                <span className="m-auth__avatars" aria-hidden="true">
+                  <i>A</i>
+                  <i>P</i>
+                  <i>M</i>
+                  <i>S</i>
+                </span>
+                Invite-only access · every change audited
+              </div>
 
-          <p className="m-auth__brandfoot">WorkPulse — built on Amazon Web Services</p>
+              <p className="m-auth__brandfoot">WorkPulse — built on Amazon Web Services</p>
+            </>
+          ) : null}
         </div>
       </aside>
+
+      {/* Floating product cards. Purely decorative, so they are hidden from assistive tech — they
+          restate what the feature list says in words.
+
+          A sibling of the panel, not a child: inside the panel's `overflow: hidden` they were sliced
+          off at its edge ("32h" and "4 tracking n…" cut in half at 1440px — UX audit PUB-06). Placed
+          on the panel's grid cell, they now straddle the seam on purpose and are drawn whole, with the
+          overhang capped so they never reach the form card (see `.m-authcard--*` in auth.css). The
+          page still can't widen: `.m-auth` clips at the viewport. */}
+      <div className="m-auth__cards" aria-hidden="true">
+        <article className="m-authcard m-authcard--a">
+          <header>
+            <span className="m-authcard__icon">
+              <Clock />
+            </span>
+            This week
+          </header>
+          <div className="m-authcard__row">
+            <span>Tracked</span>
+            <strong>32h 40m</strong>
+          </div>
+          <div className="m-authcard__bar">
+            <span style={{ width: "68%" }} />
+          </div>
+          <div className="m-authcard__tags">
+            <span>Acme website</span>
+            <span>Onboarding</span>
+          </div>
+        </article>
+
+        <article className="m-authcard m-authcard--b">
+          <header>
+            <span className="m-authcard__icon">
+              <Users />
+            </span>
+            Team
+            <span className="m-authcard__live">
+              <i /> LIVE
+            </span>
+          </header>
+          <div className="m-authcard__lines">
+            <span />
+            <span />
+          </div>
+          <div className="m-authcard__people">
+            <i>P</i>
+            <i>M</i>
+            <i>S</i>
+            <em>4 tracking now</em>
+          </div>
+        </article>
+
+        <article className="m-authcard m-authcard--c">
+          <header>
+            <span className="m-authcard__icon">
+              <CheckSquare />
+            </span>
+            Today
+          </header>
+          <ul className="m-authcard__todo">
+            <li className="is-done">Design review</li>
+            <li className="is-done">Standup notes</li>
+            <li>Payroll check</li>
+          </ul>
+          <span className="m-authcard__chip">2 of 3 done</span>
+        </article>
+      </div>
     </div>
   );
 }
@@ -574,13 +596,19 @@ export function AuthStatus({ children }: { children?: React.ReactNode }) {
   );
 }
 
-/** A back link under an auth card's main action ("Back to sign in"). */
+/**
+ * A back link under an auth card's main action ("Back to sign in").
+ *
+ * The small text links on these screens carry `py-1`: an inline link's vertical padding grows its tap
+ * area to ≥ 24px without moving a single line of the layout — at 18px they were undersized on a phone
+ * (UX audit PUB-08). Inline-block controls use `py-1 -my-1` for the same effect.
+ */
 export function AuthBackLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <p className="mt-4 text-center text-sm">
       <Link
         href={href}
-        className="font-medium underline underline-offset-2"
+        className="py-1 font-medium underline underline-offset-2"
         style={{ color: "var(--m-accent-ink)" }}
       >
         {children}
@@ -604,7 +632,7 @@ export function AuthSwitch({
       {prompt}{" "}
       <Link
         href={href}
-        className="font-semibold underline underline-offset-2"
+        className="py-1 font-semibold underline underline-offset-2"
         style={{ color: "var(--m-accent-ink)" }}
       >
         {label}

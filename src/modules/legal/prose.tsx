@@ -76,7 +76,8 @@ export function DocLink({ to, children }: { to: LegalSlug; children: ReactNode }
   return (
     <Link
       href={legalHref(to)}
-      className="font-medium underline underline-offset-2"
+      // `py-1`: a 24px+ tap target on a phone without moving the line (UX audit PUB-08).
+      className="py-1 font-medium underline underline-offset-2"
       style={LINK}
     >
       {children}

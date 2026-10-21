@@ -469,7 +469,7 @@ export const PRODUCT_CONTENT: Record<string, ProductPageData> = {
       { icon: Lock, title: "MFA & sessions", body: "Anyone can turn on authenticator-app MFA, and see and sign out the devices they are signed in on." },
       { icon: ScrollText, title: "Audit log", body: "Permission changes, ownership actions, device releases and other sensitive actions are recorded with who did them." },
       { icon: Globe, title: "Encryption", body: "Data is encrypted in transit (TLS) and at rest (AWS-managed AES-256). It is hosted in a single AWS region today." },
-      { icon: Headset, title: "Managed desktop agents", body: "IT enrols, releases and revokes company laptops from the fleet page, and every action is audited." },
+      { icon: Headset, title: "Managed desktop agents", body: "IT enrolls, releases and revokes company laptops from the fleet page, and every action is audited." },
     ],
     how: {
       heading: "Defense in depth, end to end.",

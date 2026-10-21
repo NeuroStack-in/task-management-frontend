@@ -197,9 +197,9 @@ export default function PricingPage() {
             Start free <em>today.</em>
           </>
         }
-        body="Free during the beta, no card required. Request your workspace and we'll review it within one business day."
+        body="Free during the beta, no card required. Request your organization and we'll review it within one business day."
         primary={{ label: "Get started", href: "/register" }}
-        secondary={{ label: "Log in", href: "/login" }}
+        secondary={{ label: "Sign in", href: "/login" }}
       />
     </PublicShell>
   );

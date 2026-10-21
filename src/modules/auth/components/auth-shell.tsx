@@ -12,6 +12,11 @@
  *
  * It now delegates to `AuthFrame`, so all six screens share one composition, one help affordance in
  * one position (WCAG 2.2 SC 3.2.6 Consistent Help), and one set of field primitives.
+ *
+ * In its **compact** variant: these are short, single-purpose screens, and repeating the four-item
+ * feature list beside a one-field form was marketing at someone who is only trying to get back in.
+ * The panel keeps the brand and one reassuring line (UX audit PUB-07); the frame itself is unchanged,
+ * so the page still looks exactly like the sign-in screen.
  */
 
 import { AuthFrame } from "./auth-frame";
@@ -20,16 +25,16 @@ export function AuthShell({
   children,
   headline = "Back to work",
   headlineAccent = "in a moment",
-  copy = "We'll get you signed in again. Your organization's data stays exactly where you left it.",
+  copy = "Your organization's data stays exactly where you left it.",
 }: {
   children: React.ReactNode;
-  /** Per-page brand copy; the defaults suit the recovery flows. */
+  /** Per-page brand copy; the defaults suit the recovery flows. `copy` is the one line shown. */
   headline?: string;
   headlineAccent?: string;
   copy?: string;
 }) {
   return (
-    <AuthFrame headline={headline} headlineAccent={headlineAccent} copy={copy}>
+    <AuthFrame headline={headline} headlineAccent={headlineAccent} copy={copy} variant="compact">
       {children}
     </AuthFrame>
   );

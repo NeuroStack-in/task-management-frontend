@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
   Clock,
+  Copy,
   Download,
   Info,
   MonitorSmartphone,
   RefreshCw,
+  Share2,
   ShieldCheck,
+  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
@@ -29,6 +32,7 @@ import {
 import { AGENT_PLATFORMS, type AgentPlatform } from "@/lib/agent-release";
 import { MonitoringDisclosure } from "@/modules/agents/components/monitoring-disclosure";
 import { cn } from "@/lib/utils";
+import { detectDevice, type DetectedDevice } from "./detect-device";
 
 /*
  * Plain words for a new employee (UX audit 2026-10-16, EMP-10): "the WorkPulse desktop app", not
@@ -55,7 +59,7 @@ const FEATURES = [
   {
     icon: Activity,
     title: "Activity insights",
-    desc: "Categorises apps and sites on-device to surface real productivity.",
+    desc: "Categorizes apps and sites on-device to surface real productivity.",
   },
   {
     icon: ShieldCheck,
@@ -84,10 +88,91 @@ const MAC_STEPS = [
   "Pick a project and press Start.",
 ];
 
+/**
+ * Shown instead of a silent list of desktop installers when the page is opened on a phone or tablet
+ * (UX audit SET-22) — typically from a link in a chat or an email, read on the way in to work.
+ *
+ * There is deliberately no "email me the link" button: the server has no route that sends one, and a
+ * button that only pretended would be worse than none. The phone's own share sheet (where the
+ * browser has one) does the same job, and the address is printed so it can simply be typed.
+ */
+function OpenOnComputerNotice() {
+  const [url, setUrl] = useState("");
+  const [canShare, setCanShare] = useState(false);
+
+  // Client-only facts, read after mount so the server render and the first client render agree.
+  useEffect(() => {
+    setUrl(`${window.location.origin}/download`);
+    setCanShare(typeof navigator.share === "function");
+  }, []);
+
+  async function share() {
+    try {
+      await navigator.share({
+        title: "Download WorkPulse",
+        text: "Open this on your computer to install the WorkPulse desktop app.",
+        url,
+      });
+    } catch {
+      // Dismissing the share sheet rejects too — nothing went wrong, so nothing to say.
+    }
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied", { description: "Open it on the computer you work on." });
+    } catch {
+      toast.error(`Couldn't copy the link. On your computer, go to ${url}`);
+    }
+  }
+
+  return (
+    <section
+      aria-labelledby="open-on-computer"
+      className="flex items-start gap-3 rounded-2xl border border-primary/30 bg-primary/5 p-4"
+    >
+      <Smartphone className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
+      <div className="min-w-0">
+        <h2 id="open-on-computer" className="text-sm font-semibold">
+          Open this page on your computer
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          The WorkPulse desktop app runs on Windows, macOS and Linux — there&apos;s no version for
+          phones or tablets. On the computer you work on, sign in to WorkPulse and open this page:
+        </p>
+        {url ? <p className="mt-2 font-mono text-xs break-all">{url}</p> : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {canShare ? (
+            <Button size="sm" onClick={share} disabled={!url}>
+              <Share2 className="size-4" /> Share link
+            </Button>
+          ) : null}
+          <Button size="sm" variant={canShare ? "outline" : "default"} onClick={copy} disabled={!url}>
+            <Copy className="size-4" /> Copy link
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function DownloadPage() {
   const [macHelpOpen, setMacHelpOpen] = useState(false);
   const isMachine = useTrackingMode() === "machine";
   const { can } = usePermissions();
+
+  /**
+   * The computer (or phone) this browser runs on, so the right installer is highlighted and a phone
+   * is told to come back on a computer (UX audit SET-22). Read after mount — `navigator` doesn't
+   * exist on the server — and `unknown` until then, which renders the plain three-way choice.
+   */
+  const [device, setDevice] = useState<DetectedDevice>({ kind: "unknown" });
+  useEffect(() => {
+    setDevice(detectDevice(navigator));
+  }, []);
+  const detectedOs = device.kind === "computer" ? device.os : null;
+  const onMobile = device.kind === "mobile";
 
   /**
    * The version actually being served, from the release manifest (`agent/latest/*` is overwritten by
@@ -132,7 +217,7 @@ export default function DownloadPage() {
           title="Managed by IT"
           description={
             canSeeDevices
-              ? "Your organization tracks company-owned devices with a background service that IT installs. Enrol a device and it appears under Device agents."
+              ? "Your organization tracks company-owned devices with a background service that IT installs. Enroll a device and it appears under Device agents."
               : "Your organization tracks company-owned devices with a background service that IT installs. If your computer needs it, ask your administrator."
           }
           action={
@@ -153,6 +238,8 @@ export default function DownloadPage() {
         title="Download the WorkPulse desktop app"
         description="Install it on your computer and sign in to start tracking your time."
       />
+
+      {onMobile ? <OpenOnComputerNotice /> : null}
 
       {/* Hero */}
       <section className="flex items-center gap-4 rounded-2xl border bg-feature-tint/40 p-5">
@@ -180,27 +267,42 @@ export default function DownloadPage() {
 
       {/* Platforms */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold">Choose your platform</h2>
+        <div>
+          <h2 className="text-sm font-semibold">Choose your platform</h2>
+          {detectedOs ? (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              This looks like a {detectedOs} computer, so that one is highlighted. Installing
+              somewhere else? Pick that computer&apos;s platform instead.
+            </p>
+          ) : null}
+        </div>
         <div className="grid gap-3 sm:grid-cols-3">
           {AGENT_PLATFORMS.map((p) => {
             const disabled = !p.available;
+            const isDetected = p.os === detectedOs;
+            // One filled button where we know the platform; none on a phone, where every one of
+            // these is for later, on a computer (SET-22).
+            const quiet = onMobile || (detectedOs !== null && !isDetected);
             return (
               <div
                 key={p.os}
                 className={cn(
                   "flex flex-col rounded-2xl border p-4 transition-colors",
                   disabled ? "bg-muted/20" : "hover:border-primary/40",
+                  isDetected && !disabled && "border-primary/60 bg-feature-tint/30 ring-1 ring-primary/30",
                 )}
               >
                 <div className="flex items-start justify-between">
                   <span className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
                     <MonitorSmartphone className="size-5" />
                   </span>
-                  {disabled && (
+                  {disabled ? (
                     <Badge className="bg-muted font-normal text-muted-foreground">
                       Coming soon
                     </Badge>
-                  )}
+                  ) : isDetected ? (
+                    <Badge className="bg-primary/10 font-medium text-primary">This computer</Badge>
+                  ) : null}
                 </div>
                 <div className="mt-3">
                   <p className="text-sm font-medium">{p.os}</p>
@@ -214,6 +316,7 @@ export default function DownloadPage() {
                     <>
                       <Button
                         size="sm"
+                        variant={quiet ? "outline" : "default"}
                         className="w-full"
                         onClick={() => downloadFor(p)}
                       >

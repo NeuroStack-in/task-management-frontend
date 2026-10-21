@@ -34,7 +34,9 @@ export function SsoProviderButtons({
       await beginSso("Google"); // navigates away
     } catch {
       setBusy(false);
-      onError("SSO isn't configured yet. Sign in with your email and password.");
+      // Plain words, and true on both pages that use this button: "SSO isn't configured yet" was
+      // internal jargon, and "sign in with your password" made no sense on sign-up (UX audit ONB-16).
+      onError("Google sign-in isn't available right now. Continue with your email address instead.");
     }
   };
 

@@ -62,12 +62,14 @@
      mobile brand header all read it, so they stay edge-aligned. 30rem so the
      paired two-up field rows still give each input a usable width. */
   --m-auth-form-w: 30rem;
-  /* Belt-and-braces against a horizontal scrollbar: the floating cards are
-     positioned past the brand panel's right edge and clipped by its own
-     `overflow: hidden`, but `clip` here means no descendant can widen the page
-     even if one is later positioned outside that panel. `clip` rather than
-     `hidden` so it never creates a scroll container. */
+  /* Against a horizontal scrollbar: the floating cards overhang the brand
+     panel's right edge (deliberately — see "Floating product cards"), and `clip`
+     here means no descendant can widen the page. `clip` rather than `hidden` so
+     it never creates a scroll container. */
   overflow-x: clip;
+  /* The containing block for the card layer, which sits on the panel's grid
+     cell but outside the panel itself. */
+  position: relative;
 }
 
 @media (min-width: 64rem) {
@@ -279,14 +281,26 @@
 }
 
 /* ---- Floating product cards ----
-   Decorative. They live inside the panel's `overflow: hidden`, which is what
-   stops them widening the document — nothing here may produce a horizontal
-   scrollbar, so they are positioned from the panel's own edges and never with
-   a transform that could escape the clip. */
+   Decorative. They used to live inside the panel's `overflow: hidden` and were
+   positioned past its right edge, so at 1440px they were sliced in half at the
+   seam ("32h", "4 tracking n…") and read as a rendering bug (UX audit PUB-06).
+
+   The layer is now a sibling of the panel, placed on the panel's grid cell
+   (`grid-area` on an absolutely-positioned grid child makes that cell its
+   containing block), so `inset: 0` is exactly the panel and the overhang past
+   its right edge is drawn rather than clipped: the cards straddle the seam on
+   purpose. Above the form column's background, never over the form card — see
+   the overhang cap below. `.m-auth` still clips at the viewport, so nothing
+   here can produce a horizontal scrollbar. */
 .m-auth__cards {
   position: absolute;
+  /* Both lines explicit: on an absolutely-positioned grid child an `auto` end
+     line means the container's far edge, so `grid-column: 1` alone would span
+     the whole page. */
+  grid-column: 1 / 2;
+  grid-row: 1 / 2;
   inset: 0;
-  z-index: 0;
+  z-index: 2;
   pointer-events: none;
 }
 .m-authcard {
@@ -446,23 +460,56 @@
   color: #7fe3d6;
 }
 
-/* Placement. Anchored to the panel's right edge so they tuck behind the seam
-   between the two columns, exactly as in the reference. Hidden below 80rem —
-   under that width they would collide with the copy rather than frame it. */
+/* Placement. Anchored to the panel's right edge so they straddle the seam
+   between the two columns. Hidden below 80rem — under that width they would
+   collide with the copy rather than frame it.
+
+   The overhang is capped by the free strip between the seam and the form card,
+   less 1rem of air. That strip is (48% of the viewport − the 30rem card) / 2 =
+   24vw − 15rem (the form column's 2rem padding cancels out), so the cap is
+   `16rem − 24vw` as a (negative) `right`: ~51px at 1280px, ~90px at 1440px, the
+   full design overhang from ~1700px. Keep it in step with the 52/48 split and
+   `--m-auth-form-w` if either changes. */
 .m-authcard--a {
   top: 4%;
-  right: -3rem;
+  right: max(-3rem, calc(16rem - 24vw));
 }
 .m-authcard--b {
   top: 38%;
-  right: -6.5rem;
+  right: max(-6.5rem, calc(16rem - 24vw));
 }
 .m-authcard--c {
   bottom: 5%;
-  right: -4rem;
+  right: max(-4rem, calc(16rem - 24vw));
 }
 @media (max-width: 80rem) {
   .m-auth__cards {
+    display: none;
+  }
+}
+/* On the full panel (sign in, sign up) the copy runs most of the panel's height
+   and width, so two cards need room the panel doesn't always have:
+   · b sits level with the lede and the first feature — the widest lines. Below
+     ~1360px wide it would cover them.
+   · c sits level with the last feature. Below ~1536px wide that line reaches
+     under the card, so it needs a viewport tall enough to leave a gap.
+   · On a short viewport (768px or less) the copy fills the panel top to
+     bottom, so a and b would sit on the headline and lede too.
+   The compact panel has nothing in any of those places, so it keeps all three.
+   A card is dropped rather than drawn over the copy (UX audit PUB-06). */
+@media (max-width: 85rem) {
+  .m-auth:not(.m-auth--compact) .m-authcard--b {
+    display: none;
+  }
+}
+@media (max-width: 95.99rem) and (max-height: 54rem) {
+  .m-auth:not(.m-auth--compact) .m-authcard--c {
+    display: none;
+  }
+}
+@media (max-width: 95.99rem) and (max-height: 48rem) {
+  .m-auth:not(.m-auth--compact) .m-authcard--a,
+  .m-auth:not(.m-auth--compact) .m-authcard--b {
     display: none;
   }
 }

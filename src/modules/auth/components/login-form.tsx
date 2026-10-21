@@ -89,7 +89,7 @@ export function LoginForm() {
       <CardHeader>
         <CardTitle className="font-heading text-2xl">Welcome back</CardTitle>
         <CardDescription>
-          Sign in to your WorkPulse workspace.
+          Sign in to your WorkPulse organization.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>

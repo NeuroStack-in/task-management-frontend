@@ -85,7 +85,7 @@ export function RegisterForm() {
     <Card className="shadow-soft">
       <CardHeader>
         <CardTitle className="font-heading text-2xl">Create your account</CardTitle>
-        <CardDescription>Set up your WorkPulse workspace in minutes.</CardDescription>
+        <CardDescription>Set up your WorkPulse organization in minutes.</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">

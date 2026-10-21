@@ -87,7 +87,7 @@ export function FeaturesSection() {
                         </li>
                       ))}
                     </ul>
-                    <Link href={`/product/${f.slug}`} className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: "var(--wp-accent-ink)" }}>
+                    <Link href={`/product/${f.slug}`} className="mt-5 inline-flex items-center gap-1.5 py-1 text-sm font-semibold" style={{ color: "var(--wp-accent-ink)" }}>
                       Explore {f.kicker} <ArrowUpRight className="size-4" />
                     </Link>
                   </div>
@@ -359,12 +359,12 @@ export function CtaSection() {
             <p className="mx-auto mt-4 max-w-md text-base" style={{ color: "rgb(255 255 255 / 0.72)" }}>
               {/* Was "Set up your organization in minutes" — new workspaces wait for staff approval
                   (UX audit PUB-03). */}
-              Request your workspace today — we review every request within one business day.
+              Request your organization today — we review every request within one business day.
               Free during the beta, no card required.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link href="/register" className="wp-btn wp-btn-primary">Start free <ArrowRight className="size-4" /></Link>
-              <Link href="/login" className="wp-btn" style={{ background: "rgb(255 255 255 / 0.1)", color: "#fff", border: "1px solid rgb(255 255 255 / 0.28)" }}>Log in</Link>
+              <Link href="/login" className="wp-btn" style={{ background: "rgb(255 255 255 / 0.1)", color: "#fff", border: "1px solid rgb(255 255 255 / 0.28)" }}>Sign in</Link>
             </div>
           </div>
         </div>
@@ -409,10 +409,12 @@ export function Footer({ allProducts = false }: { allProducts?: boolean }) {
         {columns.map((col) => (
           <div key={col.title}>
             <p className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--wp-ink-2)" }}>{col.title}</p>
-            <ul className="mt-4 space-y-2.5">
+            {/* `py-1` on each link with the list's gap cut to match: the same 30px rhythm, but every
+                link is now a 28px tap target instead of an 18px line of text (UX audit PUB-08). */}
+            <ul className="mt-3 space-y-0.5">
               {col.links.map((l) => (
                 <li key={l.label}>
-                  <Link href={l.href} className="text-sm transition-colors hover:opacity-70" style={{ color: "var(--wp-muted)" }}>{l.label}</Link>
+                  <Link href={l.href} className="inline-block py-1 text-sm transition-colors hover:opacity-70" style={{ color: "var(--wp-muted)" }}>{l.label}</Link>
                 </li>
               ))}
             </ul>
@@ -424,11 +426,12 @@ export function Footer({ allProducts = false }: { allProducts?: boolean }) {
         {/* The legal links pointed at the FAQ until the documents existed (QA audit 2026-10-08,
             WP-541 / WP-115). They now come from the registry that generates `/legal/*`, so none of
             them can point at a page that doesn't exist. This is the only public footer now — the
-            inner pages' separate `MarketingFooter` went with their dark theme (2026-10-15). */}
-        <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs" style={{ color: "var(--wp-faint)" }}>
-          <Link href="/#security" className="hover:opacity-70">Security</Link>
+            inner pages' separate `MarketingFooter` went with their dark theme (2026-10-15).
+            `py-1.5` + `min-w-6`: each is a 24px+ tap target on a phone, "DPA" included (PUB-08). */}
+        <div className="flex flex-wrap justify-center gap-x-5 text-xs" style={{ color: "var(--wp-faint)" }}>
+          <Link href="/#security" className="inline-block min-w-6 py-1.5 text-center hover:opacity-70">Security</Link>
           {LEGAL_DOCS.map((d) => (
-            <Link key={d.slug} href={legalHref(d.slug)} className="hover:opacity-70">
+            <Link key={d.slug} href={legalHref(d.slug)} className="inline-block min-w-6 py-1.5 text-center hover:opacity-70">
               {d.label}
             </Link>
           ))}

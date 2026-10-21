@@ -374,7 +374,7 @@ export function InviteAcceptForm() {
           the product here made a tenant-scoped invite read like a platform-wide signup. */}
       <AuthHeading
         title={`Join ${preview?.org_name ?? "your organization"}`}
-        subtitle={`You've been invited to ${preview?.org_name ?? "this workspace"} as ${preview?.role_name}. Set up your account for ${preview?.email}.`}
+        subtitle={`You've been invited to ${preview?.org_name ?? "this organization"} as ${preview?.role_name}. Set up your account for ${preview?.email}.`}
       />
 
       <form

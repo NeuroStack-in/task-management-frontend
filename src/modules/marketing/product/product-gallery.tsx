@@ -43,7 +43,7 @@ export function ProductGallery({ items }: { items: GalleryItem[] }) {
                 <button
                   type="button"
                   onClick={() => setActive(g)}
-                  className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-80"
+                  className="mt-4 inline-flex items-center gap-1.5 py-1 text-sm font-medium transition-opacity hover:opacity-80"
                   style={{ color: "var(--wp-accent-glow)" }}
                 >
                   <Maximize2 className="size-4" /> View full length

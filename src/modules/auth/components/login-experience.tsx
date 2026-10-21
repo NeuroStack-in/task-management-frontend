@@ -31,6 +31,7 @@ import {
   TotpChallengeError,
 } from "@/modules/auth/services/auth.service";
 import { takeHandedOffEmail } from "@/modules/auth/email-handoff";
+import { signInHeading } from "@/modules/auth/login-purpose";
 import {
   AuthErrorSummary,
   AuthField,
@@ -178,6 +179,10 @@ export function LoginExperience() {
 
   if (hydrated && isAuthenticated) return null;
 
+  // Says why they're here when the guard sent them from somewhere that needs it — "Sign in to
+  // download the desktop app" for /download, not a bare "Welcome back" (UX audit PUB-09).
+  const heading = signInHeading(params.get("from"));
+
   const summary: [string, string][] = [
     ...(errors.email ? ([["login-email", errors.email]] as [string, string][]) : []),
     ...(errors.password ? ([["login-password", errors.password]] as [string, string][]) : []),
@@ -191,7 +196,7 @@ export function LoginExperience() {
         headlineAccent="on one calm pulse"
         copy="WorkPulse unifies time, attendance, activity and projects into a single clear signal — so the whole team knows where the work stands."
       >
-        <AuthHeading title="Welcome back" subtitle="Sign in to pick up where your team left off." />
+        <AuthHeading title={heading.title} subtitle={heading.subtitle} />
 
         <form onSubmit={onSignin} noValidate>
           {submitted ? <AuthErrorSummary errors={summary} summaryRef={summaryRef} /> : null}
@@ -243,7 +248,7 @@ export function LoginExperience() {
             </label>
             <Link
               href="/forgot-password"
-              className="text-sm font-medium underline underline-offset-2"
+              className="-my-1 py-1 text-sm font-medium underline underline-offset-2"
               style={{ color: "var(--m-accent-ink)" }}
             >
               Forgot password?
@@ -274,9 +279,9 @@ export function LoginExperience() {
           }}
         />
 
-        <AuthSwitch prompt="Don't have an account?" href="/register" label="Create a workspace" />
+        <AuthSwitch prompt="Don't have an account?" href="/register" label="Create an organization" />
         {/* An invited employee who pressed "Create a workspace" or "Continue with Google" instead of
-            the invite link ended up asking for a second organisation (UX audit ONB-03). */}
+            the invite link ended up asking for a second organization (UX audit ONB-03). */}
         <p className="mt-2 text-center text-xs" style={{ color: "var(--m-muted)" }}>
           Joining your team? Use the link in your invite email.
         </p>

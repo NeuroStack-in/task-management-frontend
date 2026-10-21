@@ -76,11 +76,11 @@ export function ConfirmEmailStep({
     <AuthFrame
       headline="Set your organization"
       headlineAccent="in motion"
-      copy={`One last step: confirm your email, and your workspace request goes to the WorkPulse team. ${REVIEW_TIME}`}
+      copy={`One last step: confirm your email, and your request for an organization goes to the WorkPulse team. ${REVIEW_TIME}`}
     >
       <AuthHeading
         title="Check your email"
-        subtitle={`We sent a 6-digit code to ${email}. Enter it to confirm your address and send your workspace request.`}
+        subtitle={`We sent a 6-digit code to ${email}. Enter it to confirm your address and send your request.`}
       />
       <form
         onSubmit={(e) => {
@@ -123,7 +123,7 @@ export function ConfirmEmailStep({
           type="button"
           onClick={resend}
           disabled={resending}
-          className="font-semibold underline underline-offset-2"
+          className="-my-1 py-1 font-semibold underline underline-offset-2"
           style={{ color: "var(--m-accent-ink)" }}
         >
           {resending ? "Sending…" : "Send a new code"}

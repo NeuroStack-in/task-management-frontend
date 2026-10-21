@@ -21,6 +21,6 @@ test.describe("marketing", () => {
     const res = await page.goto("/product/time-tracking");
 
     expect(res?.status()).toBe(200);
-    await expect(page.getByRole("link", { name: /log in/i }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /sign in/i }).first()).toBeVisible();
   });
 });

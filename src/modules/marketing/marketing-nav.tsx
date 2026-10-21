@@ -235,7 +235,7 @@ export function MarketingNav({ onDark = false }: { onDark?: boolean }) {
                 : undefined
             }
           >
-            Log in
+            Sign in
           </Link>
           <Link
             href="/register"
@@ -282,7 +282,7 @@ export function MarketingNav({ onDark = false }: { onDark?: boolean }) {
             {mobileSectionBlock("resources", "Resources", RESOURCES)}
             <div className="flex gap-2 px-1 pt-2">
               <Link href="/login" onClick={() => setMenuOpen(false)} className="m-btn m-btn-ghost flex-1">
-                Log in
+                Sign in
               </Link>
               <Link href="/register" onClick={() => setMenuOpen(false)} className="m-btn m-btn-primary flex-1">
                 Get started

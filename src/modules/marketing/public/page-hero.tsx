@@ -106,7 +106,7 @@ export function PageHero({
                   <li key={c.label} className="inline-flex items-center gap-1.5">
                     {i > 0 ? <ChevronRight className="size-3 opacity-50" aria-hidden="true" /> : null}
                     {c.href ? (
-                      <Link href={c.href} className="wp-hero-muted transition-colors hover:text-white">
+                      <Link href={c.href} className="wp-hero-muted -my-1 inline-block py-1 transition-colors hover:text-white">
                         {c.label}
                       </Link>
                     ) : (

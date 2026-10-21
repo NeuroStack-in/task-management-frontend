@@ -231,7 +231,7 @@ export function ResetPasswordForm() {
           type="button"
           onClick={resend}
           disabled={resending || submitting}
-          className="font-semibold underline underline-offset-2"
+          className="-my-1 py-1 font-semibold underline underline-offset-2"
           style={{ color: "var(--m-accent-ink)" }}
         >
           {resending ? "Sending…" : "Send a new code"}

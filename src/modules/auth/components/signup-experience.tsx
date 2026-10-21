@@ -345,7 +345,7 @@ export function SignupExperience({
     } catch {
       // The login exists and is confirmed; only the automatic sign-in failed. Signing in by hand
       // lands on /onboarding, which asks for the workspace again.
-      toast.success("Email confirmed", { description: "Sign in to send your workspace request." });
+      toast.success("Email confirmed", { description: "Sign in to send your request." });
       handOffEmail(email);
       router.replace("/login");
       return;
@@ -373,9 +373,9 @@ export function SignupExperience({
 
   const HEADINGS: [string, string][] = [
     // The review time is said here too: below 64rem the brand panel that carries it is hidden.
-    ["Request your workspace", "A member of the WorkPulse team reviews each request, usually within one business day."],
-    ["About your organization", "This names your workspace and helps us review your request."],
-    ["Your plan", "How plans work for a new workspace."],
+    ["Request your organization", "A member of the WorkPulse team reviews each request, usually within one business day."],
+    ["About your organization", "This names your organization and helps us review your request."],
+    ["Your plan", "How plans work for a new organization."],
   ];
 
   /** The region summary's one line — what the folded pickers currently hold. */
@@ -610,8 +610,8 @@ export function SignupExperience({
                 )}
                 <p className="m-anote">
                   {!regionOpen && region.country
-                    ? "Taken from this browser. It sets how times and currency are shown across your workspace."
-                    : "Optional. It sets how times and currency are shown across your workspace."}
+                    ? "Taken from this browser. It sets how times and currency are shown across your organization."
+                    : "Optional. It sets how times and currency are shown across your organization."}
                 </p>
               </div>
             </>
@@ -630,7 +630,7 @@ export function SignupExperience({
                 <p className="m-planinfo__lead">Free during the beta — nothing is charged, no card needed</p>
                 <ul>
                   <li>
-                    Your workspace starts on the <strong>Free plan</strong> —{" "}
+                    Your organization starts on the <strong>Free plan</strong> —{" "}
                     {membersLabel("free").toLowerCase()}, and it has no price.
                   </li>
                   <li>
@@ -640,7 +640,7 @@ export function SignupExperience({
                     starts.
                   </li>
                   <li>
-                    Once your workspace is approved, you choose the plan in Settings → Billing,
+                    Once your organization is approved, you choose the plan in Settings → Billing,
                     which also shows what it would cost once billing starts.
                   </li>
                 </ul>
