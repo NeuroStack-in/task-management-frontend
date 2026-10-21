@@ -23,6 +23,8 @@
  *    another reader was generating, with an identical response, so the card claims neither.
  */
 
+import { formatDateTime } from "@/lib/format";
+
 export type Provenance =
   /** A model wrote it. `model` only when the payload says which. */
   | { kind: "ai"; generatedAt: number | null; model?: string }
@@ -44,19 +46,26 @@ export interface AuthorshipFields {
  * When a summary was written, as local date-time, or `null` when that isn't known.
  *
  * `generated_at` is epoch **milliseconds** (the backend's `now_ms()`); `0` is the DTOs' stand-in
- * for "absent" and would otherwise render as 1 Jan 1970.
+ * for "absent" and would otherwise render as 1 Jan 1970. In the one date-time notation
+ * (`formatDateTime`, UX audit XC-06 / MON-23) — this had its own yearless style.
  */
 export function formatGeneratedAt(ms: number | null | undefined): string | null {
   if (!ms || !Number.isFinite(ms)) return null;
-  const d = new Date(ms);
-  return Number.isNaN(d.getTime())
-    ? null
-    : d.toLocaleString(undefined, {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+  return Number.isNaN(new Date(ms).getTime()) ? null : formatDateTime(ms);
+}
+
+/**
+ * Whether an AI card offers **Regenerate** — the one rule for every card (UX audit 2026-10-16,
+ * MON-21).
+ *
+ * Each press is a fresh, billed model run. Over a period with nothing to analyse — nobody scored, no
+ * frame analysed, nobody located — the server answers with its own fixed sentence and never calls the
+ * model, so the button could only spend a click (and, on older servers, a generation) on the same
+ * text. So: there must be data to analyse, and text on screen for a re-run to replace. A card may add
+ * conditions of its own (e.g. AI switched off), never drop these.
+ */
+export function canRegenerate(hasData: boolean, narrative: string | null | undefined): boolean {
+  return hasData && !!narrative?.trim();
 }
 
 /**

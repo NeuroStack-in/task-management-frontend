@@ -29,7 +29,7 @@ import { type OrgActivity } from "./services/insights.service";
 import { OMITTED, type ReportDef } from "./lib/report-def";
 import { attentionFor, orgActivityFor } from "./lib/day-reads";
 import { weekWorkdays } from "./lib/week";
-import { UNKNOWN_DEPARTMENT } from "@/lib/format";
+import { formatDate, formatDateRange, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { safeWorkdays, type IsoWeekday } from "@/lib/workdays";
 import { useAuthStore } from "@/stores/auth.store";
 import {
@@ -106,21 +106,9 @@ function expectedDayHours(h: OrgWorkingHours | null): number {
   return minutes > 0 ? Math.round((minutes / 60) * 10) / 10 : 8;
 }
 
-function prettyShort(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
+/** "Fri, 16 Oct 2026" — the one date notation (UX audit XC-06 / MON-23). */
 function prettyDay(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return formatDate(iso, { weekday: true });
 }
 
 /** The windows a library covers for one page date — what every card and exported file names. */
@@ -155,7 +143,7 @@ export function reportsWindow(
     weekLabel:
       from === to
         ? `${prettyDay(from)}${soFar(to)}`
-        : `${prettyShort(from)} – ${prettyShort(to)}${soFar(to)}`,
+        : `${formatDateRange(from, to)}${soFar(to)}`,
   };
 }
 

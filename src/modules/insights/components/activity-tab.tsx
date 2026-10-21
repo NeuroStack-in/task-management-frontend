@@ -48,6 +48,7 @@ import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 // The org's own week, not a Monday one (QA audit 2026-10-08, WP-487).
 import { weekStartIso, weekStartOf, weekWorkdays } from "../lib/week";
+import { countOf } from "../lib/plural";
 import { useInsightsDate, useInsightsDept } from "../use-insights-params";
 import { CaptureEmptyState } from "./capture-empty-state";
 import { ChartTable } from "./chart-table";
@@ -308,7 +309,7 @@ function OrgActivityTab() {
     );
     if (!busiest) return undefined;
     const flagged = hourlyData.reduce((s, b) => s + b.flagged, 0);
-    return `${hourly.captures} captures. Busiest hour ${busiest.label}, with ${busiest.total}. ${flagged} flagged by the AI.`;
+    return `${countOf(hourly.captures, "capture")}. Busiest hour ${busiest.label}, with ${busiest.total}. ${flagged} flagged by the AI.`;
   }, [hourlyData, hourly.captures]);
   const trendSummary = useMemo(() => {
     const scored = trendData.filter((d) => d.active !== null) as { label: string; active: number }[];
@@ -573,7 +574,7 @@ function OrgActivityTab() {
                             A 0–100 score for the day, blended from four parts (default weights):
                             <ul className="mt-1 list-disc space-y-0.5 pl-4">
                               <li>
-                                <strong>Utilisation (25%)</strong> — how much of the time on the
+                                <strong>Utilization (25%)</strong> — how much of the time on the
                                 timer was active at the computer
                               </li>
                               <li>
@@ -871,7 +872,7 @@ function OrgActivityTab() {
                   {
                     term: "Productive / Neutral / Distracting",
                     definition:
-                      "Your organization's own app rules decide which is which, from the app's name — the same app can be classified differently by another organization. This is not the AI's judgement: the AI reviews screenshots against each person's role and ignores app names. Website rules aren't applied yet, so time in a browser follows the browser's own rule. Unrecognized apps land in the rules editor's worklist rather than being guessed at.",
+                      "Your organization's own app rules decide which is which, from the app's name — the same app can be classified differently by another organization. This is not the AI's judgment: the AI reviews screenshots against each person's role and ignores app names. Website rules aren't applied yet, so time in a browser follows the browser's own rule. Unrecognized apps land in the rules editor's worklist rather than being guessed at.",
                   },
                 ]}
               />
@@ -924,17 +925,17 @@ function OrgActivityTab() {
                   );
                 })}
                 <p className="text-muted-foreground mt-auto pt-1 text-xs">
-                  Based on {fmtHours(catTotal)} of categorised activity across the team.
+                  Based on {fmtHours(catTotal)} of categorized activity across the team.
                 </p>
               </>
             ) : (
               <EmptyState
                 icon={Activity}
-                title="No activity to categorise"
+                title="No activity to categorize"
                 description={
                   granularity === "daily"
                     ? "Category time appears once agents report productive / neutral / distracting activity for this day."
-                    : "No agent reported categorised activity in this period. Pick a period with scored days, or check that the desktop agents are syncing."
+                    : "No agent reported categorized activity in this period. Pick a period with scored days, or check that the desktop agents are syncing."
                 }
                 className="border-0"
               />

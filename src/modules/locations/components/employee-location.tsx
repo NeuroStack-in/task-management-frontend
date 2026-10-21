@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
 import { DatePicker, TimePicker } from "@/components/ui/date-picker";
-import { todayIso } from "@/lib/format";
+import { formatDate, todayIso } from "@/lib/format";
 import { ApiError } from "@/lib/api";
 import { LIVE_REFRESH_MS, useLiveRefresh } from "@/hooks/use-live-refresh";
 import { getLocationTrail, type LocationPoint, type OversightPersonLocation } from "@/modules/insights/services/insights.service";
@@ -34,14 +34,9 @@ function dayStartMs(iso: string): number {
   return new Date(y, (m ?? 1) - 1, d ?? 1).getTime();
 }
 
+/** The one date notation (UX audit XC-06 / MON-23), `""` for an unset day. */
 function dateLabel(iso: string): string {
-  if (!iso) return "";
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return iso ? formatDate(iso) : "";
 }
 
 /** One run of the timer: `end` absent while it is still running. */

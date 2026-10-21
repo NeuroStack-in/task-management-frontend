@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { formatHours } from "@/lib/format";
+import { formatDate, formatDateTime, formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
 import { isOwnerOf, useIsFeatureAllowed } from "@/hooks/use-features";
@@ -38,7 +38,12 @@ import { useScopedEmployee } from "./employee-scope-bar";
 import { PersonAiReports } from "./person-analytics";
 import { ALERTS_ANCHOR, AttentionPanel } from "./attention-panel";
 import { PersonLink } from "./person-link";
-import { dailyReportProvenance, provenanceLine, type Provenance } from "../lib/ai-provenance";
+import {
+  canRegenerate,
+  dailyReportProvenance,
+  provenanceLine,
+  type Provenance,
+} from "../lib/ai-provenance";
 import { resolvePerson } from "../lib/attention";
 import { orgActivityFor } from "../lib/day-reads";
 import { HEALTH_BANDS, LOW_SCORE_BELOW, healthBand, type HealthBand } from "../lib/thresholds";
@@ -87,16 +92,13 @@ function shiftIso(iso: string, days: number): string {
 export function formatGenerated(ms: number): string | null {
   if (!ms || !Number.isFinite(ms)) return null;
   const d = new Date(ms);
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleString();
+  // The one date-time notation (UX audit XC-06 / MON-23), not the browser's raw `toLocaleString`.
+  return Number.isNaN(d.getTime()) ? null : formatDateTime(d);
 }
 
+/** "Fri, 16 Oct 2026" — the one date notation (MON-23); this read "Friday, Oct 16". */
 function prettyDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
+  return formatDate(iso, { weekday: true });
 }
 
 /* -------------------------------- component ------------------------------- */
@@ -350,13 +352,9 @@ function useDayRoster(date: string): PersonScore[] {
   return people;
 }
 
-/** `2026-10-05` → `"Oct 5"`. */
+/** `2026-10-05` → `"5 Oct 2026"`, the one date notation (MON-23). */
 function shortDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  return formatDate(iso);
 }
 
 const AI_PDF_FEATURE = "insights.reports.ai_pdf";
@@ -452,13 +450,12 @@ function AiBriefing({
   /**
    * A re-run can change the text when a model wrote it — or when the server wrote the line itself
    * over a scored day (the provider was down), which a retry may turn into the model's. Never over
-   * an unscored day: that fixed line is the whole answer.
+   * an unscored day: that fixed line is the whole answer — and never, whatever the payload claims,
+   * without someone scored to analyse (the one Regenerate rule, UX audit MON-21).
    */
   const canRerun =
-    isAi ||
-    (provenance.kind === "computed" &&
-      report.ai_generated === false &&
-      report.metrics.scored_people > 0);
+    canRegenerate(report.metrics.scored_people > 0, report.narrative) &&
+    (isAi || (provenance.kind === "computed" && report.ai_generated === false));
 
   return (
     <div className="relative flex flex-col overflow-hidden rounded-3xl bg-feature p-6 text-feature-foreground shadow-soft xl:col-span-8">

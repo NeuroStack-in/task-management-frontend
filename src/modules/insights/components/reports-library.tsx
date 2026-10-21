@@ -60,6 +60,7 @@ import {
   exportSelectedCsv,
 } from "../lib/report-export";
 import { useReportsData } from "../use-reports-data";
+import { countOf } from "../lib/plural";
 
 /**
  * The report library — the preview's "All reports" surface, restored element-for-element (category
@@ -395,7 +396,8 @@ function ReportCard({
 
       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span>
-          {report.rows.length} rows · {report.columns.length} columns
+          {/* "1 rows" (UX audit MON-23). */}
+          {countOf(report.rows.length, "row")} · {countOf(report.columns.length, "column")}
         </span>
         <button
           type="button"
@@ -476,7 +478,7 @@ function ReportPreviewDialog({
               <DialogDescription>
                 {REPORT_CATEGORY_LABEL[report.category]}
                 {report.timeframe ? ` · ${report.timeframe}` : ""} ·{" "}
-                {report.rows.length} rows
+                {countOf(report.rows.length, "row")}
               </DialogDescription>
             </DialogHeader>
 

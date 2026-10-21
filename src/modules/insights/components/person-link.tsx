@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Camera } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import { EMP_PARAM } from "../lib/employee-scope";
 import { DATE_PARAM } from "../lib/url-params";
 
@@ -21,12 +22,9 @@ export function personScreenshotsHref(userId: string, date: string): string {
   return `/insights/screenshots?${q.toString()}`;
 }
 
+/** The one date notation (UX audit XC-06 / MON-23). */
 function shortDay(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-  });
+  return formatDate(iso);
 }
 
 /**

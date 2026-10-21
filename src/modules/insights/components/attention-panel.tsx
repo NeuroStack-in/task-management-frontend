@@ -16,6 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
+import { countOf } from "../lib/plural";
 import {
   buildAttentionPeople,
   LOW_SCORE_BELOW,
@@ -67,22 +69,16 @@ const SEVERITY_TONE: Record<Severity, string> = {
   low: "bg-muted text-muted-foreground",
 };
 
+/** The one date notation (UX audit XC-06 / MON-23): "Fri, 16 Oct 2026". */
 function dayLabel(iso: string, today: string): string {
   if (!iso) return "";
-  const [y, m, d] = iso.split("-").map(Number);
-  const label = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+  const label = formatDate(iso, { weekday: true });
   return iso === today ? `${label} (today)` : label;
 }
 
 function shortDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  return formatDate(ms, { weekday: true });
 }
-
-const plural = (n: number, one: string, many: string) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 const readyData = <T,>(s: Signal<T>): T | null => (s.status === "ready" ? s.data : null);
 
@@ -334,18 +330,21 @@ function FlagsTile({ state, date }: { state: AttentionState; date: string }) {
     if (d.read === 0) {
       reason = "No screenshots were captured on this day.";
     } else if (d.open > 0) {
-      reason = `Across ${plural(people, "person", "people")}. The AI judged these not work for the person's role, and nobody has confirmed or dismissed them yet.`;
+      reason = `Across ${countOf(people, "person", "people")}. The AI judged these not work for the person's role, and nobody has confirmed or dismissed them yet.`;
     } else {
       // "Nothing flagged" must never stand in for "nothing checked" (MON-01).
+      // "Nothing flagged in the 0 the AI has checked" when it had checked none (MON-23).
       reason =
         unchecked > 0
-          ? `Nothing flagged in the ${d.analysed.toLocaleString()} the AI has checked — ${unchecked.toLocaleString()} not checked yet.`
+          ? d.analysed === 0
+            ? `The AI hasn't checked any of the ${countOf(d.read, "capture")} yet.`
+            : `Nothing flagged in the ${d.analysed.toLocaleString()} the AI has checked — ${unchecked.toLocaleString()} not checked yet.`
           : "Nothing flagged — the AI has checked every capture.";
     }
     note = d.truncated
       ? `Counted in the first ${d.read.toLocaleString()}${d.total ? ` of ${d.total.toLocaleString()}` : ""} captures — there may be more.`
       : d.read > 0 && d.open > 0
-        ? `AI-checked ${d.analysed.toLocaleString()} of ${d.read.toLocaleString()} captures.`
+        ? `AI-checked ${d.analysed.toLocaleString()} of ${countOf(d.read, "capture")}.`
         : null;
   }
   const q = new URLSearchParams({ date, show: "review" });
@@ -416,7 +415,11 @@ function LowScoreTile({ state, onSeeWho }: { state: AttentionState; onSeeWho: ()
             : `Productivity score below ${LOW_SCORE_BELOW} for the day.`
           : undefined
       }
-      note={people && scored.length > 0 ? `${scored.length} of ${people.length} people scored.` : null}
+      note={
+        people && scored.length > 0
+          ? `${scored.length} of ${countOf(people.length, "person", "people")} scored.`
+          : null
+      }
       onRetry={state.reload}
       action={low.length > 0 ? <TileButton onClick={onSeeWho}>See who</TileButton> : null}
     />
@@ -426,16 +429,7 @@ function LowScoreTile({ state, onSeeWho }: { state: AttentionState; onSeeWho: ()
 function AgentsTile({ state }: { state: AttentionState }) {
   const s = state.agents;
   const d = s.status === "ready" ? s.data : null;
-  const since = d?.sinceDay
-    ? (() => {
-        const [y, m, dd] = d.sinceDay.split("-").map(Number);
-        return new Date(y ?? 1970, (m ?? 1) - 1, dd ?? 1).toLocaleDateString(undefined, {
-          weekday: "short",
-          day: "numeric",
-          month: "short",
-        });
-      })()
-    : "";
+  const since = d?.sinceDay ? formatDate(d.sinceDay, { weekday: true }) : "";
   return (
     <Tile
       icon={WifiOff}
@@ -505,7 +499,7 @@ function PersonRow({ person: p, date }: { person: AttentionPerson; date: string 
         {p.openFlags > 0 ? (
           <Badge className="bg-warning/15 text-warning">
             <Flag aria-hidden="true" />
-            {plural(p.openFlags, "capture", "captures")} to review
+            {countOf(p.openFlags, "capture")} to review
           </Badge>
         ) : null}
         {p.lowScore !== null ? (
@@ -554,7 +548,9 @@ function AllClear({ state, label }: { state: AttentionState; label: string }) {
         {failed.length > 0
           ? `Couldn't check ${failed.map(([name]) => name).join(", ")} — see above.`
           : clearText.charAt(0).toUpperCase() + clearText.slice(1)}
-        {unchecked > 0 ? ` ${unchecked.toLocaleString()} captures haven't been checked by the AI yet.` : ""}
+        {unchecked > 0
+          ? ` ${countOf(unchecked, "capture")} ${unchecked === 1 ? "hasn't" : "haven't"} been checked by the AI yet.`
+          : ""}
       </p>
     </div>
   );

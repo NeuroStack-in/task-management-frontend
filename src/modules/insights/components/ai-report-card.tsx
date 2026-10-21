@@ -83,7 +83,8 @@ export function AiReportCard({
    */
   action?: React.ReactNode;
   /** Re-run the model for this period (the narrative is otherwise generate-once-cached).
-   *  Omit to hide the button — e.g. while locked behind the add-on or before data loads. */
+   *  Omit to hide the button — pass it only when `canRegenerate` (`lib/ai-provenance`) holds: there
+   *  is data to analyse and a narrative to replace (UX audit MON-21). Never over an empty period. */
   onRegenerate?: () => void;
   regenerating?: boolean;
   /** Shown as "Try again" when the summary failed to **load** — a plain re-read, not a re-run. */

@@ -7,15 +7,9 @@ import { cn } from "@/lib/utils";
 import { Calendar } from "./calendar";
 import { ScrollArea } from "./scroll-area";
 import { TRIGGER, useAnchoredPopup } from "./anchored-popup";
-
-const MONTHS_SHORT = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-const formatDate = (iso: string) => {
-  const [y, m, d] = iso.split("-");
-  return `${MONTHS_SHORT[+m - 1]} ${+d}, ${y}`;
-};
+// The one date notation (UX audit XC-06): the picker printed its own "Oct 21, 2026" whatever the
+// viewer's locale, so its label disagreed with the page around it ("21 Oct 2026").
+import { formatDate } from "@/lib/format";
 
 /**
  * Popup extents, used to place the panel before it exists.

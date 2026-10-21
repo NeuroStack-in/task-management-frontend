@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  MapPin,
   MapPinOff,
   Navigation,
   Search,
@@ -17,7 +16,6 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -29,7 +27,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { AiReportCard } from "@/modules/insights/components/ai-report-card";
-import type { Provenance } from "@/modules/insights/lib/ai-provenance";
+import { canRegenerate, type Provenance } from "@/modules/insights/lib/ai-provenance";
+import { countOf, nounFor } from "@/modules/insights/lib/plural";
 import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store";
 import { useEmployeeName } from "@/modules/insights/components/employee-scope-bar";
 import { ApiError } from "@/lib/api";
@@ -45,7 +44,7 @@ import { LIVE_REFRESH_MS, useLiveRefresh } from "@/hooks/use-live-refresh";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useGeofenceStore } from "@/stores/geofence.store";
-import { UNKNOWN_DEPARTMENT } from "@/lib/format";
+import { formatDate, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import {
   deriveMode,
   deriveStatus,
@@ -73,15 +72,9 @@ function shiftIso(iso: string, days: number): string {
 }
 const clock = (ms: number) =>
   new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-/** Human date label from an ISO `YYYY-MM-DD` string, TZ-safe (parsed as local Y/M/D). */
+/** The one date notation (UX audit XC-06 / MON-23), TZ-safe; `""` for an unset day. */
 function dateLabel(iso: string): string {
-  if (!iso) return "";
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return iso ? formatDate(iso) : "";
 }
 /** Backend points are `{ lat, lon }`; the map wants `{ lat, lng }`. */
 const toGeoPoint = (p: { lat: number; lon: number }): GeoPoint => ({
@@ -334,18 +327,32 @@ function LocationsBoard({
     [rows, inScope],
   );
 
-  // …plus the one in the URL, when another tab picked a department nobody here is in: the filter
-  // must name what it is filtering by rather than read "All departments" over an empty list (MON-13).
-  const departments = useMemo(() => {
-    const present = new Set(scoped.map((p) => p.department_id));
-    if (dept !== "all") present.add(dept);
-    return Array.from(present).sort();
-  }, [scoped, dept]);
   // `unassigned` is the server's sentinel for someone not yet filed under a department.
   const deptLabel = (id: string) =>
     id === "unassigned"
       ? "Unassigned"
       : (deptNames.get(id) ?? (id ? UNKNOWN_DEPARTMENT : ""));
+  // Only departments with someone on the board (UX audit MON-23), listed by name rather than by id.
+  // Unlike the Screenshots filter this keeps a department whose people reported no location: the
+  // board lists them ("No location reported"), and that absence is what a reviewer filtering to it
+  // is after. …plus the one in the URL, when another tab picked a department nobody here is in: the
+  // filter must name what it is filtering by rather than read "All departments" over an empty list
+  // (MON-13).
+  const departments = useMemo(() => {
+    const present = new Set(scoped.map((p) => p.department_id));
+    if (dept !== "all") present.add(dept);
+    return Array.from(present).sort((a, b) => deptLabel(a).localeCompare(deptLabel(b)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoped, dept, deptNames]);
+
+  /**
+   * The rows the department filter keeps — what the report card counts and describes. The card's
+   * narrative already followed the filter while its figures counted the whole organization beside it.
+   */
+  const inDept = useMemo(
+    () => (dept === "all" ? scoped : scoped.filter((p) => p.department_id === dept)),
+    [scoped, dept],
+  );
 
   const fence = { center: fenceCenter, radiusM };
   /** Inside / outside / too coarse to place — the fix's own accuracy counts (see `perimeterVerdict`). */
@@ -354,10 +361,10 @@ function LocationsBoard({
   const flagOutside = (p: OversightPersonLocation) =>
     showFence && verdictOf(p) === "outside";
 
-  const locatedCount = scoped.filter((p) => p.latest).length;
-  const outsideCount = scoped.filter(flagOutside).length;
+  const locatedCount = inDept.filter((p) => p.latest).length;
+  const outsideCount = inDept.filter(flagOutside).length;
   const insideCount = showFence
-    ? scoped.filter((p) => verdictOf(p) === "inside").length
+    ? inDept.filter((p) => verdictOf(p) === "inside").length
     : 0;
   const imprecise = showFence ? locatedCount - insideCount - outsideCount : 0;
 
@@ -378,7 +385,7 @@ function LocationsBoard({
             },
           ]
         : [
-            { label: "People", value: String(scoped.length) },
+            { label: "People", value: String(inDept.length) },
             { label: "Located (have a fix)", value: String(locatedCount) },
           ]),
       ...(rows !== null && showFence && onSiteCount !== null && offSiteCount !== null
@@ -405,24 +412,34 @@ function LocationsBoard({
    * A failure keeps the card usable rather than blanking it: the local recap below is the same
    * facts in our own words, so the page still answers the question when the model doesn't.
    */
+  // Plurals agree with the count ("0 of 1 employees", UX audit MON-23); the date is the one notation.
+  const ofEmployees = `${locatedCount} of ${countOf(inDept.length, "employee")}`;
   const localRecap =
     rows === null
       ? error
-        ? `Location data for ${label} couldn't be loaded, so there is nothing to summarise yet.`
+        ? `Location data for ${label} couldn't be loaded, so there is nothing to summarize yet.`
         : `Reading the locations for ${label}…`
-      : scoped.length === 0
+      : inDept.length === 0
         ? `No employees in view for ${label}.`
-        : showFence
-          ? `${locatedCount} of ${scoped.length} employees located on ${label}; ${onSiteCount} on-site, ${offSiteCount} off-site${
-              imprecise > 0 ? `, ${imprecise} too imprecise to place` : ""
-            }.`
-          : `${locatedCount} of ${scoped.length} employees located on ${label}. Set an office location to see on-site vs off-site.`;
+        : locatedCount === 0
+          ? `${ofEmployees} reported a location on ${label}.`
+          : showFence
+            ? `${ofEmployees} reported a location on ${label}: ${onSiteCount} inside the office perimeter, ${offSiteCount} outside it${
+                imprecise > 0 ? `, ${imprecise} too imprecise to place` : ""
+              }.`
+            : `${ofEmployees} reported a location on ${label}. No office perimeter is set, so on-site and off-site can't be told apart.`;
 
   /** The department's display name for the narrative — undefined for the org-wide view. */
   const deptAiLabel = dept === "all" ? undefined : deptLabel(dept);
   const [aiNarrative, setAiNarrative] = useState<string | null>(null);
   /** What the narrative was written over — enough to tell model text from the server's own line. */
-  const [aiMeta, setAiMeta] = useState<{ located: number; generatedAt: number } | null>(null);
+  const [aiMeta, setAiMeta] = useState<{
+    located: number;
+    generatedAt: number;
+    /** The server's own word on who wrote it (MON-08); absent from servers that predate it. */
+    aiGenerated?: boolean;
+    model?: string | null;
+  } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   /** The (date, department) a Regenerate is running for, or `null`. */
   const [regenFor, setRegenFor] = useState<string | null>(null);
@@ -446,7 +463,12 @@ function LocationsBoard({
       .then((s) => {
         if (!live) return;
         setAiNarrative(s.narrative);
-        setAiMeta({ located: s.metrics.located, generatedAt: s.generated_at });
+        setAiMeta({
+          located: s.metrics.located,
+          generatedAt: s.generated_at,
+          aiGenerated: s.ai_generated,
+          model: s.model,
+        });
       })
       .catch(() => live && setAiNarrative(null))
       .finally(() => live && setAiLoading(false));
@@ -470,7 +492,12 @@ function LocationsBoard({
       // (QA audit 2026-10-08, WP-278).
       if (aiCurrent.current === started) {
         setAiNarrative(s.narrative);
-        setAiMeta({ located: s.metrics.located, generatedAt: s.generated_at });
+        setAiMeta({
+          located: s.metrics.located,
+          generatedAt: s.generated_at,
+          aiGenerated: s.ai_generated,
+          model: s.model,
+        });
       }
     } catch {
       // Keep what's on screen — a failed re-run must not blank the card — but say it failed.
@@ -482,27 +509,43 @@ function LocationsBoard({
     }
   }
 
-  const aiSummary =
-    aiLoading && !aiNarrative
-      ? "Reading the day's locations…"
-      : aiNarrative || localRecap;
-
   /**
    * Who wrote the text on the card (UX audit 2026-10-16, MON-08 / XC-08), read from what
    * `insights::location_summary` actually does: the server writes its own factual line — no model —
-   * when nobody in view was located, and whenever the org's AI insights are off (the plain
-   * `is_effective` check, no owner exemption — hence the store's own reading, not the owner-exempt
-   * hook). A provider failure is an HTTP error, which leaves our local recap: also not AI.
+   * when nobody in view was located, when the provider fails, and whenever the org's AI insights are
+   * off (the plain `is_effective` check, no owner exemption — hence the store's own reading, not the
+   * owner-exempt hook). It says so with `ai_generated: false`; an older server only by `located: 0`.
    */
   const aiInsightsOn = useEntitlementsStore((st) =>
     effectiveFromState(st, "ai.insights"),
   );
+  const modelWrote =
+    !!aiNarrative &&
+    !!aiMeta &&
+    aiMeta.aiGenerated !== false &&
+    aiMeta.located > 0 &&
+    aiInsightsOn;
+  /**
+   * The model's narrative when it wrote one; otherwise our own recap of the same figures. The
+   * server's own line printed the day as `2026-10-16` beside a date picker reading "16 Oct 2026"
+   * (UX audit MON-23) — the recap says it in the page's notation, and agrees its plurals.
+   */
+  const aiSummary =
+    aiLoading && !aiNarrative
+      ? "Reading the day's locations…"
+      : modelWrote
+        ? aiNarrative!
+        : localRecap;
   const aiProvenance: Provenance =
     aiLoading && !aiNarrative
       ? { kind: "none" }
-      : !aiNarrative || !aiMeta || aiMeta.located === 0 || !aiInsightsOn
-        ? { kind: "computed" }
-        : { kind: "ai", generatedAt: aiMeta.generatedAt };
+      : modelWrote
+        ? {
+            kind: "ai",
+            generatedAt: aiMeta!.generatedAt,
+            ...(aiMeta!.model ? { model: aiMeta!.model } : {}),
+          }
+        : { kind: "computed" };
 
   const q = query.trim().toLowerCase();
   const matchesStatus = (p: OversightPersonLocation) => {
@@ -548,6 +591,8 @@ function LocationsBoard({
           point: toGeoPoint(p.latest!),
           variant: "avatar" as const,
           name: `${p.name}${flagOutside(p) ? " · outside perimeter" : ""}`,
+          // What a keyboard or screen-reader user is about to open (MON-22).
+          label: `Open ${p.name}'s locations${flagOutside(p) ? " — outside the office perimeter" : ""}`,
           // The same definition of "online" as the Online filter beside it. The dot was simply
           // "it's today", so a fix from 08:00 still wore it at 17:00 (WP-286).
           online: deriveStatus(p.latest!.captured_at, p.fix_count, now) === "online",
@@ -579,13 +624,21 @@ function LocationsBoard({
     <div className="space-y-5">
       {/* AI location report — a factual recap over the day's real fixes + the office perimeter. */}
       <AiReportCard
-        // "AI" in the title only over text a model wrote (MON-08).
-        title={aiProvenance.kind === "ai" ? "AI location report" : "Location report"}
+        // "AI" in the title only over text a model wrote (MON-08); the department it describes, as
+        // the Screenshots card names it.
+        title={`${aiProvenance.kind === "ai" ? "AI location report" : "Location report"}${
+          dept === "all" ? "" : ` · ${deptLabel(dept)}`
+        }`}
         summary={aiSummary}
         provenance={aiProvenance}
-        // Only once a real narrative exists: with the local recap showing there is nothing to
-        // re-run, and each press is a fresh billed generation.
-        onRegenerate={aiNarrative ? regenerateAi : undefined}
+        // Only over a day with someone located — the data a model run analyses — and with AI
+        // insights on: otherwise the server answers with its own fixed line and no model call, so
+        // each press would buy the same sentence (UX audit MON-21).
+        onRegenerate={
+          canRegenerate((aiMeta?.located ?? 0) > 0, aiNarrative) && aiInsightsOn
+            ? regenerateAi
+            : undefined
+        }
         regenerating={regenFor === aiSelection}
         notice={aiNotice}
         metrics={
@@ -599,15 +652,12 @@ function LocationsBoard({
                 { label: "No location", value: "—" },
               ]
             : [
-                { label: "Employees", value: scoped.length },
-                {
-                  label: isToday ? "Located today" : "Located",
-                  value: locatedCount,
-                  hint: isToday ? "last seen" : undefined,
-                },
+                { label: nounFor(inDept.length, "Employee"), value: inDept.length },
+                // No "last seen" beside the figure: it read "0 last seen" (UX audit MON-23).
+                { label: isToday ? "Located today" : "Located", value: locatedCount },
                 showFence
                   ? { label: "On-site", value: onSiteCount ?? 0 }
-                  : { label: "On-site", value: "—", hint: "set office location" },
+                  : { label: "On-site", value: "—", hint: "no perimeter set" },
                 showFence
                   ? {
                       label: "Off-site",
@@ -615,8 +665,8 @@ function LocationsBoard({
                       hint:
                         imprecise > 0 ? `${imprecise} too imprecise to place` : undefined,
                     }
-                  : { label: "Off-site", value: "—", hint: "set office location" },
-                { label: "No location", value: scoped.length - locatedCount },
+                  : { label: "Off-site", value: "—", hint: "no perimeter set" },
+                { label: "No location", value: inDept.length - locatedCount },
               ]
         }
       />
@@ -756,116 +806,145 @@ function LocationsBoard({
             recenterKey="board"
             fitPoints={fitPoints}
             fitKey={fitKey}
+            // A whole office lands on one spot; overlapping faces become one numbered bubble (MON-22).
+            cluster
           />
 
-          {/* Perimeter control — an editor for `monitoring:manage`, a read-out for everyone else. */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-            {!canEditFence ? (
-              <span className="font-medium">
-                {showFence ? (
-                  <>
-                    Office perimeter · {radiusM} m radius ·{" "}
-                    <span
-                      className={cn(
-                        outsideCount > 0 ? "text-destructive" : "text-muted-foreground",
-                      )}
-                    >
-                      {outsideCount} outside
+          {/*
+            Perimeter control — an editor for `monitoring:manage`, a read-out for everyone else.
+
+            It is the **organization's** perimeter, not a view toggle: the checkbox sat beside the
+            map's filters looking like "show the circle on my map", while it changes whether everyone
+            in the organization is placed on-site or off-site (UX audit 2026-10-16, MON-22). Hence
+            the fieldset and legend naming it an organization setting, and the line saying what Save
+            does. Nothing is written until Save — see `useGeofenceStore`, whose setters stay local —
+            so it needs no confirmation of its own; the unsaved state says so instead.
+          */}
+          <fieldset className="space-y-2 rounded-xl border px-3 pt-1 pb-2.5 text-xs">
+            <legend className="px-1 text-xs font-semibold">
+              Office perimeter{" "}
+              <span className="text-muted-foreground font-normal">· organization setting</span>
+            </legend>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {!canEditFence ? (
+                <span className="font-medium">
+                  {showFence ? (
+                    <>
+                      {radiusM} m radius ·{" "}
+                      <span
+                        className={cn(
+                          outsideCount > 0 ? "text-destructive" : "text-muted-foreground",
+                        )}
+                      >
+                        {outsideCount} outside
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      No office perimeter is set for your organization.
                     </span>
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">
-                    No office perimeter is set.
-                  </span>
-                )}
-              </span>
-            ) : (
-              <label className="flex items-center gap-1.5 font-medium">
-                <input
-                  type="checkbox"
-                  checked={showFence}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                  className="size-3.5"
-                  style={{ accentColor: "var(--primary)" }}
-                />
-                Office perimeter
-              </label>
-            )}
-            {canEditFence && showFence ? (
-              <>
-                <input
-                  type="range"
-                  min={100}
-                  max={2000}
-                  step={50}
-                  value={radiusM}
-                  onChange={(e) => setRadius(Number(e.target.value))}
-                  className="w-40"
-                  style={{ accentColor: "var(--primary)" }}
-                  aria-label="Perimeter radius"
-                />
-                <span className="text-muted-foreground tabular-nums">
-                  {radiusM} m radius
-                </span>
-                <span
-                  className={cn(
-                    outsideCount > 0 ? "text-destructive" : "text-muted-foreground",
                   )}
-                >
-                  · {outsideCount} outside
                 </span>
-                <Button
-                  variant={editingFence ? "default" : "outline"}
-                  size="sm"
-                  className="h-7"
-                  onClick={() => setEditingFence((v) => !v)}
-                >
-                  {editingFence ? "Done" : "Move office"}
-                </Button>
-              </>
+              ) : (
+                <label className="flex items-center gap-1.5 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={showFence}
+                    onChange={(e) => setEnabled(e.target.checked)}
+                    className="size-3.5"
+                    style={{ accentColor: "var(--primary)" }}
+                    aria-describedby="perimeter-scope"
+                  />
+                  Use an office perimeter
+                </label>
+              )}
+              {canEditFence && showFence ? (
+                <>
+                  <input
+                    type="range"
+                    min={100}
+                    max={2000}
+                    step={50}
+                    value={radiusM}
+                    onChange={(e) => setRadius(Number(e.target.value))}
+                    className="w-40"
+                    style={{ accentColor: "var(--primary)" }}
+                    aria-label="Perimeter radius"
+                  />
+                  <span className="text-muted-foreground tabular-nums">
+                    {radiusM} m radius
+                  </span>
+                  <span
+                    className={cn(
+                      outsideCount > 0 ? "text-destructive" : "text-muted-foreground",
+                    )}
+                  >
+                    · {outsideCount} outside
+                  </span>
+                  <Button
+                    variant={editingFence ? "default" : "outline"}
+                    size="sm"
+                    className="h-7"
+                    onClick={() => setEditingFence((v) => !v)}
+                  >
+                    {editingFence ? "Done" : "Move office"}
+                  </Button>
+                </>
+              ) : null}
+              {/*
+                Saving is explicit and only offered when something actually changed. The perimeter is
+                org-wide, so an accidental autosave would move every colleague's inside/outside status;
+                and without the dirty check there is no way to tell a dragged-but-unsaved fence from the
+                saved one. Reset undoes those edits — back to the saved perimeter — so it appears with
+                them; outside the `showFence` block, so switching the perimeter off can be undone too.
+              */}
+              {canEditFence && fenceDirty ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7"
+                    onClick={() => {
+                      resetFence();
+                      setEditingFence(false);
+                    }}
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7"
+                    disabled={fenceSaving}
+                    onClick={() => {
+                      void saveFence().then((ok) => ok && setEditingFence(false));
+                    }}
+                  >
+                    {fenceSaving ? "Saving…" : "Save for everyone"}
+                  </Button>
+                </>
+              ) : null}
+              {/* Load failures too, for everyone — they used to show only inside the editor, which a
+                  failed load had switched off, so they were never seen. */}
+              {fenceError ? <span className="text-destructive">{fenceError}</span> : null}
+            </div>
+            {canEditFence ? (
+              <p
+                id="perimeter-scope"
+                className={cn(fenceDirty ? "text-warning font-medium" : "text-muted-foreground")}
+                role="status"
+              >
+                {fenceDirty
+                  ? "Unsaved change — only you can see it. Save for everyone to apply it to the whole organization, or Reset to undo it."
+                  : "Changes apply to everyone in your organization once you save — who counts as on-site or off-site follows this perimeter."}
+              </p>
             ) : null}
-            {/*
-              Saving is explicit and only offered when something actually changed. The perimeter is
-              org-wide, so an accidental autosave would move every colleague's inside/outside status;
-              and without the dirty check there is no way to tell a dragged-but-unsaved fence from the
-              saved one. Reset undoes those edits — back to the saved perimeter — so it appears with
-              them; outside the `showFence` block, so switching the perimeter off can be undone too.
-            */}
-            {canEditFence && fenceDirty ? (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7"
-                  onClick={() => {
-                    resetFence();
-                    setEditingFence(false);
-                  }}
-                >
-                  Reset
-                </Button>
-                <Button
-                  size="sm"
-                  className="h-7"
-                  disabled={fenceSaving}
-                  onClick={() => {
-                    void saveFence().then((ok) => ok && setEditingFence(false));
-                  }}
-                >
-                  {fenceSaving ? "Saving…" : "Save perimeter"}
-                </Button>
-              </>
-            ) : null}
-            {/* Load failures too, for everyone — they used to show only inside the editor, which a
-                failed load had switched off, so they were never seen. */}
-            {fenceError ? <span className="text-destructive">{fenceError}</span> : null}
-          </div>
+          </fieldset>
 
           <p className="text-muted-foreground text-xs">
-            Positions are the latest device fix the desktop agent reported that day
-            (consent-gated); a shaded circle is the fix&apos;s own accuracy. The office
-            perimeter is a review aid — a red ring marks a fix outside it, beyond its
-            accuracy.
+            Positions are the latest location the desktop agent reported that day, only where the
+            device allows it; a shaded circle shows how accurate it is. Overlapping people are
+            grouped into a numbered circle — select it to zoom in. The office perimeter is a review
+            aid — a red ring marks someone outside it, beyond the fix&apos;s accuracy.
           </p>
         </CardContent>
       </Card>
@@ -874,15 +953,21 @@ function LocationsBoard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground text-sm">
           <span className="text-foreground font-medium">{employees.length}</span> of{" "}
-          {scoped.length} employees
+          {countOf(scoped.length, "employee")}
         </p>
-        <div className="relative">
-          <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+        <div className="relative w-full sm:w-64">
+          <Search
+            className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
+            aria-hidden="true"
+          />
+          {/* Named for assistive tech — the placeholder alone vanished once typing began (MON-22). */}
           <Input
+            type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search employee…"
-            className="h-9 w-64 pl-8"
+            aria-label="Search employees by name"
+            className="h-9 w-full pl-8"
           />
         </div>
       </div>
@@ -949,41 +1034,33 @@ function LocationsBoard({
                   className="size-10"
                   fallbackClassName="text-xs"
                 />
+                {/* The status wraps rather than truncating — "No location rep…" hid the one fact
+                    the card is for (UX audit MON-23). */}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{p.name}</p>
+                  <p className="text-sm font-medium break-words">{p.name}</p>
                   {outside ? (
-                    <p className="text-destructive flex items-center gap-1 truncate text-xs">
-                      <AlertTriangle className="size-3 shrink-0" />
-                      <span className="truncate">
-                        Outside perimeter · {clock(p.latest!.captured_at)}
-                      </span>
+                    <p className="text-destructive flex items-start gap-1 text-xs">
+                      <AlertTriangle className="mt-px size-3 shrink-0" aria-hidden="true" />
+                      <span>Outside perimeter · {clock(p.latest!.captured_at)}</span>
                     </p>
                   ) : located ? (
-                    <p className="text-muted-foreground flex items-center gap-1 truncate text-xs">
-                      <Navigation className="text-primary size-3 shrink-0" />
-                      <span className="truncate">
-                        Last seen {clock(p.latest!.captured_at)} · {p.fix_count}{" "}
-                        {p.fix_count === 1 ? "location" : "locations"}
+                    <p className="text-muted-foreground flex items-start gap-1 text-xs">
+                      <Navigation className="text-primary mt-px size-3 shrink-0" aria-hidden="true" />
+                      <span>
+                        Last seen {clock(p.latest!.captured_at)} ·{" "}
+                        {countOf(p.fix_count, "location")}
                       </span>
                     </p>
                   ) : (
-                    <p className="text-muted-foreground flex items-center gap-1 truncate text-xs">
-                      <MapPinOff className="size-3 shrink-0" />
-                      <span className="truncate">No location reported</span>
+                    <p className="text-muted-foreground flex items-start gap-1 text-xs">
+                      <MapPinOff className="mt-px size-3 shrink-0" aria-hidden="true" />
+                      <span>No location reported</span>
                     </p>
                   )}
                 </div>
-                <Badge
-                  className={cn(
-                    "gap-1 border-transparent",
-                    located
-                      ? "bg-success/12 text-success"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  <MapPin className="size-3" />
-                  {located ? "Located" : "—"}
-                </Badge>
+                {/* No "Located" / "—" badge: it repeated the status line beside it ("—" beside "No
+                    location reported") and took the width that squeezed the status into an
+                    ellipsis (MON-23). */}
                 <ChevronRight className="text-muted-foreground size-4 shrink-0 transition group-hover:translate-x-0.5" />
               </button>
             );

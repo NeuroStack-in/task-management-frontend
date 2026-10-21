@@ -32,7 +32,7 @@ import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
-import { formatDuration, isoDay } from "@/lib/format";
+import { formatDate, formatDuration, isoDay } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { EmployeeAppUsageCard } from "@/modules/employees/components/employee-app-usage-card";
 import { EmployeeRecapCard } from "@/modules/employees/components/employee-recap-card";
@@ -61,9 +61,9 @@ function daysBetween(from: string, to: string): string[] {
   return out;
 }
 
+/** A chart tick — the one date notation without its year, where space is tight (MON-23). */
 function shortLabel(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return formatDate(iso, { year: false });
 }
 
 /** One employee's Activity tab. */

@@ -175,7 +175,7 @@ export interface ScoreDriver {
  */
 export function scoreDrivers(b: ScoreBreakdown): ScoreDriver[] {
   const out: ScoreDriver[] = [
-    { key: "u", label: "Utilisation", value: Math.round(b.u) },
+    { key: "u", label: "Utilization", value: Math.round(b.u) },
     { key: "f", label: "Focus", value: Math.round(b.f) },
     { key: "r", label: "Reliability", value: Math.round(b.r) },
   ];

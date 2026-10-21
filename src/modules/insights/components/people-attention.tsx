@@ -9,6 +9,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import {
   getDayOversight,
   type ApiDayUser,
@@ -54,14 +55,9 @@ function shiftIso(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   return isoOf(new Date(y!, (m ?? 1) - 1, (d ?? 1) + days));
 }
-/** `2026-08-13` → `"Wed, Aug 13"`. */
+/** `2026-08-13` → `"Thu, 13 Aug 2026"` — the one date notation (UX audit XC-06 / MON-23). */
 function longDay(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y!, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return formatDate(iso, { weekday: true });
 }
 
 /** A plain-language sentence for the header brief. */

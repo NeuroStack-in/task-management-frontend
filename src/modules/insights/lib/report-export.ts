@@ -22,6 +22,7 @@ import {
 } from "@/modules/employees/lib/report-doc";
 import { OMITTED, REPORT_CATEGORY_LABEL, type ReportDef } from "./report-def";
 import { CSV_BOM, csvBody, toCsv } from "@/lib/csv";
+import { formatDateRange } from "@/lib/format";
 
 /** A cell that reads as a quantity — right-aligned, like every number in a WorkPulse report. */
 const NUMERIC = /^[-+]?[\d.,]+\s*(%|h|m|s|hrs?|min)?$|^\d+h(\s?\d+m)?$|^\d{1,2}:\d{2}$/i;
@@ -97,17 +98,9 @@ export function packWindow(reports: ReportDef[]): { from: string; to: string } |
   };
 }
 
+/** The one date-range notation (UX audit XC-06 / MON-23) — a single day reads as that day. */
 function spanLabel(w: { from: string; to: string } | undefined): string {
-  if (!w) return "—";
-  const fmt = (iso: string) => {
-    const [y, m, d] = iso.split("-").map(Number);
-    return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
-  return w.from === w.to ? fmt(w.from) : `${fmt(w.from)} – ${fmt(w.to)}`;
+  return w ? formatDateRange(w.from, w.to) : "—";
 }
 
 /** The footer every analytics PDF carries. */

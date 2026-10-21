@@ -28,7 +28,7 @@ import {
 } from "../services/insights.service";
 import { AiReportCard, type AiMetric } from "./ai-report-card";
 import { PersonLink } from "./person-link";
-import { deptSummaryProvenance, type Provenance } from "../lib/ai-provenance";
+import { canRegenerate, deptSummaryProvenance, type Provenance } from "../lib/ai-provenance";
 import { resolvePerson } from "../lib/attention";
 import { LOW_SCORE_BELOW, RANK_MIN_MINUTES_PER_DAY, isLowScore } from "../lib/thresholds";
 
@@ -230,12 +230,10 @@ export function DepartmentScoreFocus({
   /**
    * A re-run can change the text when a model wrote it, when an older payload can't say, or when
    * the server wrote the line itself over a scored period (the provider was down, or another reader
-   * was generating) — never over an unscored one, whose fixed line is the whole answer.
+   * was generating) — never over an unscored one, whose fixed line is the whole answer. The one
+   * Regenerate rule every AI card follows (UX audit MON-21): someone scored is the data to analyse.
    */
-  const canRerun =
-    !!data?.narrative &&
-    (provenance.kind !== "computed" ||
-      (data.ai_generated === false && data.metrics.scored_people > 0));
+  const canRerun = canRegenerate((data?.metrics.scored_people ?? 0) > 0, data?.narrative);
 
   return (
     <AiReportCard
@@ -253,7 +251,7 @@ export function DepartmentScoreFocus({
           options={options.map(([id, name]) => ({ value: id, label: name }))}
           tone="onFeature"
           className="w-60"
-          ariaLabel="Summarise which department"
+          ariaLabel="Department to summarize"
         />
       }
       // Only once a narrative exists, and only where a re-run could change it (`canRerun`) — each

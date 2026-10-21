@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Hand, Lock, MapPinOff } from "lucide-react";
 import { initials } from "@/lib/format";
 import type { GeoPoint, Geofence } from "@/modules/locations/types";
+import { clusterIndices, clusterNames } from "@/modules/locations/lib/cluster";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -72,6 +73,55 @@ export interface MapMarker {
    */
   accuracyM?: number;
   onClick?: () => void;
+  /**
+   * The marker's accessible name when it should say more than `name` — e.g. "Open Ana's locations"
+   * for a marker that opens something. Falls back to `name`.
+   */
+  label?: string;
+}
+
+/**
+ * Markers closer than this on screen are drawn as one numbered bubble when `cluster` is on — about
+ * one avatar's width, so two faces never sit on top of each other (UX audit MON-22).
+ */
+const CLUSTER_RADIUS_PX = 36;
+/**
+ * From this zoom in, nothing is grouped: a street-level view is where the reader goes to tell people
+ * apart, and fixes at one address would otherwise stay a bubble at every zoom.
+ */
+const CLUSTER_MAX_ZOOM = 16;
+
+/**
+ * Focus ring for markers a keyboard can reach. Class names, not inline styles, because `:focus-visible`
+ * cannot be written inline; Tailwind sees them here as literal strings and generates them.
+ */
+const MARKER_FOCUS_CLASS =
+  "rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2";
+
+/**
+ * Make a marker element reachable and operable from the keyboard (UX audit MON-22). MapLibre gives
+ * every marker `role="button"` but no `tabindex` and no key handling, so a marker that opened
+ * someone's day was mouse-only, and every one of them was announced as "Map marker".
+ */
+function operable(el: HTMLElement, label: string, onActivate: () => void) {
+  el.setAttribute("aria-label", label);
+  el.setAttribute("role", "button");
+  el.tabIndex = 0;
+  el.className = MARKER_FOCUS_CLASS;
+  el.style.cursor = "pointer";
+  el.addEventListener("click", onActivate);
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onActivate();
+    }
+  });
+}
+
+/** A group's bubble: the count, ringed red when anyone in it is flagged (e.g. outside the perimeter). */
+function clusterHtml(count: number, alert: boolean): string {
+  const ring = alert ? "#dc2626" : "#fff";
+  return `<div style="display:flex;width:38px;height:38px;align-items:center;justify-content:center;border-radius:9999px;background:#4f46e5;color:#fff;font-size:13px;font-weight:700;border:2px solid ${ring};box-shadow:0 0 0 4px rgba(79,70,229,.25),0 1px 3px rgba(0,0,0,.35)">${count}</div>`;
 }
 
 /**
@@ -171,6 +221,7 @@ export function LiveMap({
   recenterKey,
   fitPoints,
   fitKey,
+  cluster = false,
   className,
 }: {
   markers: MapMarker[];
@@ -189,6 +240,12 @@ export function LiveMap({
   fitPoints?: GeoPoint[];
   /** Changes when the framing should be redone; `undefined` defers it (e.g. while loading). */
   fitKey?: string;
+  /**
+   * Group markers that overlap on screen into one numbered bubble that zooms in to separate them —
+   * for the org board, where a whole office lands on one spot (UX audit MON-22). Off for one
+   * person's trail, whose pins are distinct moments of their day.
+   */
+  cluster?: boolean;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -206,6 +263,8 @@ export function LiveMap({
   const [failed, setFailed] = useState(false);
   /** Whether the map may respond to gestures. Off until asked for — see `GESTURES`. */
   const [unlocked, setUnlocked] = useState(false);
+  /** Bumped on every finished zoom, so clustered markers regroup for the new scale. */
+  const [zoomTick, setZoomTick] = useState(0);
 
   const geoKey = geofence
     ? `${geofence.center.lat.toFixed(5)},${geofence.center.lng.toFixed(5)},${geofence.radiusM}`
@@ -243,6 +302,8 @@ export function LiveMap({
         map.resize();
         setReady((r) => r + 1);
       });
+      // Only a zoom changes which markers overlap on screen; a pan moves them all together.
+      map.on("zoomend", () => setZoomTick((t) => t + 1));
       // Before the style has loaded, an error means the map will never draw (host blocked, offline,
       // bad style). After it, a stray tile error is transient and MapLibre retries on its own.
       map.on("error", () => {
@@ -403,22 +464,63 @@ export function LiveMap({
       });
     }
 
-    // Markers.
+    // Markers — keyboard-operable when they do something (MON-22), grouped when `cluster` is on and
+    // they overlap at this zoom.
     markersRef.current.forEach((m) => m.remove());
-    markersRef.current = markers.map((m) => {
+    const single = (m: MapMarker) => {
       const el = document.createElement("div");
       el.innerHTML = markerHtml(m);
       if (m.name) el.title = m.name;
+      const label = m.label ?? m.name;
       if (m.onClick) {
-        el.style.cursor = "pointer";
-        el.addEventListener("click", m.onClick);
+        operable(el, label ?? "Open location", m.onClick);
+      } else if (label) {
+        // A picture with a caption, not the fake "Map marker" button MapLibre would make it.
+        el.setAttribute("role", "img");
+        el.setAttribute("aria-label", label);
+      } else {
+        // An unnamed trail dot says nothing a screen reader could use; the page lists the fixes.
+        el.setAttribute("aria-hidden", "true");
       }
-      return new gl.Marker({ element: el })
-        .setLngLat([m.point.lng, m.point.lat])
-        .addTo(map);
+      return new gl.Marker({ element: el }).setLngLat([m.point.lng, m.point.lat]).addTo(map);
+    };
+    const groups =
+      cluster && markers.length > 1 && map.getZoom() < CLUSTER_MAX_ZOOM
+        ? clusterIndices(
+            markers.map((m) => map.project([m.point.lng, m.point.lat])),
+            CLUSTER_RADIUS_PX,
+          )
+        : markers.map((_, i) => [i]);
+    markersRef.current = groups.map((g) => {
+      if (g.length === 1) return single(markers[g[0]]);
+      const members = g.map((i) => markers[i]);
+      const lng = members.reduce((sum, m) => sum + m.point.lng, 0) / members.length;
+      const lat = members.reduce((sum, m) => sum + m.point.lat, 0) / members.length;
+      // The person's name only — a marker's `name` may carry a suffix ("Ana · outside perimeter").
+      const who = clusterNames(members.map((m) => (m.name ?? "").split(" · ")[0]));
+      const el = document.createElement("div");
+      el.innerHTML = clusterHtml(
+        members.length,
+        members.some((m) => m.alert),
+      );
+      el.title = `${members.length} people: ${who}`;
+      operable(el, `${members.length} people here: ${who}. Zoom in to separate them.`, () => {
+        const bounds = new gl.LngLatBounds();
+        for (const m of members) bounds.extend([m.point.lng, m.point.lat]);
+        const ne = bounds.getNorthEast();
+        const sw = bounds.getSouthWest();
+        // One address: zoom to street level, where grouping stops, rather than fit a zero-size box.
+        if (Math.abs(ne.lng - sw.lng) < 1e-6 && Math.abs(ne.lat - sw.lat) < 1e-6) {
+          map.flyTo({ center: [lng, lat], zoom: CLUSTER_MAX_ZOOM, duration: 600 });
+        } else {
+          map.fitBounds(bounds, { padding: 64, maxZoom: CLUSTER_MAX_ZOOM, duration: 600 });
+        }
+      });
+      return new gl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
     });
+    // `zoomTick` only matters when grouping — a trail map must not rebuild its markers per zoom.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markers, path, ready, geoKey]);
+  }, [markers, path, ready, geoKey, cluster, cluster ? zoomTick : 0]);
 
   // Geofence center marker (office pin) + click-to-place when editing.
   useEffect(() => {

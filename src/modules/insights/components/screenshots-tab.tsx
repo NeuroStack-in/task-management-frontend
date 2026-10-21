@@ -39,9 +39,11 @@ import {
   reviewScreenshot,
 } from "../services/insights.service";
 import { EMP_PARAM } from "../lib/employee-scope";
+import { countOf } from "../lib/plural";
 import { AiReportCard } from "./ai-report-card";
 import { CaptureEmptyState } from "./capture-empty-state";
 import {
+  canRegenerate,
   formatGeneratedAt,
   screenshotSummaryProvenance,
   type Provenance,
@@ -432,20 +434,24 @@ export function ScreenshotsTab() {
     aiAnalysed && aiAnalysed.metrics.frames < scopeTotal
       ? `Written from the ${aiAnalysed.metrics.frames.toLocaleString()} ${
           aiAnalysed.metrics.frames === 1 ? "screenshot" : "screenshots"
-        } the AI has analysed so far — not every capture below has been analysed yet.`
+        } the AI has analyzed so far — not every capture below has been analyzed yet.`
       : null;
   /** The grid has nothing to count *yet* (loading) or could not be read — not an empty day. */
   const countsUnknown = total === 0 && (loading || error !== null);
 
-  // Department options = departments present among the day's captured employees.
+  // Department options = departments present among the day's captured employees — plus the one in the
+  // URL, when another tab picked a department nobody captured here: the filter must name what it is
+  // filtering by rather than read "All departments" over an empty gallery (MON-13).
   const departments = useMemo(() => {
     const set = new Set<string>();
     for (const s of shots) {
       const d = dirById.get(s.user_id)?.department_id;
       if (d) set.add(d);
     }
-    return [...set].sort();
-  }, [shots, dirById]);
+    if (dept !== ALL_DEPTS) set.add(dept);
+    return [...set].sort((a, b) => deptLabel(a).localeCompare(deptLabel(b)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shots, dirById, dept, deptNames]);
 
   const q = query.trim().toLowerCase();
   const filteredShots = useMemo(() => {
@@ -487,7 +493,7 @@ export function ScreenshotsTab() {
     total === 0 && (loading)
       ? `Loading the screenshots for ${dateLabel(date)}…`
       : total === 0 && error
-        ? `The screenshots for ${dateLabel(date)} couldn't be loaded, so there is nothing to summarise yet.`
+        ? `The screenshots for ${dateLabel(date)} couldn't be loaded, so there is nothing to summarize yet.`
         : total === 0 && beyondRetention
           ? `Screenshots from ${dateLabel(date)} have been deleted under this organization's retention policy.`
           : total === 0
@@ -500,7 +506,10 @@ export function ScreenshotsTab() {
                 needsReview > 0
                   ? `${needsReview} ${needsReview === 1 ? "capture needs" : "captures need"} review — start with those.`
                   : notYetChecked > 0
-                    ? `Nothing flagged in the ${analysed.toLocaleString()} the AI has checked so far — ${notYetChecked.toLocaleString()} not checked yet.`
+                    ? // Not "Nothing flagged in the 0 the AI has checked" (MON-23).
+                      analysed === 0
+                      ? `The AI hasn't checked ${total === 1 ? "it" : "any of them"} yet.`
+                      : `Nothing flagged in the ${analysed.toLocaleString()} the AI has checked so far — ${notYetChecked.toLocaleString()} not checked yet.`
                     : "Nothing flagged — the AI has checked every capture."
               }`;
 
@@ -531,7 +540,7 @@ export function ScreenshotsTab() {
       ...(aiAnalysed
         ? [
             {
-              label: "On-task (AI-analysed frames)",
+              label: "On-task (AI-analyzed frames)",
               value: `${aiAnalysed.metrics.on_task_pct}% of ${aiAnalysed.metrics.frames}`,
             },
           ]
@@ -635,9 +644,13 @@ export function ScreenshotsTab() {
         provenance={shotProvenance}
         summary={aiAnalysed?.narrative || summary}
         notice={aiNotice ?? aiCoverage}
-        // Only once there is a server narrative: until frames are analysed the card shows our own
-        // count line, which no model run can change (MON-08).
-        onRegenerate={aiAnalysed ? regenerateAi : undefined}
+        // Only once there is a server narrative over analyzed frames: until then the card shows our
+        // own count line, which no model run can change (MON-08) — the one Regenerate rule (MON-21).
+        onRegenerate={
+          canRegenerate((aiSummary?.metrics.frames ?? 0) > 0, aiSummary?.narrative)
+            ? regenerateAi
+            : undefined
+        }
         regenerating={aiRegenFor === aiSelection}
         metrics={[
           // "—" while the grid loads or after it failed: a count of 0 there is a measurement of
@@ -671,9 +684,9 @@ export function ScreenshotsTab() {
             label: "On-task",
             value: aiAnalysed ? `${aiAnalysed.metrics.on_task_pct}%` : "—",
             hint: aiAnalysed
-              ? `of ${aiAnalysed.metrics.frames.toLocaleString()} analysed`
+              ? `of ${aiAnalysed.metrics.frames.toLocaleString()} analyzed`
               : aiSummary
-                ? "none analysed yet"
+                ? "none analyzed yet"
                 : undefined,
           },
           // The department's AI screenshot-productivity — the per-department score for this surface.
@@ -736,19 +749,22 @@ export function ScreenshotsTab() {
           </div>
         </Field>
 
+        {/* Only the departments with captures on this day: every department in the organization was
+            offered, and most of them filtered the gallery to nothing (UX audit 2026-10-16, MON-23). */}
         {departments.length > 0 ? (
           <Field label="Department">
             <DepartmentFilter
               value={dept}
               onChange={setDept}
-              options={[...deptNames].map(([id, name]) => ({ value: id, label: name }))}
+              options={departments.map((id) => ({ value: id, label: deptLabel(id) }))}
               ariaLabel="Filter screenshots by department"
             />
           </Field>
         ) : null}
 
+        {/* A real <legend>, so the radio pair is announced as "Show" (MON-23) — it was a <span>. */}
         <fieldset className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground">Show</span>
+          <legend className="mb-1.5 text-xs font-medium text-muted-foreground">Show</legend>
           <div className="flex h-8 items-center gap-3">
             {(["all", "flagged"] as const).map((opt) => (
               <label key={opt} className="flex items-center gap-1.5 text-sm">
@@ -826,7 +842,9 @@ export function ScreenshotsTab() {
           title="Nothing waiting for review"
           description={
             notYetChecked > 0
-              ? `Nothing flagged in the ${analysed.toLocaleString()} captures the AI has checked so far. ${notYetChecked.toLocaleString()} haven't been checked yet — flags appear here as it gets to them.`
+              ? analysed === 0
+                ? `The AI hasn't checked any of the ${countOf(notYetChecked, "capture")} yet — flags appear here as it gets to them.`
+                : `Nothing flagged in the ${countOf(analysed, "capture")} the AI has checked so far. ${countOf(notYetChecked, "capture")} ${notYetChecked === 1 ? "hasn't" : "haven't"} been checked yet — flags appear here as it gets to them.`
               : "The AI has checked every capture on this day, and nothing needs a look that hasn't had one."
           }
         />

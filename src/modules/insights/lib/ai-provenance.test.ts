@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canRegenerate,
   dailyReportProvenance,
   deptSummaryProvenance,
   formatGeneratedAt,
@@ -168,5 +169,22 @@ describe("formatGeneratedAt", () => {
     expect(formatGeneratedAt(0)).toBeNull();
     expect(formatGeneratedAt(null)).toBeNull();
     expect(formatGeneratedAt(Number.NaN)).toBeNull();
+  });
+});
+
+/** UX audit 2026-10-16, MON-21 — every press is a billed model run. */
+describe("canRegenerate", () => {
+  it("offers a re-run only over data, with text on screen to replace", () => {
+    expect(canRegenerate(true, "The team had a steady day.")).toBe(true);
+  });
+
+  it("never over a period with nothing to analyse — the server's fixed line is the whole answer", () => {
+    expect(canRegenerate(false, "Over the period, the organization has no tracked activity yet.")).toBe(false);
+  });
+
+  it("never before there is text, or over a blank one", () => {
+    expect(canRegenerate(true, null)).toBe(false);
+    expect(canRegenerate(true, undefined)).toBe(false);
+    expect(canRegenerate(true, "   ")).toBe(false);
   });
 });
