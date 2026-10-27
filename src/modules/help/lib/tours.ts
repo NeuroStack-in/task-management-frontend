@@ -262,7 +262,7 @@ export const TOURS: Record<string, Tour> = {
         target: "insights:trend",
         title: "How the score moves",
         content:
-          "A deterministic 0–100 per day, from utilization, quality, focus and reliability. Rust computes it from the day's activity — the AI never decides a score, it only narrates one.",
+          "A 0–100 score per day, calculated from utilization, quality, focus and reliability. The score is a formula, not something the AI writes; the AI's ratings of the day's screenshots feed its quality part.",
         permission: "activity:view",
       },
       {
