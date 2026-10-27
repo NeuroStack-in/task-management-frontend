@@ -2,42 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Sparkles, X, ArrowUp, Trash2 } from "lucide-react";
+import { Sparkles, X, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { useAssistantAccess } from "@/hooks/use-assistant-access";
-import { ApiError } from "@/lib/api";
-import {
-  sendAssistantMessage,
-  type AssistantSource,
-} from "@/modules/communication/services/assistant.service";
 import { navItemForPath } from "@/constants/navigation";
 import { usePublishedPageContext } from "@/stores/page-context.store";
 import { cn } from "@/lib/utils";
-import { Markdown } from "@/components/shared/markdown";
-
-interface Message {
-  id: number;
-  role: "user" | "assistant";
-  text: string;
-  /**
-   * Not a turn of the conversation: the canned greeting, the client's own error sentences, and a
-   * question whose request failed. All of it used to be replayed to the model as history — the
-   * greeting and the apologies labelled `assistant` — so it answered turns it never produced, and
-   * after a 403 it tended to repeat the refusal (QA audit 2026-10-08, WP-543).
-   */
-  local?: true;
-  /**
-   * What the answer was read from — the server's own record of which lookups ran, over which day
-   * and for whom. Absent on the greeting, on an error, and whenever no lookup happened.
-   *
-   * Rendered as chips rather than folded into the text on purpose: the assistant is forbidden from
-   * naming a tool in its prose, so this is the only honest way to show it, and it cannot be
-   * omitted or invented by the model.
-   */
-  sources?: AssistantSource[];
-}
+import { useAssistantConversation } from "@/modules/communication/hooks/use-assistant-conversation";
+import { focusablesIn, focusLoopTarget } from "@/modules/communication/lib/assistant-chat";
+import {
+  ASSISTANT_NAME,
+  AssistantComposer,
+  AssistantFootnote,
+  AssistantTranscript,
+} from "@/modules/communication/components/assistant-transcript";
 
 /** Floating-button geometry + persisted position. */
 const FAB_SIZE = 56; // size-14
@@ -121,8 +100,7 @@ interface FabPos {
   y: number;
 }
 
-const GREETING =
-  "I'm your WorkPulse assistant. Ask about productivity, your team, or the current screen.";
+const GREETING = `I'm the ${ASSISTANT_NAME}. Ask about productivity, your team, or the current screen.`;
 
 // Opening questions for an empty panel. The assistant can answer from live org data now (the
 // handler has a grounded data path, an org snapshot and a tool belt — `send_message/mod.rs`), and
@@ -164,11 +142,15 @@ export function ChatBot() {
   }, [pathname, published]);
 
   const [input, setInput] = useState("");
-  const [pending, setPending] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 0, role: "assistant", text: GREETING, local: true },
-  ]);
-  const idRef = useRef(1);
+  // The transcript, the in-flight flag and `ask` — shared with the Help Center's assistant, so the
+  // signed history (each reply's `sig` goes back with it; nothing the app wrote ever does) and the
+  // error sentences are the same in both (AI audit 2026-10-22, AI-23 / AI-25).
+  const {
+    messages,
+    pending,
+    send: ask,
+    clear,
+  } = useAssistantConversation({ greeting: GREETING, surface: "chat", page, enabled: available });
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // Both halves of "outside": the panel, and the launcher that toggles it. Without the launcher in
@@ -241,46 +223,27 @@ export function ChatBot() {
     if (pendingPrompt) consumePrompt();
   }, [available, open, pendingPrompt, setOpen, consumePrompt]);
 
-  const send = async (text: string) => {
-    const trimmed = text.trim();
-    if (!available || !trimmed || pending) return;
-    const userMsg: Message = { id: idRef.current++, role: "user", text: trimmed };
-    setMessages((m) => [...m, userMsg]);
+  // The conversation is replayed with each turn (the server stores nothing), so a follow-up
+  // reaches the model with its question attached — see `useAssistantConversation`.
+  const send = (text: string) => {
+    if (!available || !text.trim() || pending) return;
     setInput("");
-    setPending(true);
-    try {
-      // Real Groq Llama 3.3 70B via /v1/assistant/messages (session-only; nothing stored
-      // server-side — so the conversation so far is replayed with each turn, or a follow-up
-      // reaches the model with no question attached to it). `messages` here is deliberately the
-      // state *before* this turn was appended: it is the history, not the message — and only its
-      // real turns (see `Message.local`).
-      const answer = await sendAssistantMessage(
-        trimmed,
-        messages.filter((m) => !m.local).map((m) => ({ role: m.role, content: m.text })),
-        page,
-      );
-      setMessages((m) => [
-        ...m,
-        {
-          id: idRef.current++,
-          role: "assistant",
-          text: answer.reply,
-          sources: answer.sources,
-        },
-      ]);
-    } catch (e) {
-      const text =
-        e instanceof ApiError && e.status === 403
-          ? "You don't have access to the assistant."
-          : "Sorry — I couldn't reach the assistant just now. Please try again.";
-      // Neither the question that failed nor this sentence is a turn the model saw.
-      setMessages((m) => [
-        ...m.map((x) => (x.id === userMsg.id ? { ...x, local: true as const } : x)),
-        { id: idRef.current++, role: "assistant", text, local: true },
-      ]);
-    } finally {
-      setPending(false);
-    }
+    void ask(text);
+  };
+
+  /**
+   * Tab stays in the open panel (AI audit AI-61). It is a non-modal dialog, and Tab from the
+   * message box used to walk out to "Skip to main content" while the panel stayed open over the
+   * page. Escape, or the launcher, is the way out.
+   */
+  const onPanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab" || !panelRef.current) return;
+    const items = focusablesIn(panelRef.current);
+    const active = document.activeElement as HTMLElement | null;
+    const next = focusLoopTarget(items, active && items.includes(active) ? active : null, e.shiftKey);
+    if (!next) return;
+    e.preventDefault();
+    next.focus();
   };
 
   // When opened with a seeded prompt (an "Ask the assistant" button), send it once — after any
@@ -454,7 +417,7 @@ export function ChatBot() {
    *  server-side — the panel simply forgets, and the next turn starts with no history to replay. */
   const clearChat = () => {
     if (pending) return;
-    setMessages([{ id: idRef.current++, role: "assistant", text: GREETING, local: true }]);
+    clear();
     setInput("");
   };
 
@@ -488,8 +451,9 @@ export function ChatBot() {
           ref={panelRef}
           id={PANEL_ID}
           role="dialog"
-          aria-label="WorkPulse assistant"
+          aria-label={ASSISTANT_NAME}
           style={panelStyle}
+          onKeyDown={onPanelKeyDown}
           className={cn(
             "border-border bg-popover shadow-soft animate-in fade-in slide-in-from-bottom-3 fixed z-50 flex h-[28rem] max-h-[calc(100dvh-1rem)] w-[min(22rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-xl border duration-200",
             !panelStyle && "right-5 bottom-24",
@@ -500,9 +464,9 @@ export function ChatBot() {
               <Sparkles className="size-4" />
             </span>
             <div className="flex-1">
-              <p className="text-sm leading-none font-medium">WorkPulse Assistant</p>
+              <p className="text-sm leading-none font-medium">{ASSISTANT_NAME}</p>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                AI productivity assistant
+                Answers from your organization&apos;s data
               </p>
             </div>
             {/* Enabled only when there is a transcript to lose — a greeting-only panel has
@@ -522,109 +486,31 @@ export function ChatBot() {
           </header>
 
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-            <div className="flex flex-col gap-3 p-4">
-              {/* The conversation is a log: each new message — the reply above all — is announced
-                  to a screen reader as it arrives. Replies used to land in silence, so someone who
-                  can't see the panel never knew an answer had come (UX audit 2026-10-16, MON-17).
-                  The opening greeting is there before the region is, so it isn't read out. */}
-              <div
-                role="log"
-                aria-live="polite"
-                aria-relevant="additions"
-                aria-label="Conversation with the assistant"
-                className="flex flex-col gap-3"
-              >
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={cn(
-                    "max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed",
-                    m.role === "user"
-                      ? "bg-primary text-primary-foreground self-end"
-                      : "bg-muted text-foreground self-start",
-                  )}
-                >
-                  {/* Only the assistant writes Markdown. A user's message is rendered as the
-                      literal text they typed — running it through a renderer would silently
-                      reformat their own words back at them. */}
-                  {m.role === "user" ? m.text : <Markdown>{m.text}</Markdown>}
-                  {/* What it read. Deliberately quiet — this is a footnote a reader checks when a
-                      figure surprises them, not a headline. The most likely wrong answer left is
-                      one that is right about the wrong day, and this is what makes that visible
-                      instead of indistinguishable from a correct one. */}
-                  {m.sources?.length ? (
-                    <div className="mt-2 flex flex-wrap gap-1 border-t pt-1.5">
-                      {m.sources.map((src, i) => (
-                        <span
-                          key={i}
-                          className="bg-background/60 text-muted-foreground rounded px-1.5 py-0.5 text-[0.7rem] leading-tight"
-                        >
-                          {[src.label, src.date, src.scope].filter(Boolean).join(" · ")}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-              {pending ? (
-                <div className="bg-muted text-muted-foreground self-start rounded-lg px-3 py-2 text-sm">
-                  <span className="sr-only">The assistant is replying…</span>
-                  <span className="inline-flex gap-1" aria-hidden="true">
-                    <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.2s]" />
-                    <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.1s]" />
-                    <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full" />
-                  </span>
-                </div>
-              ) : null}
-              </div>
-
-              {messages.length <= 1 ? (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {SUGGESTIONS.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => send(s)}
-                      className="border-border bg-card text-muted-foreground hover:border-primary hover:text-primary rounded-md border px-3 py-1 text-xs transition-colors"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            {/* The conversation is a log: each new message — the reply above all — is announced
+                to a screen reader as it arrives (UX audit 2026-10-16, MON-17). */}
+            <AssistantTranscript
+              messages={messages}
+              pending={pending}
+              suggestions={SUGGESTIONS}
+              onSuggestion={send}
+            />
           </div>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              send(input);
-            }}
-            className="flex items-center gap-2 border-t p-3"
-          >
-            <Input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask the assistant…"
-              className="h-10 rounded-md"
-              aria-label="Message"
-            />
-            <Button
-              type="submit"
-              size="icon"
-              className="size-10 shrink-0 rounded-md"
-              disabled={!input.trim() || pending}
-              aria-label="Send message"
-            >
-              <ArrowUp className="size-4" />
-            </Button>
-          </form>
+          <AssistantComposer
+            inputRef={inputRef}
+            value={input}
+            onChange={setInput}
+            onSubmit={() => send(input)}
+            pending={pending}
+            placeholder="Ask the assistant…"
+          />
           {/* Said once, always visible: answers are a model's, and models get figures wrong
-              (UX audit 2026-10-16, MON-17 / XC-08). The chips under each reply say what it read. */}
-          <p className="text-muted-foreground -mt-1 px-3 pb-2.5 text-xs">
-            AI can be wrong — check important figures on the page they come from.
-          </p>
+              (MON-17 / XC-08) — the chips under each reply say what it read. And nothing keeps
+              the conversation, so a reload empties it; say so rather than surprise anyone (AI-60). */}
+          <AssistantFootnote className="-mt-1">
+            AI can be wrong — check important figures on the page they come from. This chat
+            isn&apos;t saved; reloading the page clears it.
+          </AssistantFootnote>
         </div>
       ) : null}
 
@@ -672,9 +558,11 @@ export function ChatBot() {
         onPointerMove={onFabPointerMove}
         onPointerUp={onFabPointerUp}
         onClick={onFabClick}
+        // Full strength at rest. It sat at 40 % opacity — about 1.9:1 against the page, under the
+        // 3:1 a control needs to be seen (AI audit AI-61). It no longer needs to fade out of the
+        // way: the shell reserves room under every page for it (XC-03), and it can be dragged.
         className={cn(
-          "shadow-soft fixed z-50 size-14 cursor-grab touch-none rounded-lg transition-[opacity,transform] hover:scale-105 hover:opacity-100 active:cursor-grabbing max-sm:hidden",
-          !open && !hint && "opacity-40",
+          "shadow-soft fixed z-50 size-14 cursor-grab touch-none rounded-lg transition-transform hover:scale-105 active:cursor-grabbing max-sm:hidden",
           !fab && "right-5 bottom-5",
         )}
       >

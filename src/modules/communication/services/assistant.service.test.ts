@@ -6,7 +6,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { apiFetch } from "@/lib/api";
-import { sendAssistantMessage } from "./assistant.service";
+import { ASSISTANT_MESSAGE_MAX, sendAssistantMessage } from "./assistant.service";
 
 const mock = vi.mocked(apiFetch);
 beforeEach(() => mock.mockClear());
@@ -44,29 +44,48 @@ describe("assistant.service route contract", () => {
       }),
     });
     expect(answer.reply).toBe("hi");
-    // A server that sends no `sources` (an older build, the Help surface, or a turn that called no
-    // tool) must yield an empty list rather than `undefined` — the panel maps over it directly.
+    // A server that sends no `sources` (an older build, or a turn that called no tool) must yield
+    // an empty list rather than `undefined` — the panel maps over it directly.
     expect(answer.sources).toEqual([]);
+    // …and no `sig` key at all when the server sent none: nothing to hand back.
+    expect("sig" in answer).toBe(false);
   });
 
   it("carries provenance through when the server sends it", async () => {
     mock.mockResolvedValueOnce({
       reply: "8 present",
-      sources: [{ label: "Attendance", date: "2026-08-31", scope: "the organisation" }],
+      sources: [{ label: "Attendance", date: "2026-08-31", scope: "the organization" }],
     });
     const answer = await sendAssistantMessage("what was attendance yesterday");
     expect(answer.sources).toEqual([
-      { label: "Attendance", date: "2026-08-31", scope: "the organisation" },
+      { label: "Attendance", date: "2026-08-31", scope: "the organization" },
     ]);
   });
 
-  it("sendAssistantMessage replays the conversation so far", async () => {
+  it("keeps the reply's sig, untouched, so it can go back with the next turn (contract 1)", async () => {
+    mock.mockResolvedValueOnce({ reply: "ok", sig: "v1.AbC_123-xyz=" });
+    const answer = await sendAssistantMessage("hello");
+    expect(answer.sig).toBe("v1.AbC_123-xyz=");
+  });
+
+  it("drops a sig that isn't a non-empty string rather than echoing it back", async () => {
+    mock.mockResolvedValueOnce({ reply: "ok", sig: "" });
+    expect("sig" in (await sendAssistantMessage("a"))).toBe(false);
+    mock.mockResolvedValueOnce({ reply: "ok", sig: 42 });
+    expect("sig" in (await sendAssistantMessage("b"))).toBe(false);
+  });
+
+  it("sendAssistantMessage replays the conversation so far, signed assistant turns included", async () => {
     // The server stores nothing, so a follow-up only has context the client sends. Without this
     // the assistant read as having forgotten the question it was just asked.
     mock.mockResolvedValueOnce({ reply: "ok" });
     await sendAssistantMessage("from 2/8/26 to 8/8/26", [
       { role: "user", content: "what is the productivity status of employees" },
-      { role: "assistant", content: "I don't have any productivity score data." },
+      {
+        role: "assistant",
+        content: "I don't have any productivity score data.",
+        sig: "s1",
+      },
     ]);
     expect(mock).toHaveBeenCalledWith("/v1/assistant/messages", {
       method: "POST",
@@ -74,7 +93,11 @@ describe("assistant.service route contract", () => {
         message: "from 2/8/26 to 8/8/26",
         history: [
           { role: "user", content: "what is the productivity status of employees" },
-          { role: "assistant", content: "I don't have any productivity score data." },
+          {
+            role: "assistant",
+            content: "I don't have any productivity score data.",
+            sig: "s1",
+          },
         ],
         surface: "chat",
         client_date: today(),
@@ -96,5 +119,10 @@ describe("assistant.service route contract", () => {
         client_date: today(),
       }),
     });
+  });
+
+  it("caps messages at the server's 4,000 characters", () => {
+    // Mirrors `assistant::…::dto::MAX_MESSAGE_CHARS`; both inputs use it as `maxLength`.
+    expect(ASSISTANT_MESSAGE_MAX).toBe(4000);
   });
 });

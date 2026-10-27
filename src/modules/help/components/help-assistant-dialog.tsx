@@ -17,9 +17,13 @@
  * Consequently **no page context is sent**. The floating assistant passes `page` so it can answer
  * "what is this screen showing"; that question is meaningless here, and passing it would only put
  * on-screen figures in front of a model that must not reason about them.
+ *
+ * It is built from the same pieces as the floating assistant (`modules/communication`): the same
+ * signed history, error sentences, live-region transcript, source chips, 4,000-character box and
+ * "AI can be wrong" line. It had none of the last four (AI audit 2026-10-22, AI-34).
  */
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, ArrowUp, Trash2 } from "lucide-react";
+import { Sparkles, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -28,22 +32,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ApiError } from "@/lib/api";
-import { sendAssistantMessage } from "@/modules/communication/services/assistant.service";
-import { Markdown } from "@/components/shared/markdown";
-import { cn } from "@/lib/utils";
-
-interface Message {
-  id: number;
-  role: "user" | "assistant";
-  text: string;
-  /**
-   * Not a turn of the conversation — the greeting, our own error sentences, and a question whose
-   * request failed — so never replayed to the model as history (QA audit 2026-10-08, WP-543).
-   */
-  local?: true;
-}
+import { useAssistantAccess } from "@/hooks/use-assistant-access";
+import { useAssistantConversation } from "@/modules/communication/hooks/use-assistant-conversation";
+import {
+  ASSISTANT_NAME,
+  AssistantComposer,
+  AssistantFootnote,
+  AssistantTranscript,
+} from "@/modules/communication/components/assistant-transcript";
 
 const GREETING =
   "Ask me how WorkPulse works — productivity scores, attendance statuses, projects, leave, or how to get something done.";
@@ -71,14 +67,24 @@ export function HelpAssistantDialog({
   seedQuestion?: string;
 }) {
   const [input, setInput] = useState("");
-  const [pending, setPending] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 0, role: "assistant", text: GREETING, local: true },
-  ]);
-  const idRef = useRef(1);
+  const { messages, pending, send: ask, clear } = useAssistantConversation({
+    greeting: GREETING,
+    surface: "help",
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Guards the seeded question against a re-send when the parent re-renders while open.
+  const inputRef = useRef<HTMLInputElement>(null);
+  /**
+   * The seed question last asked. **Not reset on close**: the dialog keeps its transcript while the
+   * Help Center is open, and reopening it from the same search text used to send the same question
+   * again — a second billed turn with a duplicate answer under the first (AI audit FP-15 / AI-61).
+   * It is asked once per distinct question; clearing the chat forgets it, so it can be asked anew.
+   */
   const seededRef = useRef<string | undefined>(undefined);
+
+  // What it can do *for this reader*. An owner or admin also has the floating assistant, which
+  // reads the organization's data; telling them flatly "it can't look up your data" (as the old
+  // "Ask WorkPulse" title did) read as though no assistant could (AI audit AI-58).
+  const hasDataAssistant = useAssistantAccess().chat;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -87,74 +93,50 @@ export function HelpAssistantDialog({
     });
   }, [messages, pending, open]);
 
-  const send = async (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed || pending) return;
-    const userId = idRef.current++;
-    setMessages((m) => [...m, { id: userId, role: "user", text: trimmed }]);
+  const send = (text: string) => {
+    if (!text.trim() || pending) return;
     setInput("");
-    setPending(true);
-    try {
-      // `history` is the state *before* this turn — it is the conversation, not the message, and
-      // only its real turns. No `page`: see the module note. `"help"` is the surface request.
-      const answer = await sendAssistantMessage(
-        trimmed,
-        messages.filter((m) => !m.local).map((m) => ({ role: m.role, content: m.text })),
-        undefined,
-        "help",
-      );
-      // No provenance chips here, and there never will be: the Help surface is handed an empty tool
-      // belt server-side, so it answers from product knowledge and reads nobody's data. An empty
-      // `answer.sources` is the correct, permanent state rather than something not wired up yet.
-      setMessages((m) => [
-        ...m,
-        { id: idRef.current++, role: "assistant", text: answer.reply },
-      ]);
-    } catch (e) {
-      const text =
-        e instanceof ApiError && e.status === 403
-          ? "You don't have access to the assistant."
-          : "Sorry — I couldn't reach the assistant just now. Please try again.";
-      setMessages((m) => [
-        ...m.map((x) => (x.id === userId ? { ...x, local: true as const } : x)),
-        { id: idRef.current++, role: "assistant", text, local: true },
-      ]);
-    } finally {
-      setPending(false);
-    }
+    void ask(text);
   };
 
-  // Ask the seeded question once per opening.
+  // Ask the seeded question once per distinct question — not once per opening.
   useEffect(() => {
-    if (!open) {
-      seededRef.current = undefined;
-      return;
-    }
+    if (!open) return;
     const q = seedQuestion?.trim();
-    if (q && seededRef.current !== q) {
-      seededRef.current = q;
-      void send(q);
-    }
+    if (!q || seededRef.current === q) return;
+    // Already the last thing asked (typed, or a seed before a clear-and-reopen): don't repeat it.
+    const lastAsked = [...messages].reverse().find((m) => m.role === "user" && !m.local);
+    seededRef.current = q;
+    if (lastAsked?.text === q) return;
+    send(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, seedQuestion]);
 
   const clearChat = () => {
     if (pending) return;
-    setMessages([{ id: idRef.current++, role: "assistant", text: GREETING, local: true }]);
+    clear();
+    seededRef.current = undefined;
     setInput("");
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      {/* Focus lands in the message box, as it does in the floating assistant — it used to land
+          on the Clear button, so a keyboard user had to find the box first (AI-34). */}
+      <DialogContent
+        initialFocus={inputRef}
+        className="flex max-h-[85vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+      >
         <DialogHeader className="flex-row items-center gap-2.5 border-b px-6 py-4 pr-12">
           <span className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
             <Sparkles className="size-4" />
           </span>
           <div className="flex-1">
-            <DialogTitle>Ask WorkPulse</DialogTitle>
+            <DialogTitle>{ASSISTANT_NAME}</DialogTitle>
             <DialogDescription>
-              Answers about how the product works. It can&apos;t look up your data.
+              {hasDataAssistant
+                ? "Answers how WorkPulse works. For your organization's data, open the assistant from the sparkle button."
+                : "Answers how WorkPulse works. It can't look up hours, leave or anyone's data here."}
             </DialogDescription>
           </div>
           <Button
@@ -172,73 +154,28 @@ export function HelpAssistantDialog({
         </DialogHeader>
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex flex-col gap-3 p-4">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={cn(
-                  "max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed",
-                  m.role === "user"
-                    ? "bg-primary text-primary-foreground self-end"
-                    : "bg-muted text-foreground self-start",
-                )}
-              >
-                {/* Only the assistant writes Markdown — running a user's own words through a
-                    renderer would reformat them back at them. */}
-                {m.role === "user" ? m.text : <Markdown>{m.text}</Markdown>}
-              </div>
-            ))}
-            {pending ? (
-              <div className="bg-muted text-muted-foreground self-start rounded-lg px-3 py-2 text-sm">
-                <span className="inline-flex gap-1">
-                  <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.2s]" />
-                  <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.1s]" />
-                  <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full" />
-                </span>
-              </div>
-            ) : null}
-
-            {messages.length <= 1 ? (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => send(s)}
-                    className="border-border bg-card text-muted-foreground hover:border-primary hover:text-primary rounded-md border px-3 py-1 text-xs transition-colors"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          {/* Source chips render here too: the Help surface may now say what it read
+              (contract 3), and it is shown exactly as the floating assistant shows it. */}
+          <AssistantTranscript
+            messages={messages}
+            pending={pending}
+            suggestions={SUGGESTIONS}
+            onSuggestion={send}
+          />
         </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            send(input);
-          }}
-          className="flex shrink-0 items-center gap-2 border-t p-3"
-        >
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="How does WorkPulse…"
-            className="h-10 rounded-md"
-            aria-label="Message"
-          />
-          <Button
-            type="submit"
-            size="icon"
-            className="size-10 shrink-0 rounded-md"
-            disabled={!input.trim() || pending}
-            aria-label="Send message"
-          >
-            <ArrowUp className="size-4" />
-          </Button>
-        </form>
+        <AssistantComposer
+          inputRef={inputRef}
+          value={input}
+          onChange={setInput}
+          onSubmit={() => send(input)}
+          pending={pending}
+          placeholder="How does WorkPulse…"
+        />
+        <AssistantFootnote className="-mt-1">
+          AI can be wrong — check anything important in the help articles. This chat isn&apos;t
+          saved; leaving the Help center or reloading clears it.
+        </AssistantFootnote>
       </DialogContent>
     </Dialog>
   );

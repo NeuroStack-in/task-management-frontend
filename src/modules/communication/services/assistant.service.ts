@@ -1,16 +1,30 @@
 /**
  * The AI assistant — the real backend (`assistant` context, LLD §19).
  *
- * `POST /v1/assistant/messages` → a Groq Llama 3.3 70B reply. **Session-only**: the server stores
- * nothing (the conversation lives in the client's component state), so each call is a single turn.
- * Gated server-side by `ai_assistant:use`; a caller without it gets a 403, surfaced as `ApiError`.
+ * `POST /v1/assistant/messages` → one model reply. **Session-only**: the server stores nothing (the
+ * conversation lives in the client's component state), so each call is a single turn and the
+ * conversation so far rides along as `history`. Gated server-side by `ai_assistant:use`; a caller
+ * without it gets a 403, surfaced as `ApiError`.
+ *
+ * Which model answers is the server's business (`wp-platform::ai::models`) and changes without a
+ * client release, so it is deliberately not named here — this comment used to say "Groq Llama 3.3
+ * 70B" long after that stopped being true (AI audit 2026-10-22, AI-68).
  */
 import { apiFetch } from "@/lib/api";
 import { localDateOf } from "@/lib/local-day";
 
+/**
+ * The longest message the server accepts, in characters. Mirrors
+ * `assistant::…::dto::MAX_MESSAGE_CHARS`; a longer one is refused with `400 message_too_long`.
+ * Both inputs cap at this with `maxLength`, so the refusal is a last resort, not the UX.
+ */
+export const ASSISTANT_MESSAGE_MAX = 4000;
+
 interface MessageReply {
   reply: string;
   sources?: AssistantSource[];
+  /** See {@link AssistantAnswer.sig}. Absent from a server older than the signing change. */
+  sig?: string;
 }
 
 /**
@@ -26,7 +40,7 @@ export interface AssistantSource {
   label: string;
   /** The day or range actually read. Absent for a lookup with no date. */
   date?: string;
-  /** Whose data — a person's name, or a phrase like "the organisation". */
+  /** Whose data — a person's name, or a phrase like "the organization". */
   scope?: string;
 }
 
@@ -34,6 +48,17 @@ export interface AssistantSource {
 export interface AssistantAnswer {
   reply: string;
   sources: AssistantSource[];
+  /**
+   * The server's signature over this reply (an HMAC over tenant, user and content). **Opaque** —
+   * never parsed, shown or altered here; it is stored with the message and handed back, unchanged,
+   * with that message's `content` in the next turn's `history`.
+   *
+   * It is what lets the server tell its own earlier words from words a client puts in its mouth.
+   * History used to be replayed verbatim, so a hand-built `{"role":"assistant"}` turn was treated as
+   * something the model had said (AI audit 2026-10-22, AI-23 / WP-543). An assistant turn without a
+   * valid signature is now never replayed as the model's words.
+   */
+  sig?: string;
 }
 
 /**
@@ -70,20 +95,28 @@ export interface AssistantPage {
   facts?: { label: string; value: string }[];
 }
 
-/** One earlier turn of the open conversation. Mirrors `assistant::…::dto::HistoryTurn`. */
-export interface AssistantTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
 /**
- * Send one message, get the assistant's reply. Throws `ApiError` on 401/403/5xx.
+ * One earlier turn of the open conversation. Mirrors `assistant::…::dto::HistoryTurn`.
  *
- * `history` is the conversation so far, oldest first, **excluding** the message being sent. The
- * server stores nothing, so it only knows what the client replays — without this the model saw a
- * single turn and a follow-up like "from 2/8/26 to 8/8/26" had no question to attach to, which
- * read as the assistant forgetting the conversation. The server bounds and role-filters it.
+ * Two shapes, on purpose:
+ * - a **user** turn is just what they typed;
+ * - an **assistant** turn is a reply *the server returned*, with the `sig` it came with.
+ *
+ * Nothing the app wrote itself — the greeting, an error sentence, a local note — is ever an
+ * assistant turn: those are not words the model said, and replaying them as if they were made it
+ * answer turns it never produced (WP-543). `historyFrom` in `../lib/assistant-chat` is the one
+ * place that builds this list.
  */
+export type AssistantTurn =
+  | { role: "user"; content: string }
+  | {
+      role: "assistant";
+      /** Exactly the `reply` the server sent — the signature covers it byte for byte. */
+      content: string;
+      /** Omitted when the reply came without one (an older server); never invented. */
+      sig?: string;
+    };
+
 /**
  * Which assistant is being asked.
  *
@@ -97,6 +130,18 @@ export interface AssistantTurn {
  */
 export type AssistantSurface = "chat" | "help";
 
+/**
+ * Send one message, get the assistant's reply. Throws `ApiError` on any failure — read it with
+ * `assistantErrorMessage` (`../lib/assistant-chat`), which knows the assistant's own error codes
+ * (`assistant_rate_limited`, `assistant_daily_limit`, `assistant_budget_exhausted`,
+ * `message_too_long`).
+ *
+ * `history` is the conversation so far, oldest first, **excluding** the message being sent. The
+ * server stores nothing, so it only knows what the client replays — without this the model saw a
+ * single turn and a follow-up like "from 2/8/26 to 8/8/26" had no question to attach to, which
+ * read as the assistant forgetting the conversation. The server bounds, role-filters and
+ * signature-checks it.
+ */
 export async function sendAssistantMessage(
   message: string,
   history: AssistantTurn[] = [],
@@ -125,7 +170,12 @@ export async function sendAssistantMessage(
         : { message, history, surface, client_date },
     ),
   });
-  return { reply: res.reply, sources: res.sources ?? [] };
+  // Only a non-empty string is a signature. Anything else is dropped rather than echoed back: the
+  // server would refuse it anyway, and a turn sent without one is the honest "unsigned" case.
+  const sig = typeof res.sig === "string" && res.sig !== "" ? res.sig : undefined;
+  return sig
+    ? { reply: res.reply, sources: res.sources ?? [], sig }
+    : { reply: res.reply, sources: res.sources ?? [] };
 }
 
 // There is no thread-history client. The chat is session-only (LLD §19): the server's
