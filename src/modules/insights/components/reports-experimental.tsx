@@ -477,7 +477,10 @@ function AiBriefing({
         </div>
 
         {/* Bold and headings re-inked for the feature surface — see `AiReportCard`. */}
-        <Markdown className="mt-3 max-w-2xl text-[0.95rem] text-feature-foreground/90 [&_.text-foreground]:text-feature-foreground">
+        <Markdown
+          className="mt-3 max-w-2xl text-[0.95rem] text-feature-foreground/90 [&_.text-foreground]:text-feature-foreground"
+          links="same-origin"
+        >
           {report.narrative}
         </Markdown>
 

@@ -311,7 +311,9 @@ export function EmployeeRecapCard({
         ) : narrative ? (
           <>
             {/* Bullet list from the recap prompt — rendered as markdown, not raw text. */}
-            <Markdown className="text-sm leading-relaxed">{narrative}</Markdown>
+            <Markdown className="text-sm leading-relaxed" links="same-origin">
+              {narrative}
+            </Markdown>
             {/* "AI-generated · time · may be wrong", or "not written by AI" — the same line every
                 summary card in Analytics carries. */}
             <p className="text-muted-foreground text-xs">

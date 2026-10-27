@@ -247,10 +247,17 @@ const RETENTION: { what: ReactNode; kept: string }[] = [
     what: (
       <>
         Everything else: profiles, time, attendance, leave, payroll, activity, support
-        tickets, AI summaries and assistant conversations
+        tickets and AI summaries
       </>
     ),
     kept: "Until the organization deletes it or closes its account.",
+  },
+  {
+    // assistant: the server stores no conversation (GET /v1/assistant/threads is always empty);
+    // the transcript lives only in the open browser tab. REVIEW: legal to confirm the wording and
+    // the AI provider's own retention terms.
+    what: "Conversations with the assistant",
+    kept: "Not stored by WorkPulse. Each question, and the data looked up to answer it, is sent to the AI text provider named in this policy to write the reply; the conversation is gone when the browser tab is closed or reloaded.",
   },
   {
     // identity ownership: close/reopen run the 30-day grace, then purge.

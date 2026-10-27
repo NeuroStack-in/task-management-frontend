@@ -317,7 +317,7 @@ function ArticleSheet({
                   {onAskAi ? (
                     <Button size="sm" onClick={onAskAi}>
                       <Sparkles className="size-3.5" />
-                      Ask the AI assistant
+                      Ask the assistant
                     </Button>
                   ) : null}
                   <Button
@@ -843,7 +843,7 @@ export function HelpPage() {
         </h1>
         <p className="mx-auto mt-3 max-w-md text-sm text-feature-foreground/80">
           {canAskAi
-            ? "Search the knowledge base, browse guides, or ask the WorkPulse AI assistant."
+            ? "Search the knowledge base, browse guides, or ask the WorkPulse Assistant."
             : "Search the knowledge base, browse guides, or contact our support team."}
         </p>
 
@@ -1303,7 +1303,7 @@ export function HelpPage() {
                       onClick={askAi}
                       className="font-medium text-primary hover:underline"
                     >
-                      Ask the AI assistant
+                      Ask the assistant
                     </button>
                   </p>
                 ) : null}

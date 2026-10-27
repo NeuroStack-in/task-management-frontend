@@ -118,7 +118,10 @@ export function AiReportCard({
         {/* The model writes Markdown; printed raw it arrived as literal `**` and pipes. */}
         {/* The shared Markdown inks bold text and headings `text-foreground`, which is dark on this
             card — "**65/100**" rendered as near-invisible text. Re-ink them for the feature surface. */}
-        <Markdown className="text-feature-foreground/90 [&_.text-foreground]:text-feature-foreground">
+        <Markdown
+          className="text-feature-foreground/90 [&_.text-foreground]:text-feature-foreground"
+          links="same-origin"
+        >
           {summary}
         </Markdown>
         {provenance && provenanceLine(provenance) ? (

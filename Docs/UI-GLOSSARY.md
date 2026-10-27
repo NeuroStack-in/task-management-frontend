@@ -94,6 +94,14 @@ add it — don't invent a second word for something already listed.
 | **tracking mode** | How the organization records work: *Project & task time*, *Machine uptime*, or *Both*. | agent mode, surfaces |
 | **productivity score** | The daily 0–100 score; its four parts are Utilization, Quality, Focus and Reliability. | performance score, utilisation |
 
+### AI
+
+| Use | Meaning | Not |
+| --- | --- | --- |
+| **WorkPulse Assistant** | The in-app chat, in both places it opens (the sparkle button and Help center). | Ask WorkPulse, the AI assistant, chatbot |
+| **Ask the assistant** | The button or link that opens it. | Ask the AI assistant, Ask AI |
+| **AI-generated · may be wrong** | The line under text a model wrote; *Summary of the figures · not written by AI* under the server's own sentence. | AI insight (for template text) |
+
 ## Where this has been applied
 
 - Settings (every page under `/settings`), Security, Device agents, the operator pages (`/ops/*`) and

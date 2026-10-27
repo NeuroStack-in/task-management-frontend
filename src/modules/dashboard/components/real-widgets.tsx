@@ -64,6 +64,22 @@ const PERIOD_NOTE: Record<DashboardRange, string> = {
 };
 
 /**
+ * The question "Ask the assistant" starts with: the dashboard's window (and department, when one is
+ * picked), asked neutrally — hours, attendance and whatever needs the asker's attention. No verdicts
+ * about people's health or state of mind are requested (AI audit 2026-10-22, AI-36).
+ */
+export function assistantStarter(rangeLabel?: string, departmentLabel?: string): string {
+  const range =
+    !rangeLabel || rangeLabel === "last 7 days"
+      ? "the last 7 days"
+      : rangeLabel === "selected range"
+        ? "the selected range"
+        : rangeLabel;
+  const who = departmentLabel ? `the ${departmentLabel} department` : "the team";
+  return `Summarize ${range} for ${who}: hours, attendance and anything that needs my attention.`;
+}
+
+/**
  * The org AI narrative, **following the dashboard's range control**.
  *
  * One endpoint for every range: `GET /v1/insights/reports/dept-summary` (`force` → its regenerate
@@ -253,7 +269,9 @@ export function OrgAiSummaryWidget({
           <>
             {/* The prompt returns a markdown bullet list; a bare <p> printed the "- " literally
                 and ran every bullet into one line. */}
-            <Markdown className="flex-1">{narrative}</Markdown>
+            <Markdown className="flex-1" links="same-origin">
+              {narrative}
+            </Markdown>
             {/* Who wrote it, in the line every AI card prints (`provenanceLine`, MON-08); the one
                 date-time notation either way (`formatGeneratedAt` → `formatDateTime`, XC-06). */}
             {provenance.kind !== "none" ? (
@@ -272,11 +290,10 @@ export function OrgAiSummaryWidget({
           {canAsk ? (
             <button
               type="button"
-              onClick={() =>
-                openAssistant(
-                  `Summarize ${rangeLabel ?? "this week"}'s productivity and flag any burnout risks.`,
-                )
-              }
+              // A neutral starter. It used to ask the model to "flag any burnout risks" — a
+              // health-adjacent judgement about named people that the summary prompts forbid
+              // (AI audit 2026-10-22, AI-36) — and read "Summarize last 7 days's productivity".
+              onClick={() => openAssistant(assistantStarter(rangeLabel, departmentLabel))}
               className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
             >
               Ask the assistant <ArrowUpRight className="size-3.5" />

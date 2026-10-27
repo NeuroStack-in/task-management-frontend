@@ -46,16 +46,23 @@ async function reportIfSessionGone(): Promise<void> {
 export class ApiError extends Error {
   /** The API's own words. Not for display; log it, don't render it. */
   readonly serverMessage?: string;
+  /**
+   * Seconds until a rate-limited request may be retried, when the server says (`error.retry_after_secs`
+   * — the assistant's 429s). Read by the chat's countdown (`retryAfterOf`).
+   */
+  readonly retryAfterSecs?: number;
 
   constructor(
     message: string,
     readonly status: number,
     readonly code?: string,
     serverMessage?: string,
+    retryAfterSecs?: number,
   ) {
     super(message);
     this.name = "ApiError";
     this.serverMessage = serverMessage;
+    this.retryAfterSecs = retryAfterSecs;
   }
 }
 
@@ -186,7 +193,13 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   if (!res.ok) {
     if (res.status === 401) await reportIfSessionGone();
-    const err = (body as { error?: { code?: string; message?: string } })?.error;
+    const err = (
+      body as { error?: { code?: string; message?: string; retry_after_secs?: unknown } }
+    )?.error;
+    const retryAfter =
+      typeof err?.retry_after_secs === "number" && Number.isFinite(err.retry_after_secs)
+        ? err.retry_after_secs
+        : undefined;
     // The user-facing sentence is decided once, here — not at each of the ~26 places that show
     // `e.message` in a toast. `Request failed (500).` never reaches a person again.
     throw new ApiError(
@@ -194,6 +207,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       res.status,
       err?.code,
       err?.message,
+      retryAfter,
     );
   }
 
