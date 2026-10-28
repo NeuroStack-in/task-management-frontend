@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 const auth = {
   isAuthenticated: true,
@@ -13,7 +13,11 @@ vi.mock("@/stores/auth.store", () => ({
 vi.mock("@/stores/roles.store", () => ({
   useRolesStore: (select: (s: { customRoles: [] }) => unknown) => select({ customRoles: [] }),
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
+const replace = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push: vi.fn() }) }));
+// Whether this org-less account is a support operator (the allowlist). Not one, unless a test says so.
+const getOpsMe = vi.fn();
+vi.mock("@/modules/ops/services/ops.service", () => ({ getOpsMe: () => getOpsMe() }));
 // The two screens this test is not about.
 vi.mock("@/modules/auth/components/signup-experience", () => ({
   SignupExperience: () => <p>Request your workspace</p>,
@@ -42,6 +46,8 @@ const invite = {
 
 beforeEach(() => {
   getMyOrgRequest.mockReset().mockResolvedValue(null);
+  getOpsMe.mockReset().mockResolvedValue({ platform_admin: false });
+  replace.mockReset();
   getMyInvites.mockReset();
   resendMyInvite.mockReset();
 });
@@ -79,5 +85,23 @@ describe("OnboardingExperience — waiting invites", () => {
     getMyInvites.mockResolvedValue([]);
     render(<OnboardingExperience />);
     expect(await screen.findByText("Request your workspace")).toBeInTheDocument();
+  });
+});
+
+describe("OnboardingExperience — support operators", () => {
+  // 2026-10-28: the support@ login (no organization) was shown "About your organization".
+  it("sends an org-less operator to the support desk instead of the request form", async () => {
+    getOpsMe.mockResolvedValue({ platform_admin: true });
+    getMyInvites.mockResolvedValue([]);
+    // Its own id: the allowlist answer is cached per user for the page's lifetime.
+    const before = auth.user;
+    auth.user = { id: "op-1", email: "support@neurostack.in" };
+    onTestFinished(() => {
+      auth.user = before;
+    });
+    const { OnboardingExperience } = await import("./onboarding-experience");
+    render(<OnboardingExperience />);
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/ops/support"));
+    expect(screen.queryByText("Request your workspace")).toBeNull();
   });
 });

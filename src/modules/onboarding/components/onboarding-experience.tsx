@@ -12,6 +12,7 @@ import { useRolesStore } from "@/stores/roles.store";
 import { resolveRole } from "@/hooks/use-permissions";
 import { canAccess } from "@/lib/rbac";
 import { usePlatformAdmin } from "@/modules/ops/use-platform-admin";
+import { getOrg } from "@/modules/settings/services/org.service";
 import { AuthFrame, AuthHeading } from "@/modules/auth/components/auth-frame";
 import { SignupExperience } from "@/modules/auth/components/signup-experience";
 import { SIGNUP_PANEL } from "@/modules/auth/signup-panel";
@@ -57,6 +58,22 @@ export function OnboardingExperience() {
   // your organization" (2026-10-28). Ask the allowlist before offering to create one.
   const orgless = hydrated && isAuthenticated && !hasOrg;
   const { isAdmin: isOperator, loading: operatorPending } = usePlatformAdmin(orgless);
+  // An owner who already finished setup is sent on to the dashboard: reopening the "your
+  // organization is ready" link put them through the wizard again (2026-10-28). `null` = still
+  // asking; a failed read, or a server without the flag, shows the wizard as before.
+  const wantsWizard = hydrated && isAuthenticated && hasOrg && canSetUp;
+  const [setupFinished, setSetupFinished] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!wantsWizard) return;
+    let live = true;
+    getOrg().then(
+      (org) => live && setSetupFinished(org.setup_finished === true),
+      () => live && setSetupFinished(false),
+    );
+    return () => {
+      live = false;
+    };
+  }, [wantsWizard]);
 
   useEffect(() => {
     if (hydrated && !isAuthenticated) {
@@ -65,14 +82,17 @@ export function OnboardingExperience() {
       router.replace("/dashboard");
     } else if (orgless && isOperator) {
       router.replace("/ops/support");
+    } else if (wantsWizard && setupFinished) {
+      router.replace("/dashboard");
     }
-  }, [hydrated, isAuthenticated, hasOrg, canSetUp, orgless, isOperator, router]);
+  }, [hydrated, isAuthenticated, hasOrg, canSetUp, orgless, isOperator, wantsWizard, setupFinished, router]);
 
   if (
     !hydrated ||
     !isAuthenticated ||
     (hasOrg && !canSetUp) ||
-    (orgless && (operatorPending || isOperator))
+    (orgless && (operatorPending || isOperator)) ||
+    (wantsWizard && setupFinished !== false)
   ) {
     return (
       <AuthFrame {...SIGNUP_PANEL}>

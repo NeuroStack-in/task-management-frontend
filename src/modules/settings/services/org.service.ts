@@ -33,6 +33,9 @@ export interface OrgView {
   version: number;
   /** Epoch **seconds** after which a `closing` org is purged. Present only while closing. */
   purge_after?: number;
+  /** The owner finished the setup wizard (its last step done or skipped). Sent by `GET /v1/org` only,
+   *  by servers from 2026-10-28 on; absent = unknown. */
+  setup_finished?: boolean;
 }
 
 /**
