@@ -23,10 +23,13 @@ import { applyPalette, coercePalette, currentPalette } from "@/lib/palette";
 import { FONTS, applyFont, currentFont } from "@/lib/fonts";
 import { hasChosenTheme } from "@/lib/theme";
 import { explicitTheme, getAppearance } from "@/modules/settings/services/appearance.service";
+import { useAuthStore } from "@/stores/auth.store";
 
 export function AppearanceSync() {
   const { theme, setTheme } = useTheme();
   const ran = useRef(false);
+  // An org-less account (a support operator) has no stored appearance — the route refuses it.
+  const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
   // Read through refs so the sync runs exactly once. With `[theme, setTheme]` as deps (next-themes
   // gives `setTheme` a new identity whenever the theme changes), any re-run — a theme flip while the
   // request was in flight, or StrictMode's double effect in dev — cancelled the first run's response
@@ -40,7 +43,7 @@ export function AppearanceSync() {
   });
 
   useEffect(() => {
-    if (ran.current) return;
+    if (ran.current || !hasOrg) return;
     ran.current = true;
     // What was showing when the request left. A pick made while it was in flight has already been
     // saved to the account, so it wins over this older answer.
@@ -80,7 +83,7 @@ export function AppearanceSync() {
       .catch(() => {
         /* keep whatever the pre-paint script applied */
       });
-  }, []);
+  }, [hasOrg]);
 
   return null;
 }

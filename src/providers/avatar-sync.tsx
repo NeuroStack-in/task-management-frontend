@@ -31,9 +31,11 @@ import { getAvatarUrl } from "@/modules/profile/services/profile.service";
 export function AvatarSync() {
   const userId = useAuthStore((s) => s.user?.id);
   const updateUser = useAuthStore((s) => s.updateUser);
+  // An org-less account (a support operator) has no avatar to fetch — the route refuses it.
+  const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !hasOrg) return;
     let alive = true;
     getAvatarUrl()
       .then((url) => {
@@ -47,7 +49,7 @@ export function AvatarSync() {
     };
     // Keyed on the user id so a sign-out/sign-in as someone else re-fetches rather than leaving
     // the previous person's photo on screen.
-  }, [userId, updateUser]);
+  }, [userId, hasOrg, updateUser]);
 
   return null;
 }

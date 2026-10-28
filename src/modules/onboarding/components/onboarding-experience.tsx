@@ -11,6 +11,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useRolesStore } from "@/stores/roles.store";
 import { resolveRole } from "@/hooks/use-permissions";
 import { canAccess } from "@/lib/rbac";
+import { usePlatformAdmin } from "@/modules/ops/use-platform-admin";
 import { AuthFrame, AuthHeading } from "@/modules/auth/components/auth-frame";
 import { SignupExperience } from "@/modules/auth/components/signup-experience";
 import { SIGNUP_PANEL } from "@/modules/auth/signup-panel";
@@ -52,16 +53,27 @@ export function OnboardingExperience() {
   const user = useAuthStore((s) => s.user);
   const customRoles = useRolesStore((s) => s.customRoles);
   const canSetUp = canAccess(resolveRole(user, customRoles), "settings:manage");
+  // A support operator created outside every organization has no org either, and was shown "About
+  // your organization" (2026-10-28). Ask the allowlist before offering to create one.
+  const orgless = hydrated && isAuthenticated && !hasOrg;
+  const { isAdmin: isOperator, loading: operatorPending } = usePlatformAdmin(orgless);
 
   useEffect(() => {
     if (hydrated && !isAuthenticated) {
       router.replace(`/login?from=${encodeURIComponent("/onboarding")}`);
     } else if (hydrated && hasOrg && !canSetUp) {
       router.replace("/dashboard");
+    } else if (orgless && isOperator) {
+      router.replace("/ops/support");
     }
-  }, [hydrated, isAuthenticated, hasOrg, canSetUp, router]);
+  }, [hydrated, isAuthenticated, hasOrg, canSetUp, orgless, isOperator, router]);
 
-  if (!hydrated || !isAuthenticated || (hasOrg && !canSetUp)) {
+  if (
+    !hydrated ||
+    !isAuthenticated ||
+    (hasOrg && !canSetUp) ||
+    (orgless && (operatorPending || isOperator))
+  ) {
     return (
       <AuthFrame {...SIGNUP_PANEL}>
         <FrameLoading label="Loading…" />

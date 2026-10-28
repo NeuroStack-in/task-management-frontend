@@ -45,6 +45,10 @@ export function RouteGate({ children }: { children: React.ReactNode }) {
   const isPageOn = useIsPageOn();
   const mode = useTrackingMode();
   const label = titleForPath(pathname) ?? "This page";
+  // An org-less account only gets this far as an operator on a support page (`AuthGuard`). It has no
+  // role, so the permission check below would wall it off its own desk; the ops API is the real gate.
+  const hasOrg = useAuthStore((st) => Boolean(st.user?.organizationId));
+  if (!hasOrg) return <>{children}</>;
 
   // Permission first. Checked last, a role without access to a plan-gated page was told to upgrade
   // the plan — which would not have let them in (WP-465).

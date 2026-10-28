@@ -23,6 +23,22 @@ export function hasNoCustomerPermissions(
 }
 
 /**
+ * Could this account be a dedicated operator? An account with **no organization** holds no customer
+ * permission at all — it is either a new sign-up on its way to create an organization or a support
+ * operator created outside every organization (the `support@` login is one). Only the allowlist can
+ * tell which, so both stay "could be". An account with an organization could be one only when its role
+ * holds nothing beyond the baseline. `role` may be null while permissions load; with an organization
+ * that means "not yet known", never "could be".
+ */
+export function couldBeOpsOnly(
+  role: { permissions: readonly string[] } | null | undefined,
+  hasOrg: boolean,
+): boolean {
+  if (!hasOrg) return true;
+  return !!role && hasNoCustomerPermissions(role.permissions);
+}
+
+/**
  * One `GET /v1/ops/me` per signed-in user per page load, shared by every caller — the guard, each
  * sidebar mount and the ops pages each fired their own. A failure is not cached: the next caller (or
  * `retry`) asks again.
@@ -99,9 +115,9 @@ export function useIsOpsOnly(enabled = true): {
 } {
   const { isAdmin, loading } = usePlatformAdmin(enabled);
   const { role } = usePermissions();
-  // `!!role` guards the loading window: a null role would make `hasNoCustomerPermissions` vacuously
-  // true and briefly flag a normal admin as ops-only before their permissions land.
-  const couldBeOps = !!role && hasNoCustomerPermissions(role.permissions);
+  const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
+  // An org-less operator (2026-10-28: the `support@` login landed on "About your organization").
+  const couldBeOps = couldBeOpsOnly(role, hasOrg);
   const opsOnly = isAdmin && couldBeOps;
   return { opsOnly, loading, undecided: couldBeOps && loading };
 }

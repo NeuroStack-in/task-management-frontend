@@ -11,6 +11,8 @@ import { useAssistantAccess } from "@/hooks/use-assistant-access";
 import { ProductTour } from "./product-tour";
 import { FirstRunGate } from "@/modules/onboarding/components/first-run-gate";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth.store";
+import { OpsShell } from "./ops-shell";
 
 /**
  * Authenticated app shell (Meridian). A full-height inset sidebar meets the
@@ -19,6 +21,14 @@ import { cn } from "@/lib/utils";
  * nav sheet mounts here. See Docs/REDESIGN.md.
  */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
+  const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
+  // An org-less account reaches the shell only as a support operator on a support page (`AuthGuard`).
+  // Everything in the customer shell reads org data the server refuses it, so it gets its own frame.
+  return hasOrg ? <CustomerShell>{children}</CustomerShell> : <OpsShell>{children}</OpsShell>;
+}
+
+/** The customer app shell — sidebar, top bar, assistant, tour. */
+function CustomerShell({ children }: { children: React.ReactNode }) {
   const collapsed = useUiStore(isSidebarCollapsed);
   const setInSettings = useUiStore((s) => s.setInSettings);
   const pathname = usePathname();

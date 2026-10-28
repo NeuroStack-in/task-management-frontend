@@ -39,7 +39,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // the host org's details. Bounce the operator off every non-/ops route, the same way features and
   // hidden pages are closed here rather than only in the sidebar. The lookup runs only once there is
   // a session — it used to fire for signed-out visitors on their way to sign-in.
-  const { opsOnly, undecided: opsUndecided } = useIsOpsOnly(hydrated && isAuthenticated && hasOrg);
+  //
+  // It runs for org-less accounts too: a support operator created outside every organization has no
+  // org, and was sent to "create your organization" before this was asked (2026-10-28).
+  const { opsOnly, undecided: opsUndecided } = useIsOpsOnly(hydrated && isAuthenticated);
   const isOpsRoute = pathname === "/ops" || pathname.startsWith("/ops/");
 
   useEffect(() => {
@@ -52,10 +55,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [hydrated, isAuthenticated, pathname, router]);
 
   useEffect(() => {
-    if (hydrated && isAuthenticated && !hasOrg) {
+    // Not until the allowlist has answered: an org-less operator belongs on the support desk.
+    if (hydrated && isAuthenticated && !hasOrg && !opsOnly && !opsUndecided) {
       router.replace("/onboarding");
     }
-  }, [hydrated, isAuthenticated, hasOrg, router]);
+  }, [hydrated, isAuthenticated, hasOrg, opsOnly, opsUndecided, router]);
 
   useEffect(() => {
     if (hydrated && isAuthenticated && opsOnly && !isOpsRoute) {
@@ -78,9 +82,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return <Loader label="Loading your organization…" />;
   }
 
-  // No org yet — don't flash the app shell before the onboarding redirect lands.
-  if (!hasOrg) {
-    return <Loader label="Setting up your account…" />;
+  // No org: an operator on a support page gets it (DashboardShell renders the lean operator frame);
+  // everyone else waits for the onboarding or support-desk redirect without a flash of the shell.
+  if (!hasOrg && !(opsOnly && isOpsRoute)) {
+    return <Loader label={opsUndecided ? "Checking access…" : "Setting up your account…"} />;
   }
 
   // Don't paint a customer page for an operator account even for the tick before the redirect lands

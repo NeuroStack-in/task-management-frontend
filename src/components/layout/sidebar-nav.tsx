@@ -5,10 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, Building2, LifeBuoy, LogOut, PanelLeftClose, Search } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
-import {
-  usePlatformAdmin,
-  hasNoCustomerPermissions,
-} from "@/modules/ops/use-platform-admin";
+import { usePlatformAdmin, couldBeOpsOnly } from "@/modules/ops/use-platform-admin";
 import type { NavGroup, NavItem } from "@/constants/navigation";
 import { useIsFeatureOffForOthers } from "@/hooks/use-features";
 import { featureForHref } from "@/constants/features";
@@ -63,8 +60,8 @@ export function SidebarNav({
   const { isAdmin: isPlatformAdmin } = usePlatformAdmin();
   // A dedicated operator account (allowlisted, no customer permissions) sees ONLY the support desk;
   // an owner/admin who is also an operator keeps their full nav plus the ops group.
-  const opsOnly =
-    isPlatformAdmin && !!role && hasNoCustomerPermissions(role.permissions);
+  const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
+  const opsOnly = isPlatformAdmin && couldBeOpsOnly(role, hasOrg);
   const allGroups = useMemo(
     () =>
       opsOnly ? [OPS_GROUP] : isPlatformAdmin ? [...baseNav, OPS_GROUP] : baseNav,
