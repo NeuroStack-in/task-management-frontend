@@ -77,7 +77,7 @@ export function ForgotPasswordForm() {
         title="Forgot your password?"
         subtitle="Enter the email you sign in with and we'll send you a code to set a new one."
       />
-      <form onSubmit={onSubmit} noValidate>
+      <form method="post" onSubmit={onSubmit} noValidate>
         <AuthErrorSummary errors={summary} summaryRef={summaryRef} />
         <AuthField
           id="fp-email"

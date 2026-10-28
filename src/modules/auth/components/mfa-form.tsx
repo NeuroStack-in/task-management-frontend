@@ -107,7 +107,7 @@ export function MfaForm() {
         title="Two-step verification"
         subtitle="Enter the 6-digit code from your authenticator app."
       />
-      <form onSubmit={verify} noValidate>
+      <form method="post" onSubmit={verify} noValidate>
         <AuthErrorSummary errors={error ? [[CODE_ID, error]] : []} summaryRef={summaryRef} />
         <AuthField
           id={CODE_ID}

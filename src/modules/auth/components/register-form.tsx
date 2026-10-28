@@ -87,7 +87,7 @@ export function RegisterForm() {
         <CardTitle className="font-heading text-2xl">Create your account</CardTitle>
         <CardDescription>Set up your WorkPulse organization in minutes.</CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form method="post" onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">
           <SsoButtons verb="Sign up" />
 

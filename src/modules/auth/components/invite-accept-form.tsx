@@ -378,6 +378,7 @@ export function InviteAcceptForm() {
       />
 
       <form
+        method="post"
         onSubmit={handleSubmit(onSubmit, () =>
           requestAnimationFrame(() => summaryRef.current?.focus()),
         )}

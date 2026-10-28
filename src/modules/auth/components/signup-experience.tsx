@@ -409,6 +409,7 @@ export function SignupExperience({
         {submitted ? <AuthErrorSummary errors={summary} summaryRef={summaryRef} /> : null}
 
         <form
+          method="post"
           onSubmit={(e) => {
             e.preventDefault();
             if (step === LAST) void submit();

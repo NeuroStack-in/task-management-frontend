@@ -198,7 +198,10 @@ export function LoginExperience() {
       >
         <AuthHeading title={heading.title} subtitle={heading.subtitle} />
 
-        <form onSubmit={onSignin} noValidate>
+        {/* `method="post"`: a submit before the page has loaded its script goes to the browser, and
+            without a method that is a GET with the email and password in the URL — into history and
+            server logs (2026-10-28). Every auth form carries it. */}
+        <form method="post" onSubmit={onSignin} noValidate>
           {submitted ? <AuthErrorSummary errors={summary} summaryRef={summaryRef} /> : null}
 
           <AuthField

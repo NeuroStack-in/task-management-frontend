@@ -83,6 +83,7 @@ export function ConfirmEmailStep({
         subtitle={`We sent a 6-digit code to ${email}. Enter it to confirm your address and send your request.`}
       />
       <form
+        method="post"
         onSubmit={(e) => {
           e.preventDefault();
           void confirm();

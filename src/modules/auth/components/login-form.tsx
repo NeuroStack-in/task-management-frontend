@@ -92,7 +92,7 @@ export function LoginForm() {
           Sign in to your WorkPulse organization.
         </CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form method="post" onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">
           <SsoButtons />
           <div className="space-y-2">

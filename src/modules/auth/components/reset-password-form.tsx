@@ -166,7 +166,7 @@ export function ResetPasswordForm() {
             : "Enter the code we emailed you and choose a password you don't use anywhere else."
         }
       />
-      <form onSubmit={onSubmit} noValidate>
+      <form method="post" onSubmit={onSubmit} noValidate>
         <AuthErrorSummary errors={summary} summaryRef={summaryRef} />
 
         <AuthField
