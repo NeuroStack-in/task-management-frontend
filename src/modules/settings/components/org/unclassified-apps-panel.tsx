@@ -16,12 +16,14 @@
  * artifact is the rule — which is what keeps every score reproducible (`docs/AI.md` §1).
  */
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Sparkles, RefreshCw, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader } from "@/components/shared/loader";
 import { formatDuration } from "@/lib/format";
 import { ApiError } from "@/lib/api";
+import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store";
 import {
   getUnclassifiedApps,
   type RuleCategoryName,
@@ -67,6 +69,15 @@ export function UnclassifiedAppsPanel({
   const [loading, setLoading] = useState(true);
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * AI suggestions follow **AI insights** (AI audit 2026-10-22, AI-48): with it off, the server
+   * answers `ai_suggestions_off: true` and calls no model. The org's switch is read up front too, so
+   * the button isn't offered at all — and against an older server, which ignored the switch, nothing
+   * is sent for an org that turned AI off (the stricter reading).
+   */
+  const aiInsightsOn = useEntitlementsStore((st) => effectiveFromState(st, "ai.insights"));
+  const [serverSaysOff, setServerSaysOff] = useState(false);
+  const suggestionsOff = !aiInsightsOn || serverSaysOff;
 
   const load = useCallback((suggest: boolean) => {
     let live = true;
@@ -79,6 +90,7 @@ export function UnclassifiedAppsPanel({
         setApps(r.apps);
         setTotalSeen(r.total_seen);
         setNoRules(r.no_rules_configured);
+        if (suggest) setServerSaysOff(r.ai_suggestions_off === true);
       })
       .catch((e) => {
         if (!live) return;
@@ -171,18 +183,33 @@ export function UnclassifiedAppsPanel({
                 Accept all {suggested.length}
               </Button>
             ) : null}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => load(true)}
-              disabled={suggesting}
-            >
-              <Sparkles className="size-3.5" />
-              {suggesting ? "Asking…" : "Suggest categories"}
-            </Button>
+            {suggestionsOff ? null : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => load(true)}
+                disabled={suggesting}
+              >
+                <Sparkles className="size-3.5" />
+                {suggesting ? "Asking…" : "Suggest categories"}
+              </Button>
+            )}
           </div>
         ) : null}
       </div>
+      {/* Said instead of an empty or spinning "Suggest" (AI-48). */}
+      {canManage && suggestionsOff ? (
+        <p className="text-muted-foreground text-xs" role="status">
+          AI suggestions are off because AI insights is turned off in{" "}
+          <Link
+            href="/settings/features"
+            className="font-medium underline underline-offset-2 hover:no-underline"
+          >
+            Settings → Features
+          </Link>
+          . Classify these by hand below.
+        </p>
+      ) : null}
 
       <ul className="divide-border divide-y">
         {visible.map((a) => (

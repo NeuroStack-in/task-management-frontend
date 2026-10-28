@@ -32,8 +32,8 @@ export interface ScoreBreakdown {
    * entirely on distracting apps — so **rendering `q` without checking this shows "Quality 0" for
    * what was really an instrumentation gap.**
    *
-   * The activity read-models (`/v1/insights/activity`, `/v1/me/insights/activity`,
-   * `/v1/insights/user/{id}/activity`) only started sending it with the server's QA-audit fix
+   * The activity read-models (`/v1/insights/activity`, `/v1/insights/user/{id}/activity`) only
+   * started sending it with the server's QA-audit fix
    * (WP-150); before that deploy they omit it, so on those rows absence is **unknown** rather than
    * measured, and a `q_measured !== false` guard cannot fire there. Absent on a daily summary still
    * means measured (an older payload).
@@ -73,6 +73,14 @@ export interface DailySummary {
   narrative: string;
   /** Epoch **ms** the cached narrative was generated. Absent only transiently (couldn't be stored). */
   generated_at?: number;
+  /**
+   * Who wrote `narrative`: `true` the model, `false` the server's own line (no AI key, the provider
+   * failing, AI insights off, nothing to narrate). AI audit 2026-10-22, AI-30 — **absent on servers
+   * before that fix**, where `recapProvenance` falls back to `generated_at`.
+   */
+  ai_generated?: boolean;
+  /** The model that wrote it, when `ai_generated`. Not shown on screen (AI-57). */
+  model?: string | null;
 }
 
 /**
@@ -93,7 +101,13 @@ export function regenerateDailySummary(date: string): Promise<DailySummary> {
   );
 }
 
-// ── GET /v1/me/insights/locations?date=  (the caller's own device-location trail for a day) ──
+// ── Location fixes (read through the oversight routes below) ──
+//
+// **No `/v1/me/insights/{activity,apps,locations}` readers** (AI audit 2026-10-22, AI-33). Employees
+// see none of their own monitoring data — the API included (owner decision 2026-10-28) — and the server
+// refuses those three routes to a caller who can see only themselves. `getMyLocations`,
+// `getSelfActivity` and `getMyAppUsage` were removed with the one screen that used any of them (an
+// unreachable personal Locations view); `self-monitoring-routes.test.ts` keeps them out of `src/`.
 
 /**
  * One device location fix, mirroring `insights::locations::LocationPoint`. Written by the ingest
@@ -109,20 +123,7 @@ export interface LocationPoint {
   captured_at: number;
 }
 
-export interface MyLocations {
-  date: string;
-  /** Chronological (the server keys points `LOC#<date>#<captured_at>`). */
-  points: LocationPoint[];
-}
-
-/** `date` is `YYYY-MM-DD` in the caller's local calendar (the server is UTC and cannot guess it). */
-export function getMyLocations(date: string): Promise<MyLocations> {
-  return apiFetch<MyLocations>(
-    `/v1/me/insights/locations?date=${encodeURIComponent(date)}`,
-  );
-}
-
-// ── GET /v1/me/insights/activity?from=&to=  (personal daily scores + trend) ──
+// ── Daily scores + trend (one person's, through `getUserActivity`) ──
 
 export interface ActivityTotals {
   active_sec: number;
@@ -173,6 +174,11 @@ export interface UnclassifiedAppsResponse {
   total_seen: number;
   /** The org has no rules at all, so "unclassified" means *everything* — a different problem. */
   no_rules_configured: boolean;
+  /**
+   * `true` when suggestions were asked for but the org has AI insights off, so the model wasn't
+   * called and no app carries a suggestion (AI audit 2026-10-22, AI-48). Absent on older servers.
+   */
+  ai_suggestions_off?: boolean;
 }
 
 /**
@@ -229,6 +235,10 @@ export function getAppUsage(from: string, to: string): Promise<AppUsageResponse>
   return apiFetch<AppUsageResponse>(`/v1/insights/apps/usage?${q.toString()}`);
 }
 
+/**
+ * One person's daily scores and trend over a range — the server's `SelfResponse` shape, which the
+ * per-user route shares (the name is the server's; no screen reads the self route any more, AI-33).
+ */
 export interface SelfActivity {
   from: string;
   to: string;
@@ -242,19 +252,12 @@ export interface SelfActivity {
   };
 }
 
-export function getSelfActivity(from: string, to: string): Promise<SelfActivity> {
-  return apiFetch<SelfActivity>(
-    `/v1/me/insights/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-  );
-}
-
 // ── GET /v1/insights/user/{id}/activity?from=&to=  (a specific employee's daily scores + trend) ──
 
 /**
- * The admin/manager view of one employee's activity, mirroring {@link getSelfActivity} but for
- * another user (org oversight, gated on `activity:read`). Same `SelfActivity` shape. **Empty
- * `days` / `days_scored: 0` is the honest state** until that person's desktop agent reports — never
- * a fabricated score.
+ * The admin/manager view of one employee's activity (org oversight, gated on `activity:read`).
+ * **Empty `days` / `days_scored: 0` is the honest state** until that person's desktop agent reports —
+ * never a fabricated score.
  */
 export function getUserActivity(
   userId: string,
@@ -309,12 +312,6 @@ export function getUserAppUsage(
   );
 }
 
-/** The caller's own, same shape. Self-scoped. */
-export function getMyAppUsage(from: string, to: string): Promise<AppUsage> {
-  return apiFetch<AppUsage>(
-    `/v1/me/insights/apps?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-  );
-}
 
 // ── GET /v1/insights/activity?date=  (org day rollup) ──
 
@@ -476,6 +473,17 @@ export interface ScreenshotReport {
   model: string;
   /** Epoch **ms** the report was generated. */
   generated_at: number;
+  /**
+   * `false` when the screenshot was blank, locked or unreadable, so the AI gave no rating and it
+   * counts neither as on- nor off-task (AI audit 2026-10-22, AI-47). Absent on older servers, which
+   * rated every frame — read absent as judged.
+   */
+  judged?: boolean;
+  /**
+   * What the rating was judged against (AI-65): the person's department and job title, one of them,
+   * or a general default when neither is set. Absent on older servers. Compare, never index blindly.
+   */
+  role_basis?: string;
 }
 
 /**
@@ -498,7 +506,10 @@ export function getScreenshotReport(
 /** Mirrors `vision_map::dto::RunResponse` — the counts from a day's analysis run. */
 export interface ScreenshotReportRun {
   ran: boolean;
+  /** Why nothing ran — a server sentence, not display copy (see `lib/screenshot-review.ts`). */
   reason?: string;
+  /** Screenshots the privacy rules kept from the AI (opt-outs, retention). */
+  withheld_by_privacy?: number;
   scanned: number;
   already_reported: number;
   generated: number;
@@ -844,7 +855,16 @@ export interface ScreenshotDeptSummary extends Authorship {
     work_related: number;
     flagged: number;
     avg_productivity: number | null;
+    /**
+     * Work-related share of the **judged** screenshots (AI-47: `work_related / (frames - not_judged)`).
+     * On older servers, of every analysed frame.
+     */
     on_task_pct: number;
+    /**
+     * Screenshots the AI looked at but couldn't judge — blank, locked or unreadable (AI-47). They
+     * count neither way. Absent on older servers.
+     */
+    not_judged?: number;
     notable: string[];
   };
   narrative: string;
@@ -1023,6 +1043,9 @@ export interface PeriodRecap {
    */
   reason?: string;
   generated_at?: number;
+  /** As on {@link DailySummary}: who wrote `narrative` (AI-30). Absent on older servers. */
+  ai_generated?: boolean;
+  model?: string | null;
   /** The narrative's evidence base: how many children actually had a recap to reduce over. */
   source_days?: number;
   source_weeks?: number;

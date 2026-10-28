@@ -100,7 +100,8 @@ add it — don't invent a second word for something already listed.
 | --- | --- | --- |
 | **WorkPulse Assistant** | The in-app chat, in both places it opens (the sparkle button and Help center). | Ask WorkPulse, the AI assistant, chatbot |
 | **Ask the assistant** | The button or link that opens it. | Ask the AI assistant, Ask AI |
-| **AI-generated · may be wrong** | The line under text a model wrote; *Summary of the figures · not written by AI* under the server's own sentence. | AI insight (for template text) |
+| **AI-generated · may be wrong** | The line under text a model wrote; *Summary of the figures · not written by AI* under the server's own sentence. Never a raw model id ("openai/gpt-oss-20b" reads as "sent to OpenAI"). | AI insight (for template text) |
+| **AI review** | The AI's read of one screenshot: what is on screen, whether it serves the person's department and job title, and any flag for a person to confirm or dismiss. Runs only while *AI insights* is on. | AI read, AI analysis, AI report (for one screenshot), frame |
 
 ## Where this has been applied
 

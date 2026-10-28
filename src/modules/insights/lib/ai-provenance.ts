@@ -4,14 +4,23 @@
  *
  * The cards used to put "AI … report" and the sparkle over whatever text came back, including the
  * server's fixed sentence for a day with nothing to narrate, and none of them said AI can be wrong.
- * The rule now: **AI branding only on text a model wrote**, with "AI-generated · model · time · may
- * be wrong"; the template is labelled "Summary" with no AI mark.
+ * The rule now: **AI branding only on text a model wrote**, with "AI-generated · time · may be
+ * wrong"; the template is labelled "Summary" with no AI mark.
  *
  * **The server says which** (2026-10-20). Every org summary — the day / week / month executive
  * reports, the department and screenshot summaries, the attention brief and the location summary —
  * carries `ai_generated` and `model`: `false` covers every way the server ends up writing the line
  * itself (nothing to narrate, the provider down or failing, AI insights off, another reader already
  * generating it). {@link fromServer} reads those, and each helper below prefers it.
+ *
+ * The person recaps (day / week / month / overall) gain the same two fields with the AI audit's
+ * AI-30 fix (2026-10-28); {@link recapProvenance} reads them and keeps the old inference for servers
+ * without them.
+ *
+ * **No model id on screen** (AI audit 2026-10-22, AI-57). The line used to print the raw id —
+ * "AI-generated · openai/gpt-oss-20b · …" — which reads as "sent to OpenAI" to a privacy reviewer,
+ * though the model runs at the AI provider the privacy policy names. The id stays on `Provenance` for
+ * code that needs it; the line says "AI-generated · time · may be wrong", as the glossary has it.
  *
  * Only a payload **without** the fields — a server that predates them, which is what is live until
  * the backend ships — falls back to what the payload can show on its own:
@@ -128,13 +137,29 @@ export function locationSummaryProvenance(
   return { kind: "unknown", generatedAt: l.generated_at };
 }
 
-/** The one line every card prints under its text (empty for `none`). */
+/**
+ * One person's recap (day / week / month / overall) — AI audit 2026-10-22, AI-30.
+ *
+ * The server's `ai_generated` / `model` win when present: they cover the fallbacks the timestamp
+ * can't tell apart (no AI key, the provider failing, AI insights off), which older servers cached and
+ * stamped exactly like a model's text. Without them, the old rule: those servers stored — and stamped
+ * `generated_at` on — a narrative only after the model wrote it, and their own lines (an empty day,
+ * an untracked role) came back unstamped. An empty narrative is never attributed.
+ */
+export function recapProvenance(r: AuthorshipFields & { narrative?: string | null }): Provenance {
+  if (!r.narrative?.trim()) return { kind: "none" };
+  const told = fromServer(r);
+  if (told) return told;
+  return r.generated_at ? { kind: "ai", generatedAt: r.generated_at } : { kind: "computed" };
+}
+
+/** The one line every card prints under its text (empty for `none`). Never the model id (AI-57). */
 export function provenanceLine(p: Provenance): string {
   if (p.kind === "none") return "";
   if (p.kind === "computed") return "Summary of the figures · not written by AI";
   const when = formatGeneratedAt(p.generatedAt);
   if (p.kind === "ai") {
-    return ["AI-generated", p.model, when, "may be wrong"].filter(Boolean).join(" · ");
+    return ["AI-generated", when, "may be wrong"].filter(Boolean).join(" · ");
   }
   // Said as it is: usually the model, occasionally the template, and the payload doesn't say which.
   return ["Usually written by AI, which can be wrong", when ? `generated ${when}` : null]

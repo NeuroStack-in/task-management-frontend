@@ -645,10 +645,9 @@ function TrackingStep({
           </Link>{" "}
           (opens in a new tab)
         </p>
-        <p>
-          WorkPulse also lists what your organization records in each invite email and on the
-          Download page.
-        </p>
+        {/* It used to add "WorkPulse also lists what your organization records in each invite
+            email and on the Download page." Both notices were withdrawn (owner decision
+            2026-10-28), so the line would now promise something that isn't there. */}
       </section>
 
       {policy.silent ? (

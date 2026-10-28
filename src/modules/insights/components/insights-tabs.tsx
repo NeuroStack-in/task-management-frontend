@@ -27,9 +27,11 @@ import { withCarriedParams } from "../lib/url-params";
  * MON-13): each link copies `?date=`, `?dept=` and `?emp=` from the current URL, so switching tabs
  * no longer drops the reader back on today and every department.
  *
- * **On a phone the bar scrolls, and says so** (MON-19). Four tabs don't fit 390 px, and "AI reports"
- * sat past the edge with nothing to show it existed. The active tab is scrolled into view, and a fade
- * marks each edge that has more tabs behind it.
+ * **On a phone the tabs wrap** (AI audit 2026-10-22, AI-62). Four tabs don't fit 390 px. The bar
+ * used to scroll sideways with a fade at the edge (MON-19), and the auditors still found "AI reports"
+ * off-screen with only a sliver of its icon showing — a fade is easy to miss. Below `sm` the tabs now
+ * wrap onto a second line, so every tab is in view. From `sm` up the bar scrolls if it ever needs to,
+ * with the active tab scrolled into view and a fade on each edge that has more behind it.
  */
 export function InsightsTabs() {
   const pathname = usePathname();
@@ -93,7 +95,7 @@ export function InsightsTabs() {
       <div
         ref={scroller}
         onScroll={measure}
-        className="-mb-px flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="-mb-px flex flex-wrap gap-x-1 sm:flex-nowrap sm:overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {tabs.map((tab) => {
           const active =

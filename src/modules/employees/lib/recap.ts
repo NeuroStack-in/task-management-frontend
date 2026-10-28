@@ -9,7 +9,10 @@ import type { DailySummary, PeriodRecap } from "@/modules/insights/services/insi
  */
 export function recapHasData(r: DailySummary | PeriodRecap | null): boolean {
   if (!r) return false;
-  if (r.generated_at) return true;
+  // A model only writes over real data. With the server's own flag (AI-30) a stamp alone no longer
+  // proves that — a fallback can carry one — so `ai_generated: false` falls through to the counts.
+  if (r.ai_generated === true) return true;
+  if (r.ai_generated !== false && r.generated_at) return true;
   const p = r as PeriodRecap;
   if ((p.source_days ?? 0) > 0 || (p.source_weeks ?? 0) > 0 || (p.source_months ?? 0) > 0) {
     return true;

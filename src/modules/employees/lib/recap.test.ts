@@ -40,6 +40,23 @@ describe("recapHasData (UX audit MON-21)", () => {
     expect(recapHasData(day({ generated_at: 1_760_000_000_000 }))).toBe(true);
   });
 
+  /** AI-30: with the server's own flag, a stamped fallback no longer proves there was data. */
+  it("reads ai_generated when the server sends it", () => {
+    expect(recapHasData(day({ ai_generated: true }))).toBe(true);
+    // A stamped template over an empty day: no data, so no Regenerate.
+    expect(recapHasData(day({ ai_generated: false, generated_at: 1_760_000_000_000 }))).toBe(false);
+    // A fallback over a day that had time (the provider failed): the data is real.
+    expect(
+      recapHasData(
+        day({
+          ai_generated: false,
+          generated_at: 1_760_000_000_000,
+          metrics: { ...metrics, tracked_secs: 3600 },
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it("is false for the untracked-role placeholder on a period, true once children were reduced", () => {
     expect(recapHasData(week({ narrative: "- This is an administrative role…", source_days: 0 }))).toBe(
       false,

@@ -123,12 +123,21 @@ describe("InviteAcceptForm", () => {
     expect(body).toMatchObject({ phone: "+919876543210", location: "Pune", work_mode: "remote" });
   });
 
-  it("says why each personal detail is asked, and what the organization can record", async () => {
+  it("says why each personal detail is asked", async () => {
     render(<InviteAcceptForm />);
     await screen.findByText("Create account");
     expect(screen.getByText("So your organization can reach you about work.")).toBeInTheDocument();
     expect(screen.getByText("For HR records only. Leave it blank if you prefer.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "What Acme can record" })).toBeInTheDocument();
+  });
+
+  /** Owner decision 2026-10-28: the employee monitoring notice is withdrawn, here as everywhere. */
+  it("shows no monitoring notice", async () => {
+    render(<InviteAcceptForm />);
+    await screen.findByText("Create account");
+    expect(screen.queryByRole("heading", { name: /can record/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/screenshots of your screen/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/window titles/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/approximate location/i)).not.toBeInTheDocument();
   });
 });
 

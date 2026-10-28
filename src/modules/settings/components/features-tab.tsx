@@ -124,12 +124,16 @@ const CONTROLS: ControlDef[] = [
   { icon: Wallet, label: "Payroll", description: "Payroll runs and payslips.", page: "/payroll" },
   { icon: LineChart, label: "Analytics", description: "The Analytics hub. Turning it off turns off every tab below it.", page: "/insights" },
   { icon: Activity, label: "Activity monitoring", description: "Active vs idle time, application usage and input intensity — and the Activity tab.", features: ["monitoring.activity"], page: "/insights/activity" },
-  { icon: Camera, label: "Screenshots", description: "Periodic screenshot capture and the review grid. Off stops the agents capturing, not just the page.", features: ["monitoring.screenshots"], page: "/insights/screenshots" },
+  { icon: Camera, label: "Screenshots", description: "Periodic screenshot capture and the review grid. Off stops the agents capturing, not just the page. Sending screenshots for AI review follows AI insights.", features: ["monitoring.screenshots"], page: "/insights/screenshots" },
   { icon: MapPin, label: "Locations", description: "The device-location board.", page: "/insights/locations" },
   { icon: FileText, label: "Reports", description: "Workforce, time and project reports, CSV export, and the narrated AI PDF — which is billed per generation.", features: ["reports.basic", "insights.reports.ai_pdf"], page: "/insights/ai-reports" },
-  // Truthful about the server's gates: the AI summaries on the Locations and Screenshots tabs ride
-  // `monitoring.activity` / `monitoring.screenshots`, not `ai.insights` (QA audit 2026-10-08, WP-281).
-  { icon: Sparkles, label: "AI insights", description: "AI-narrated daily, weekly and monthly recaps and the attention list. Off stops them being generated and billed. The AI summaries on the Locations and Screenshots tabs follow those switches instead.", features: ["ai.insights"] },
+  // Truthful about the server's gates. `ai.insights` gates the person recaps, the attention list and
+  // the department summary outright, and the Locations and Screenshots summaries fall back to the
+  // figures without it (WP-281). It also gates the screenshot AI review: off, no screenshot is sent
+  // to the vision model and nothing is billed, while capture carries on (AI audit 2026-10-22, AI-19;
+  // owner decision 2026-10-28). The old line said the tab summaries "follow those switches instead",
+  // which stopped being true with WP-281 and never said a word about the per-screenshot review.
+  { icon: Sparkles, label: "AI insights", description: "AI review of every screenshot, and AI-written summaries: person recaps, the attention list and the summaries on the Analytics tabs. Off stops screenshots being sent for AI review and stops summaries being written and billed. Screenshots are still taken.", features: ["ai.insights"] },
   // It had no row, so nobody could turn it on after an upgrade, or off on an org created with it
   // (QA audit 2026-10-08, WP-332). It gates the scorer's anomaly flags and their reasons in the
   // attention list (`insights::scorer`, `attention_list`).
@@ -200,7 +204,7 @@ const FEATURE_LIST: FeatureDef[] = [
     icon: Sparkles,
     label: "AI insights",
     description:
-      "AI-narrated productivity summaries over the day's activity.",
+      "AI review of every screenshot, and AI-written summaries of each person's work.",
   },
   {
     key: "ai.assistant",
@@ -453,9 +457,9 @@ export function FeaturesTab() {
           <CardTitle>Features</CardTitle>
           <CardDescription>
             Turn a feature on or off for the whole organization. Off hides its pages and stops
-            the work behind it &mdash; Screenshots off stops device agents capturing, AI off
-            stops summaries being generated and billed. Owners always keep access, so nothing can be
-            switched off for good.
+            the work behind it &mdash; Screenshots off stops device agents capturing, AI insights
+            off stops screenshots being sent for AI review and summaries being written and billed.
+            Owners always keep access, so nothing can be switched off for good.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -626,6 +630,13 @@ export function FeaturesTab() {
                 {off.some((l) => l === "Screenshots" || l === "Activity monitoring") && (
                   <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">
                     This also stops device agents capturing — not just hiding the page.
+                  </p>
+                )}
+                {/* AI-19: what the AI switch reaches, said where it is about to change. */}
+                {off.includes("AI insights") && (
+                  <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">
+                    Screenshots stop being sent for AI review, and no AI summaries are written.
+                    Screenshots are still taken.
                   </p>
                 )}
               </div>

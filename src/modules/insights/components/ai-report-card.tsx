@@ -134,12 +134,15 @@ export function AiReportCard({
         ) : null}
 
         {metrics.length ? (
-          <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-white/15 pt-3">
+          // Two columns on a phone, a wrapping row from `sm` up. At 390 px the row put three or four
+          // figures side by side, and a figure's hint ("AI-checked 12 of 40") jammed against the
+          // next one (AI audit 2026-10-22, AI-62).
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-white/15 pt-3 sm:flex sm:flex-wrap sm:gap-x-8">
             {metrics.map((m) => {
               const up = (m.delta ?? 0) >= 0;
               const body = (
                 <>
-                  <div className="flex items-baseline gap-1.5">
+                  <div className="flex flex-wrap items-baseline gap-x-1.5">
                     <span className="font-display text-2xl font-semibold tabular-nums">
                       {m.value}
                     </span>

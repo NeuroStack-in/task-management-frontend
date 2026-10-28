@@ -101,6 +101,7 @@ import { EmployeeAppUsageCard } from "./employee-app-usage-card";
 import { withEmp } from "@/modules/insights/lib/employee-scope";
 import { formatHours, isoDay } from "@/lib/format";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
+import { NO_ATTENDANCE } from "../lib/hours-chart";
 import {
   useEmployeeDevices,
   useEmployeeLeave,
@@ -658,12 +659,15 @@ export function EmployeeProfile({ id }: { id: string }) {
 /* ============================ presentational view (verbatim preview) ============================ */
 
 /** Attendance status → the colour and label the hours-worked bars use. Unknown/absent/non-workday
- *  (and any future status) fall through to the neutral "not yet closed" bucket. */
+ *  (and any future status) fall through to the neutral "not yet closed" bucket. A timesheet day the
+ *  page has no verdict for (AI-63 — the hours come from the timesheet, the verdicts from the activity
+ *  read) is said as exactly that, not given one. */
 const ATTENDANCE_META: Record<string, { label: string; color: string }> = {
   present: { label: "Present", color: "var(--success)" },
   late: { label: "Late", color: "var(--warning)" },
   partial: { label: "Partial", color: "var(--chart-4)" },
   leave: { label: "On leave", color: "var(--primary)" },
+  [NO_ATTENDANCE]: { label: "Attendance not shown", color: "var(--chart-2)" },
 };
 const ATTENDANCE_FALLBACK = { label: "Not yet closed", color: "var(--muted-foreground)" };
 const attendanceMeta = (status: string) => ATTENDANCE_META[status] ?? ATTENDANCE_FALLBACK;
@@ -1224,13 +1228,15 @@ function TimeTab({ data, isTracked }: { data: EmployeeProfileData; isTracked: bo
   const leave = useEmployeeLeave(data.id, canSeeLeave);
 
   const chartData = data.kpi.days;
-  // A day only appears here if the agent recorded it, so any bars at all means real work to show;
-  // no days means nothing measured (an honest empty state, never a flat line of measured zeros).
+  // A day only appears here if time was recorded on it, so any bars at all means real work to show;
+  // no days means nothing recorded (an honest empty state, never a flat line of measured zeros).
   const kpiMeasured = chartData.length > 0;
+  // The timesheet, unless the viewer can't read it (AI-63).
+  const fromActivity = data.kpi.source === "activity";
   // The attendance statuses actually present in the window, in a stable order — the chart legend.
   const seenStatuses = new Set(chartData.map((d) => d.status));
   const legendStatuses = [
-    ...["present", "late", "partial", "leave"].filter((s) => seenStatuses.has(s)),
+    ...["present", "late", "partial", "leave", NO_ATTENDANCE].filter((s) => seenStatuses.has(s)),
     ...([...seenStatuses].some((s) => !ATTENDANCE_META[s]) ? ["_other"] : []),
   ];
   const totalHours = chartData.reduce((s, d) => s + d.hours, 0);
@@ -1266,6 +1272,8 @@ function TimeTab({ data, isTracked }: { data: EmployeeProfileData; isTracked: bo
                   {kpiMeasured
                     ? `${formatHours(totalHours)} over ${chartData.length} ${chartData.length === 1 ? "day" : "days"} · last 30 days`
                     : "Total hours on the clock · last 30 days"}
+                  {/* Said only when it isn't the timesheet — the one case a reader could be misled. */}
+                  {kpiMeasured && fromActivity ? " · from desktop-app activity" : ""}
                 </p>
               </div>
             </div>
@@ -1291,28 +1299,39 @@ function TimeTab({ data, isTracked }: { data: EmployeeProfileData; isTracked: bo
             // cause, so nobody reads a blank chart as a verdict on the person — including when
             // the read itself was refused or failed, which used to say "nothing recorded" (WP-229).
             <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-1 text-center">
-              {data.activityStatus === "forbidden" ? (
+              {data.kpi.source === null &&
+              data.timeStatus === "forbidden" &&
+              data.activityStatus === "forbidden" ? (
                 <>
-                  <p className="text-sm font-medium">Activity isn&apos;t visible to you</p>
+                  <p className="text-sm font-medium">Hours aren&apos;t visible to you</p>
                   <p className="max-w-xs text-xs text-muted-foreground">
-                    Seeing a person&apos;s hours and activity needs access to org activity, which
-                    your role doesn&apos;t have.
+                    Seeing a person&apos;s hours needs access to their team&apos;s timesheets,
+                    which your role doesn&apos;t have.
                   </p>
                 </>
-              ) : data.activityStatus === "failed" ? (
+              ) : data.kpi.source === null ? (
                 <>
-                  <p className="text-sm font-medium">Couldn&apos;t load activity</p>
+                  <p className="text-sm font-medium">Couldn&apos;t load hours</p>
                   <p className="max-w-xs text-xs text-muted-foreground">
                     This isn&apos;t a sign that nothing was recorded. Refresh to try again.
                   </p>
                 </>
-              ) : (
+              ) : fromActivity ? (
                 <>
                   <p className="text-sm font-medium">No work recorded in the last 30 days</p>
                   <p className="max-w-xs text-xs text-muted-foreground">
-                    This chart is built from activity the desktop agent tracks. Nothing has been
-                    recorded for this employee in the last 30 days — which is not the same as a
-                    measured zero.
+                    The timesheet isn&apos;t visible to you, so this chart is built from activity
+                    the desktop app reports. None was reported for this employee in the last 30
+                    days — which is not the same as no time worked.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">No time recorded in the last 30 days</p>
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    This chart is built from the timesheet: time from the desktop app&apos;s timer
+                    and approved corrections. None was recorded for this employee in the last 30
+                    days.
                   </p>
                 </>
               )}

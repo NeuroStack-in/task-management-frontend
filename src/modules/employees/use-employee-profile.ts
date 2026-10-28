@@ -3,7 +3,9 @@
 /**
  * One employee's rich profile, assembled entirely from the **live backend** — no mock:
  *   - identity / contact / assignment  → `GET /v1/employees/{id}` + department / team / role maps;
- *   - productivity score + hours chart → `GET /v1/insights/user/{id}/activity`, last 30 days;
+ *   - productivity score               → `GET /v1/insights/user/{id}/activity`, last 30 days;
+ *   - hours chart                      → `GET /v1/timesheet/user/{id}`, last 30 days (AI-63), with
+ *                                        the day's attendance verdict from the activity read;
  *   - projects + per-project KPIs        → `GET /v1/projects/user/{id}` + `GET /v1/projects/{id}`.
  *
  * The output feeds the preview `EmployeeProfileData` shape verbatim. Fields the backend genuinely
@@ -23,6 +25,8 @@ import {
   SCORE_WINDOW_DAYS,
 } from "@/modules/insights/services/insights.service";
 import { getUserDay } from "@/modules/attendance/services/attendance.service";
+import { getUserTimesheet } from "@/modules/time-tracking/services/timesheet.service";
+import { hoursFromActivity, hoursFromTimesheet, type HoursDay } from "./lib/hours-chart";
 import {
   getEmployeeProfile,
   departmentMap,
@@ -70,9 +74,17 @@ export interface EmployeeProfileData {
   projects: ProjectItem[];
   /** The project list couldn't be read — which is not "on no projects" (WP-229). */
   projectsFailed: boolean;
-  /** Hours worked per day over the last 30 days, tagged with the day's attendance status. Only days
-   *  with data appear; an unreported day is absent, never a measured zero. */
-  kpi: { days: { date: string; label: string; hours: number; status: string }[] };
+  /**
+   * Hours worked per day over the last 30 days, tagged with the day's attendance status. Only days
+   * with time appear; a day with none is absent, never a measured zero.
+   *
+   * `source` says where the hours came from: the **timesheet** (timer sessions and corrections —
+   * AI audit 2026-10-22, AI-63), or the **activity** rollup when the viewer can't read the timesheet,
+   * or `null` when neither could be read.
+   */
+  kpi: { days: HoursDay[]; source: "timesheet" | "activity" | null };
+  /** Whether the timesheet behind the chart was read (`forbidden`: no team/org timesheet access). */
+  timeStatus: "ok" | "forbidden" | "failed";
   /**
    * Whether the activity behind the score and the chart was read. `forbidden`: the viewer may not
    * read org activity (a different bit from the directory's); `failed`: the read failed. Either way
@@ -108,11 +120,6 @@ export interface EmployeeProfileState {
   reload: () => void;
 }
 
-const MONTH_SHORT = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
 /** `YYYY-MM-DD` in local calendar (the activity endpoint wants local, the server is UTC). */
 function ymd(d: Date): string {
   const y = d.getFullYear();
@@ -120,8 +127,6 @@ function ymd(d: Date): string {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
-
-const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /** Run `fn` over `items` with a bounded concurrency, so a many-project fan-out can't throttle (503). */
 async function mapLimit<T, R>(
@@ -143,44 +148,6 @@ async function mapLimit<T, R>(
 
 /** How many days back the daily hours chart spans. */
 const DAILY_CHART_DAYS = 30;
-
-/** `2026-08-05` → `Aug 5` for a compact daily axis label. */
-function dayLabel(date: string): string {
-  const [, m, d] = date.split("-").map(Number);
-  return `${MONTH_SHORT[m - 1]} ${d}`;
-}
-
-/**
- * The employee's **hours worked per day** over the last {@link DAILY_CHART_DAYS} days, one entry per
- * day that has a recorded summary (oldest→newest), each tagged with the day's attendance status.
- *
- * Replaces the old 12-month "avg productive hours/day" buckets, which were meaningless for anyone
- * with only a few weeks of history: with one month of data the monthly series drew a single point
- * connected to zero — a diagonal ramp implying a trend where there was none. Simple daily bars, one
- * per worked day, show what actually happened; the bar colour is the attendance verdict.
- *
- * Height is the attendance-recorded work time (`worked_minutes`) when the day has closed, falling
- * back to tracked active time for a day the close cron hasn't resolved yet — so a bar always reflects
- * real time on the clock. **Only days with data appear** — an unreported day is absent, never a
- * measured zero.
- */
-function buildDailyHours(
-  days: { date: string; activeSec: number; workedMinutes: number; attendance: string }[],
-  now: Date,
-): { date: string; label: string; hours: number; status: string }[] {
-  const cutoff = ymd(
-    new Date(now.getFullYear(), now.getMonth(), now.getDate() - (DAILY_CHART_DAYS - 1)),
-  );
-  return days
-    .filter((d) => d.date >= cutoff)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((d) => ({
-      date: d.date,
-      label: dayLabel(d.date),
-      hours: round1(d.workedMinutes > 0 ? d.workedMinutes / 60 : d.activeSec / 3600),
-      status: d.attendance || "unknown",
-    }));
-}
 
 export function useEmployeeProfile(id: string): EmployeeProfileState {
   const [data, setData] = useState<EmployeeProfileData | null>(null);
@@ -205,8 +172,9 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
         const to = ymd(now);
 
         let activityStatus: EmployeeProfileData["activityStatus"] = "ok";
+        let timeStatus: EmployeeProfileData["timeStatus"] = "ok";
         let projectsFailed = false;
-        const [p, depts, teams, roles, allProjects, activity, today] = await Promise.all([
+        const [p, depts, teams, roles, allProjects, activity, today, timesheet] = await Promise.all([
           getEmployeeProfile(id),
           departmentMap().catch(() => new Map<string, string>()),
           teamMap().catch(() => new Map<string, string>()),
@@ -223,6 +191,12 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           // for a day that has not closed yet. Best-effort: a reader without `AttendanceReadTeam`
           // simply gets no attendance on the badge.
           getUserDay(id, ymd(now)).catch(() => null),
+          // The hours chart's source (AI-63): timer sessions and approved corrections alike. Needs
+          // `TimeReadTeam`; without it the chart falls back to the activity rollup.
+          getUserTimesheet(id, from, to).catch((e: unknown) => {
+            timeStatus = e instanceof ApiError && e.status === 403 ? "forbidden" : "failed";
+            return null;
+          }),
         ]);
         if (!live) return;
 
@@ -274,17 +248,33 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
         const productivityScore = recentScored.length
           ? Math.round(recentScored.reduce((s, d) => s + d.score, 0) / recentScored.length)
           : null;
-        const kpi = {
-          days: buildDailyHours(
-            (activity?.days ?? []).map((d) => ({
-              date: d.date,
-              activeSec: d.active_sec,
-              workedMinutes: d.worked_minutes,
-              attendance: d.attendance,
-            })),
-            now,
-          ),
-        };
+        const chartCutoff = ymd(
+          new Date(now.getFullYear(), now.getMonth(), now.getDate() - (DAILY_CHART_DAYS - 1)),
+        );
+        const activityDays = activity?.days ?? [];
+        const kpi: EmployeeProfileData["kpi"] = timesheet
+          ? {
+              days: hoursFromTimesheet(
+                timesheet.days,
+                new Map(activityDays.map((d) => [d.date, d.attendance])),
+                chartCutoff,
+              ),
+              source: "timesheet",
+            }
+          : activity
+            ? {
+                days: hoursFromActivity(
+                  activityDays.map((d) => ({
+                    date: d.date,
+                    activeSec: d.active_sec,
+                    workedMinutes: d.worked_minutes,
+                    attendance: d.attendance,
+                  })),
+                  chartCutoff,
+                ),
+                source: "activity",
+              }
+            : { days: [], source: null };
 
         const roleName =
           roles.find((r) => r.id === p.role_id)?.name ??
@@ -317,6 +307,7 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           projectsFailed,
           kpi,
           activityStatus,
+          timeStatus,
           todayAttendance: today
             ? today.on_leave
               ? "leave"

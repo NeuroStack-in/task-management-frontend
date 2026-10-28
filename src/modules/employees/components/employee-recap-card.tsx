@@ -12,7 +12,7 @@
  * error, because plenty of roles can open a profile without being entitled to this.
  *
  * The ladder is shot → day → week → month → overall, and each level reduces the level below. So a
- * period whose children were never generated has nothing to summarise — the server says so in
+ * period whose children were never generated has nothing to summarize — the server says so in
  * `reason`, and this renders that instead of an empty card.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -40,6 +40,7 @@ import {
 import {
   canRegenerate,
   provenanceLine,
+  recapProvenance,
   type Provenance,
 } from "@/modules/insights/lib/ai-provenance";
 import { recapHasData } from "../lib/recap";
@@ -101,21 +102,25 @@ function paramFor(period: RecapPeriod, dailyDate: string): string | undefined {
   return undefined; // overall defaults to "through now" server-side
 }
 
+// Plain words (AI audit 2026-10-22, AI-57): "this ISO week" is notation, not a period anyone says.
 const PERIOD_HINT: Record<RecapPeriod, string> = {
   daily: "the last completed day",
-  weekly: "this ISO week",
+  weekly: "this week, Monday to Sunday",
   monthly: "this calendar month",
   overall: "the last 12 months",
 };
+
+const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 
 type Recap = DailySummary | PeriodRecap;
 
 /** The narrative's evidence base, whichever level produced it — shown so a thin recap reads thin. */
 function evidence(r: Recap): string | null {
   const p = r as PeriodRecap;
-  if (p.source_days != null) return `${p.source_days} day(s) with a recap`;
-  if (p.source_weeks != null) return `${p.source_weeks} week(s) with a recap`;
-  if (p.source_months != null) return `${p.source_months} month(s) with a recap`;
+  // "2 day(s)" was the code's notation, not English (AI-57).
+  if (p.source_days != null) return `${count(p.source_days, "day")} with a summary`;
+  if (p.source_weeks != null) return `${count(p.source_weeks, "week")} with a summary`;
+  if (p.source_months != null) return `${count(p.source_months, "month")} with a summary`;
   return null;
 }
 
@@ -146,6 +151,10 @@ export function EmployeeRecapCard({
     let live = true;
     setLoading(true);
     setError(null);
+    // The previous period's text goes now, not when the new one arrives: a failed switch used to
+    // leave the Weekly narrative under the Monthly heading, still labelled AI (AI audit AI-30 /
+    // AI-FP-12). A failed *regenerate* is different — it keeps the text it was asked to replace.
+    setRecap(null);
     getUserRecap(userId, period, paramFor(period, dailyDate))
       .then((r) => live && setRecap(r))
       .catch((e) => {
@@ -196,7 +205,6 @@ export function EmployeeRecapCard({
 
   const narrative = recap?.narrative?.trim() ?? "";
   const reason = (recap as PeriodRecap | null)?.reason;
-  const generatedAt = recap?.generated_at;
   const base = recap ? evidence(recap) : null;
   // The day's score is an *estimate* when Q fell back to app-classification (no AI-graded
   // screenshots). Only meaningful for the daily recap, and only when Q was measured at all.
@@ -206,17 +214,13 @@ export function EmployeeRecapCard({
   const first = name.split(" ")[0] || "this employee";
 
   /**
-   * Who wrote this (UX audit 2026-10-16, MON-08 / XC-08), read from what the recap routes do: a
-   * narrative is stored — and stamped `generated_at` — only after the model wrote it. The server's
-   * own lines (an empty day's one-liner, the placeholder for a role that isn't tracked) come back
-   * with no `generated_at`. So the stamp is the tell, and an unstamped text is never called AI.
+   * Who wrote this (UX audit 2026-10-16, MON-08 / XC-08). **The server says so** with `ai_generated`
+   * / `model` (AI audit 2026-10-22, AI-30): a stamp alone also sat on the no-key template, which was
+   * cached and shown as "AI summary". On a server without the fields, the stamp is still the tell —
+   * see `recapProvenance`.
    */
   const provenance: Provenance =
-    loading || regenerating || !narrative
-      ? { kind: "none" }
-      : generatedAt
-        ? { kind: "ai", generatedAt }
-        : { kind: "computed" };
+    loading || regenerating || !recap ? { kind: "none" } : recapProvenance(recap);
   const isAi = provenance.kind === "ai";
   // Each press is a billed model run. Over a period with nothing in it the server only re-says its
   // own fixed line, so the button could change nothing — offered only when there is data to analyse
@@ -333,7 +337,7 @@ export function EmployeeRecapCard({
           // nothing to reduce. Distinct from "this person did nothing".
           <p className="text-muted-foreground text-sm">
             {reason ??
-              "No summary for this period yet — nothing has been generated to summarise."}
+              "No summary for this period yet — nothing has been generated to summarize."}
           </p>
         )}
 

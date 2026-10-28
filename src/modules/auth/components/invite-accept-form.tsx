@@ -563,7 +563,10 @@ export function InviteAcceptForm() {
           )}
         />
 
-        <MonitoringNotice org={org} />
+        {/* No "What {org} can record" box here any more: the owner withdrew the employee
+            monitoring notice on 2026-10-28 (it was added for UX audit ONB-08 / EMP-01), on this page,
+            the Download page and the invite email alike. `mt-5` keeps the gap the box used to give
+            between the last field and the agreement. */}
 
         {/* Mirrors sign-up's agreement (WP-115): the links sit inside the label, so clicking one
             opens the document without toggling the box, and they open in a new tab so nothing typed
@@ -573,7 +576,7 @@ export function InviteAcceptForm() {
           control={control}
           name="terms"
           render={({ field }) => (
-            <label className="m-check mt-3">
+            <label className="m-check mt-5">
               <input
                 type="checkbox"
                 id="iv-terms"
@@ -625,56 +628,6 @@ export function InviteAcceptForm() {
         </button>
       </form>
     </AuthShell>
-  );
-}
-
-/**
- * What the organization can record, told before the account exists (UX audit ONB-08, EMP-01).
- *
- * The org's own policy can't be shown here: `GET /v1/agent/config`, which the Download page's
- * disclosure reads, needs a signed-in member, and the invite preview carries no policy. So this
- * names what the agents *can* record — worded like `modules/legal/facts.tsx`, which cites the code
- * for each claim — and points to the Download page, which lists exactly what this org has on.
- */
-function MonitoringNotice({ org }: { org: string }) {
-  return (
-    <section
-      aria-labelledby="iv-monitoring-title"
-      className="mt-5 rounded-lg border p-3.5 text-sm"
-      style={{ borderColor: "var(--m-border)", background: "var(--m-surface-2)" }}
-    >
-      <h2 id="iv-monitoring-title" className="font-semibold" style={{ color: "var(--m-text)" }}>
-        What {org} can record
-      </h2>
-      <div className="mt-1 space-y-1.5" style={{ color: "var(--m-muted)" }}>
-        <p>
-          {org} uses WorkPulse to track working time. While tracking is running, and depending on
-          its settings, WorkPulse can also record:
-        </p>
-        <ul className="list-disc space-y-0.5 pl-5">
-          <li>screenshots of your screen, at an interval {org} sets;</li>
-          <li>
-            the apps you use and their window titles, active and idle time, and counts of keyboard
-            and mouse activity — never what you type;
-          </li>
-          <li>your device&apos;s approximate location, if the device allows it.</li>
-        </ul>
-        <p>
-          Administrators with permission can see this. Once you&apos;re signed in, the Download page
-          lists exactly what {org} has turned on. More in the{" "}
-          <Link
-            href={legalHref("privacy")}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-semibold underline underline-offset-2"
-            style={{ color: "var(--m-accent-ink)" }}
-          >
-            Privacy Policy
-          </Link>
-          .
-        </p>
-      </div>
-    </section>
   );
 }
 

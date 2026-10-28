@@ -7,6 +7,7 @@ import {
   fromServer,
   locationSummaryProvenance,
   provenanceLine,
+  recapProvenance,
   screenshotSummaryProvenance,
 } from "./ai-provenance";
 
@@ -42,10 +43,12 @@ describe("dailyReportProvenance", () => {
 
 /** The server's own `ai_generated` / `model` (2026-10-20) — preferred over any inference. */
 describe("fromServer", () => {
-  it("names the model and the time on text a model wrote", () => {
+  it("keeps the model on the provenance, and says only AI-generated and when on the line", () => {
     const p = fromServer({ ai_generated: true, model: "openai/gpt-oss-20b", generated_at: OCT_16 });
     expect(p).toEqual({ kind: "ai", generatedAt: OCT_16, model: "openai/gpt-oss-20b" });
-    expect(provenanceLine(p!)).toMatch(/^AI-generated · openai\/gpt-oss-20b · .+ · may be wrong$/);
+    // AI-57: a raw vendor-prefixed id reads as "sent to OpenAI".
+    expect(provenanceLine(p!)).toMatch(/^AI-generated · .+ · may be wrong$/);
+    expect(provenanceLine(p!)).not.toContain("openai");
   });
 
   it("calls the server's own line what it is", () => {
@@ -141,9 +144,9 @@ describe("provenanceLine", () => {
     expect(line).toContain("16");
   });
 
-  it("names the model only when the payload does", () => {
-    expect(provenanceLine({ kind: "ai", generatedAt: null, model: "m-1" })).toBe(
-      "AI-generated · m-1 · may be wrong",
+  it("never prints the model id (AI-57)", () => {
+    expect(provenanceLine({ kind: "ai", generatedAt: null, model: "qwen/qwen3.7-flash" })).toBe(
+      "AI-generated · may be wrong",
     );
     expect(provenanceLine({ kind: "ai", generatedAt: null })).toBe("AI-generated · may be wrong");
   });
@@ -160,6 +163,40 @@ describe("provenanceLine", () => {
 
   it("has nothing to say before there is text", () => {
     expect(provenanceLine({ kind: "none" })).toBe("");
+  });
+});
+
+/**
+ * AI-30: the person recap reads the server's `ai_generated` / `model` when present, and guesses from
+ * the timestamp only on a server without them.
+ */
+describe("recapProvenance", () => {
+  it("is AI when the server says so, with the model kept", () => {
+    expect(
+      recapProvenance({ narrative: "- Steady day.", ai_generated: true, model: "m-1", generated_at: OCT_16 }),
+    ).toEqual({ kind: "ai", generatedAt: OCT_16, model: "m-1" });
+  });
+
+  it("is not AI when the server says it wrote the line itself — even with a timestamp", () => {
+    // The no-key template an older server cached and stamped like a model's text.
+    expect(
+      recapProvenance({ narrative: "Tracked 01:00:00.", ai_generated: false, generated_at: OCT_16 }).kind,
+    ).toBe("computed");
+  });
+
+  it("falls back to the timestamp on a server without the fields", () => {
+    expect(recapProvenance({ narrative: "- Steady day.", generated_at: OCT_16 })).toEqual({
+      kind: "ai",
+      generatedAt: OCT_16,
+    });
+    expect(recapProvenance({ narrative: "No time tracked on this day." }).kind).toBe("computed");
+  });
+
+  it("attributes nothing when there is no text", () => {
+    expect(recapProvenance({ narrative: "  ", ai_generated: true, generated_at: OCT_16 }).kind).toBe(
+      "none",
+    );
+    expect(recapProvenance({ narrative: undefined }).kind).toBe("none");
   });
 });
 

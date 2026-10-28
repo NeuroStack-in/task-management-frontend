@@ -49,8 +49,11 @@ export const SENSITIVITY_LABEL: Record<SensitivityKind, string> = {
 
 export const PERMISSION_HELP: Record<string, PermissionHelp> = {
   // ── Activity & Monitoring ──
+  // AI audit 2026-10-22, AI-33: employees see none of their own monitoring data, the API included.
+  // `/v1/me/insights/{activity,apps,locations}` now refuse a caller whose data scope is "Self", so
+  // on such a role this bit opens nothing there; it promised "their own scores" it no longer gives.
   "activity:read:self": {
-    description: "See their own productivity scores, hours, and app and website usage.",
+    description: "Their own scores and app usage — only with a data scope wider than Self.",
   },
   "activity:read:team": {
     description:

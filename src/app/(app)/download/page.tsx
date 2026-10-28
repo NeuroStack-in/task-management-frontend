@@ -30,7 +30,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AGENT_PLATFORMS, type AgentPlatform } from "@/lib/agent-release";
-import { MonitoringDisclosure } from "@/modules/agents/components/monitoring-disclosure";
 import { cn } from "@/lib/utils";
 import { detectDevice, type DetectedDevice } from "./detect-device";
 
@@ -46,7 +45,6 @@ const STEPS = [
   "Download the installer for your computer.",
   "Run it and open WorkPulse.",
   SIGN_IN,
-  "Read what your organization records (above).",
   "Start your timer — tracking begins.",
 ];
 
@@ -65,7 +63,9 @@ const FEATURES = [
     icon: ShieldCheck,
     // Not "consent-gated": the app records the org's consent, not the employee's (UX audit EMP-01).
     title: "Timer-bound",
-    desc: "Nothing is recorded while your timer is off. What's recorded while it runs is listed above.",
+    // "What's recorded while it runs is listed above" pointed at the monitoring notice, withdrawn
+    // with the invite email's (owner decision 2026-10-28).
+    desc: "Nothing is recorded while your timer is off.",
   },
 ];
 
@@ -261,9 +261,6 @@ export default function DownloadPage() {
           </Badge>
         ) : null}
       </section>
-
-      {/* What is captured, from the org's own settings — before anyone installs (EMP-01). */}
-      <MonitoringDisclosure />
 
       {/* Platforms */}
       <section className="flex flex-col gap-3">

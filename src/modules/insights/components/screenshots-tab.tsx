@@ -48,6 +48,8 @@ import {
   screenshotSummaryProvenance,
   type Provenance,
 } from "../lib/ai-provenance";
+import { judgedCount, reviewRunMessage, roleBasisNote } from "../lib/screenshot-review";
+import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store";
 import { replaceSearch, useInsightsDate, useInsightsDept } from "../use-insights-params";
 import {
   captureCountOf,
@@ -261,6 +263,12 @@ export function ScreenshotsTab() {
   // Department-scoped AI narrative of the day's screen activity, judged for the department's role.
   // The backend generates it once per day's frame count and caches it; regenerate forces a fresh one.
   // Falls back to the deterministic template line while it loads or when the model is unavailable.
+  //
+  // **Only for a role with View AI insights** (AI audit 2026-10-22, AI-46): the route now needs
+  // `AiInsightsRead` as well as screenshot access, like every other AI summary. A custom role with
+  // screenshots alone gets the card's own count line and figures, no AI text, no On-task figure and
+  // no request that can only 403.
+  const canSeeAi = usePermissions().can("ai:view");
   const [aiSummary, setAiSummary] = useState<ScreenshotDeptSummary | null>(null);
   /** The (date, department) a Regenerate is running for, or `null`. */
   const [aiRegenFor, setAiRegenFor] = useState<string | null>(null);
@@ -339,7 +347,7 @@ export function ScreenshotsTab() {
   }, [aiSelection]);
   // Not while one person is open — the card is not on screen, and a date step there would generate
   // a narrative per day stepped through.
-  const aiPaused = openUser !== null;
+  const aiPaused = openUser !== null || !canSeeAi;
   /** The selection `aiSummary` belongs to — returning from a person keeps it on screen. */
   const aiLoadedFor = useRef<string | null>(null);
   useEffect(() => {
@@ -497,7 +505,7 @@ export function ScreenshotsTab() {
         : total === 0 && beyondRetention
           ? `Screenshots from ${dateLabel(date)} have been deleted under this organization's retention policy.`
           : total === 0
-            ? `No screenshots were captured on ${dateLabel(date)}. Frames appear here once the desktop agent starts reporting for the day.`
+            ? `No screenshots were captured on ${dateLabel(date)}. Screenshots appear here once a device agent starts reporting for the day.`
             : `${total.toLocaleString()} ${total === 1 ? "screenshot" : "screenshots"}${
                 hasMore ? "+" : ""
               } captured across ${monitored} ${
@@ -540,8 +548,9 @@ export function ScreenshotsTab() {
       ...(aiAnalysed
         ? [
             {
-              label: "On-task (AI-analyzed frames)",
-              value: `${aiAnalysed.metrics.on_task_pct}% of ${aiAnalysed.metrics.frames}`,
+              // A share of the screenshots the AI could judge (AI-47).
+              label: "On-task (screenshots judged by AI)",
+              value: `${aiAnalysed.metrics.on_task_pct}% of ${judgedCount(aiAnalysed.metrics)}`,
             },
           ]
         : []),
@@ -664,8 +673,12 @@ export function ScreenshotsTab() {
           {
             label: "Needs review",
             value: countsUnknown ? "—" : needsReview,
-            // Says how much of the day the count covers (MON-01).
-            hint: countsUnknown ? undefined : `AI-checked ${analysed.toLocaleString()} of ${total.toLocaleString()}`,
+            // Says how much of the day the count covers (MON-01) — and nothing over an empty day:
+            // "AI-checked 0 of 0" said nothing, and on a phone it crowded the figure (AI-62).
+            hint:
+              countsUnknown || total === 0
+                ? undefined
+                : `AI-checked ${analysed.toLocaleString()} of ${total.toLocaleString()}`,
             // The headline figure is the filter (MON-11): pressing it narrows the gallery to those
             // captures, the same as "Show: Needs review" below — and pressing again shows everyone.
             toggle:
@@ -680,15 +693,34 @@ export function ScreenshotsTab() {
                         : `Needs review: ${needsReview}. Press to show only these`,
                   },
           },
-          {
-            label: "On-task",
-            value: aiAnalysed ? `${aiAnalysed.metrics.on_task_pct}%` : "—",
-            hint: aiAnalysed
-              ? `of ${aiAnalysed.metrics.frames.toLocaleString()} analyzed`
-              : aiSummary
-                ? "none analyzed yet"
-                : undefined,
-          },
+          // AI figures only for a role that may read the AI summary (AI-46).
+          ...(canSeeAi
+            ? [
+                {
+                  label: "On-task",
+                  value: aiAnalysed ? `${aiAnalysed.metrics.on_task_pct}%` : "—",
+                  // A share of the screenshots the AI could judge: blank, locked or unreadable ones
+                  // count neither way (AI-47). An older server judged every analysed frame.
+                  hint: aiAnalysed
+                    ? aiAnalysed.metrics.not_judged != null
+                      ? `of ${judgedCount(aiAnalysed.metrics).toLocaleString()} judged`
+                      : `of ${aiAnalysed.metrics.frames.toLocaleString()} analyzed`
+                    : aiSummary
+                      ? "none analyzed yet"
+                      : undefined,
+                },
+              ]
+            : []),
+          // Said as a figure of its own, so "33% on-task" is never read as "67% off-task" (AI-47).
+          ...(aiAnalysed && (aiAnalysed.metrics.not_judged ?? 0) > 0
+            ? [
+                {
+                  label: "Not judged",
+                  value: (aiAnalysed.metrics.not_judged ?? 0).toLocaleString(),
+                  hint: "blank, locked or unreadable",
+                },
+              ]
+            : []),
           // The department's AI screenshot-productivity — the per-department score for this surface.
           // Present only once vision has graded frames for the day/department in view.
           ...(aiSummary?.metrics.avg_productivity != null
@@ -1183,7 +1215,11 @@ function Lightbox({
 
         {shot && pos ? (
           <>
-            {/* Image pane */}
+            {/* Image pane + the capture counter. On a phone the counter sits in its own strip under
+                the image: overlaid on a landscape screenshot ~230 px tall it wrapped, ran behind the
+                side arrows and was clipped ("ious flagged", AI audit AI-62). From `sm` up it floats
+                over the image's foot as before. */}
+            <div className="relative flex min-h-0 flex-1 flex-col">
             <div
               className="group relative flex min-h-0 flex-1 touch-pan-y items-center justify-center overflow-hidden bg-black"
               onPointerDown={onPointerDown}
@@ -1238,9 +1274,10 @@ function Lightbox({
                   </button>
                 </>
               ) : null}
+            </div>
 
               {/* Where you are, in captures (not frames), and the jumps between flags. */}
-              <div className="absolute inset-x-0 bottom-3 z-10 flex flex-wrap items-center justify-center gap-2 px-3">
+              <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 bg-black px-3 py-2 sm:absolute sm:inset-x-0 sm:bottom-3 sm:z-10 sm:bg-transparent sm:py-0">
                 {anyFlagged ? (
                   <button
                     type="button"
@@ -1382,7 +1419,11 @@ function ShotAiReport({
 }) {
   const [state, setState] = useState<AiState>({ kind: "loading" });
   const [running, setRunning] = useState(false);
-  const canRun = usePermissions().can("monitoring:manage");
+  // AI insights decides whether screenshots go for AI review at all (AI-19). The org's state, not the
+  // owner-exempt one: with it off nothing runs on its own, so "it runs within the hour" would be
+  // false, and a Run button would send a screenshot the org switched off — the stricter reading.
+  const aiOn = useEntitlementsStore((s) => effectiveFromState(s, "ai.insights"));
+  const canRun = usePermissions().can("monitoring:manage") && aiOn;
 
   // Returns the next state rather than setting it, so `generate` can inspect the result (did the run
   // actually produce a report?) without racing an async setState.
@@ -1394,7 +1435,7 @@ function ShotAiReport({
       if (e instanceof ApiError && e.status === 404) return { kind: "none" };
       return {
         kind: "error",
-        message: e instanceof ApiError ? e.message : "Couldn't load the AI read.",
+        message: e instanceof ApiError ? e.message : "Couldn't load the AI review.",
       };
     }
   }, [shotId, userId, date]);
@@ -1415,16 +1456,12 @@ function ShotAiReport({
       // calls against a 28s Lambda, which timed out and came back as a bare gateway 500.
       const run = await runScreenshotReports(date, userId, shotId);
       const next = await fetchReport();
-      // Still nothing after a run? Explain why (plan doesn't include screenshots, frame withheld by
-      // privacy, provider not configured or unreachable) instead of silently re-showing
-      // "not analyzed", which reads as the button having done nothing at all.
+      // Still nothing after a run? Explain why (plan doesn't include screenshots, withheld by
+      // privacy, AI insights off, provider not configured or unreachable) instead of silently
+      // re-showing "not reviewed", which reads as the button having done nothing at all. In words a
+      // reviewer can use — the server's `reason` is a log sentence with feature keys in it (AI-57).
       if (next.kind === "none") {
-        setState({
-          kind: "error",
-          message: run.reason
-            ? `Couldn't analyze this frame — ${run.reason}.`
-            : "Couldn't analyze this frame. Try again in a moment.",
-        });
+        setState({ kind: "error", message: reviewRunMessage(run) });
       } else {
         setState(next);
       }
@@ -1434,9 +1471,9 @@ function ShotAiReport({
         message:
           e instanceof ApiError
             ? e.status === 403
-              ? "You don't have permission to run AI analysis."
+              ? "You don't have permission to run an AI review."
               : e.message
-            : "Couldn't run AI analysis.",
+            : "Couldn't run the AI review.",
       });
     } finally {
       setRunning(false);
@@ -1446,12 +1483,12 @@ function ShotAiReport({
   return (
     <div>
       <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-white/65">
-        <Sparkles className="size-3.5" aria-hidden="true" /> AI read
+        <Sparkles className="size-3.5" aria-hidden="true" /> AI review
       </div>
 
       {state.kind === "loading" && (
         <p className="mt-2 flex items-center gap-2 text-sm text-white/70">
-          <Loader2 className="size-4 animate-spin" /> Loading the AI read…
+          <Loader2 className="size-4 animate-spin" /> Loading the AI review…
         </p>
       )}
 
@@ -1462,10 +1499,13 @@ function ShotAiReport({
       {state.kind === "none" && (
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <p className="text-sm text-white/75">
-            This frame hasn&apos;t been analyzed yet.
-            {canRun
-              ? ""
-              : " Analysis normally runs on its own, usually within the hour. Someone with the Manage Monitoring Settings permission can run it now."}
+            {/* "Frame" is the code's word; the glossary's is "screenshot" (AI-57). Permission named
+                as Roles & permissions shows it. */}
+            {!aiOn
+              ? "This screenshot hasn't been reviewed by AI. AI review is off because AI insights is turned off in Settings → Features."
+              : canRun
+                ? "This screenshot hasn't been reviewed by AI yet."
+                : "This screenshot hasn't been reviewed by AI yet. AI review normally runs on its own, usually within the hour. Someone with the Manage monitoring settings permission can run it now."}
           </p>
           {canRun ? (
             <Button
@@ -1477,11 +1517,11 @@ function ShotAiReport({
             >
               {running ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" /> Analyzing…
+                  <Loader2 className="size-4 animate-spin" /> Reviewing…
                 </>
               ) : (
                 <>
-                  <Sparkles className="size-4" /> Generate AI report
+                  <Sparkles className="size-4" /> Run AI review
                 </>
               )}
             </Button>
@@ -1516,21 +1556,38 @@ function AiReadBody({
   // colour-blind readers can't tell apart, in page inks too dark for this panel (MON-14 / MON-16).
   const generated = formatGeneratedAt(report.generated_at);
   const confidence = report.confidence > 0 ? Math.round(report.confidence * 100) : null;
+  // A blank, locked or unreadable screenshot gets no rating (AI audit 2026-10-22, AI-47): no category,
+  // no work-related verdict, and it counts neither as on- nor off-task. Absent = an older server,
+  // which rated every frame.
+  const judged = report.judged !== false;
+  const basisNote = judged ? roleBasisNote(report.role_basis) : null;
   return (
     <div className="mt-2 space-y-2">
-      <p className="max-w-3xl text-sm leading-relaxed text-white/90">{report.description}</p>
+      {report.description ? (
+        <p className="max-w-3xl text-sm leading-relaxed text-white/90">{report.description}</p>
+      ) : null}
       {/* The role-specific read — does this serve the person's department and job title, and why
           (owner decision 2026-10-13). Absent on reports written before then. */}
-      {report.assessment ? (
+      {judged && report.assessment ? (
         <p className="max-w-3xl text-[13px] leading-relaxed text-white/75">{report.assessment}</p>
       ) : null}
+      {/* What it was judged against, when the person has no department or job title (AI-65). */}
+      {basisNote ? <p className="max-w-3xl text-xs text-white/75">{basisNote}</p> : null}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium capitalize text-white/90">
-          {report.category}
-        </span>
-        <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/90">
-          {report.work_related ? "Work-related" : "Not work-related"}
-        </span>
+        {judged ? (
+          <>
+            <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium capitalize text-white/90">
+              {report.category}
+            </span>
+            <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/90">
+              {report.work_related ? "Work-related" : "Not work-related"}
+            </span>
+          </>
+        ) : (
+          <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/90">
+            Not judged
+          </span>
+        )}
         {rowFlagged && !humanReview ? (
           <span className="inline-flex items-center gap-1 rounded-sm bg-amber-300/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100 ring-1 ring-amber-300/40">
             <Flag className="size-3" aria-hidden="true" /> Needs review
@@ -1546,18 +1603,25 @@ function AiReadBody({
           <span className="font-medium">Why it was flagged:</span> {report.flag_reason}
         </p>
       ) : null}
-      {/* Who wrote it and when, at a readable contrast — the line was white at 35% (3.2:1) and
-          named neither the model nor the time (MON-14). */}
+      {/* Who wrote it and when, at a readable contrast — the line was white at 35% (3.2:1) (MON-14).
+          No model id: "qwen/qwen3.7-flash" or "google/…" names a vendor the privacy policy doesn't
+          list as receiving data, and reads as if it did (AI-57). The glossary's line instead. */}
       <p className="text-xs text-white/75">
-        {["AI analysis", report.model?.trim() || null, generated ? `analyzed ${generated}` : null]
+        {[
+          "AI-generated",
+          generated ? `reviewed ${generated}` : null,
+          confidence !== null ? `${confidence}% confidence` : null,
+          "may be wrong",
+        ]
           .filter(Boolean)
           .join(" · ")}
-        {confidence !== null ? ` · ${confidence}% confidence` : ""}
       </p>
       <p className="max-w-3xl text-xs text-white/75">
-        {confidence !== null
-          ? "Confidence is how sure the model said it was — not a check that it's right. The AI can be wrong, so a person makes the call."
-          : "The AI can be wrong, so a person makes the call."}
+        {!judged
+          ? "The screenshot was blank, locked or unreadable, so the AI didn't rate it. It counts neither as on-task nor off-task."
+          : confidence !== null
+            ? "Confidence is how sure the model said it was — not a check that it's right. The AI can be wrong, so a person makes the call."
+            : "The AI can be wrong, so a person makes the call."}
       </p>
     </div>
   );
@@ -1617,25 +1681,35 @@ function FlagReview({
         placeholder="Note (optional) — what you checked or decided"
         className="w-full resize-none rounded-md border border-white/15 bg-black/30 px-2.5 py-1.5 text-sm text-white placeholder:text-white/40 focus:ring-2 focus:ring-white/30 focus:outline-none"
       />
+      {/* **Equal weight, both legible** (AI audit 2026-10-22, AI-35). "Confirm flag" was the
+          page's `destructive` variant — dark red on a 10% red tint, ~2:1 on this always-dark panel,
+          so it looked disabled — while "Dismiss" was a bright pill that looked primary. That nudges
+          a reviewer towards dismissing. Both now share one light-on-dark outline: white text on
+          white/10 over #0d0e13 is well past 4.5:1. The decision already taken is marked with
+          `aria-pressed` and a ring rather than by greying it out, so it stays readable. */}
       <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="destructive"
-          disabled={busy !== null || done === "confirmed"}
-          onClick={() => void decide("confirmed")}
-        >
-          {busy === "confirmed" ? <Loader2 className="size-4 animate-spin" /> : <Flag className="size-4" />}
-          Confirm flag
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={busy !== null || done === "dismissed"}
-          onClick={() => void decide("dismissed")}
-        >
-          {busy === "dismissed" ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
-          Dismiss — it&apos;s fine
-        </Button>
+        {(
+          [
+            { outcome: "confirmed", label: "Confirm flag", Icon: Flag },
+            { outcome: "dismissed", label: "Dismiss — it's fine", Icon: X },
+          ] as const
+        ).map(({ outcome, label, Icon }) => (
+          <Button
+            key={outcome}
+            size="sm"
+            variant="outline"
+            aria-pressed={done === outcome}
+            disabled={busy !== null}
+            onClick={() => done !== outcome && void decide(outcome)}
+            className={cn(
+              "border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white dark:border-white/30 dark:bg-white/10 dark:hover:bg-white/20",
+              done === outcome && "ring-2 ring-white/70",
+            )}
+          >
+            {busy === outcome ? <Loader2 className="size-4 animate-spin" /> : <Icon className="size-4" />}
+            {label}
+          </Button>
+        ))}
       </div>
     </div>
   );

@@ -19,7 +19,7 @@ import {
   getOversightLocations,
   getReportsCatalog,
   getScreenshots,
-  getSelfActivity,
+  getUserActivity,
 } from "./insights.service";
 
 const mock = vi.mocked(apiFetch);
@@ -46,10 +46,10 @@ describe("insights.service route contract", () => {
     expect(mock).toHaveBeenCalledWith("/v1/insights/locations?date=2026-07-17");
   });
 
-  it("self activity carries the from/to range", async () => {
-    await getSelfActivity("2026-07-01", "2026-07-17");
+  it("one person's activity carries the from/to range", async () => {
+    await getUserActivity("u1", "2026-07-01", "2026-07-17");
     expect(mock).toHaveBeenCalledWith(
-      "/v1/me/insights/activity?from=2026-07-01&to=2026-07-17",
+      "/v1/insights/user/u1/activity?from=2026-07-01&to=2026-07-17",
     );
   });
 
