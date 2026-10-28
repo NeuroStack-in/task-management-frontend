@@ -159,8 +159,7 @@ export function DeductionsCard({
           </p>
           <p className="text-muted-foreground text-xs">
             These are the current rules. Each run keeps the rules it was drafted with (shown under
-            &ldquo;Pay per employee&rdquo;); a run drafted before runs kept them shows only its
-            totals and pay per employee.
+            People); redraft a month to apply a change to it.
           </p>
         </div>
         {showEditor && !editing ? (

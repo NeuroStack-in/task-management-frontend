@@ -33,18 +33,49 @@ export interface ApiRunLine {
   /** `hourly` | `salaried`. */
   pay_type: string;
   rate: number;
-  /** Every tracked second hourly pay was computed from (TIME-06); absent for salaried pay and on
-   *  runs drafted before every hour was paid. */
+  /** Every tracked second in the month — hourly pay's basis (TIME-06), shown beside salaried pay too
+   *  since 2026-10-28. Absent on older slips. */
   worked_secs?: number;
   /** The billable part — for invoicing, not pay. Absent for salaried pay. */
   billable_secs?: number;
+  /** The month's scheduled days and what each was — salaried pay is prorated by them (loss of pay
+   *  for absent days, owner decision 2026-10-28). Absent on runs drafted before it. */
+  days?: DayCounts;
   gross: number;
   deductions: number;
   net: number;
 }
 
+/** A person's scheduled days in the month — mirrors `payroll-billing::shared::calendar::DayCounts`. */
+export interface DayCounts {
+  /** Days on the org's working week, holidays included — the denominator. */
+  scheduled: number;
+  worked: number;
+  leave: number;
+  holiday: number;
+  /** Closed as absent — unpaid. */
+  absent: number;
+  /** Before the person joined — unpaid. */
+  before_joining: number;
+  /** Not closed yet — paid, as a preview. */
+  upcoming: number;
+  /** Past, with no attendance record — paid, flagged. */
+  unrecorded: number;
+}
+
+/** An active person the run doesn't pay, with their pay as it stands now. */
+export interface ApiNotOnRun {
+  user_id: string;
+  name: string;
+  /** Absent when no pay is set — the usual reason. */
+  pay_type?: string;
+  rate?: number;
+}
+
 export interface ApiRunDetail extends ApiPayrollRun {
   lines: ApiRunLine[];
+  /** Active people the run leaves out. Absent on servers from before 2026-10-28. */
+  not_on_run?: ApiNotOnRun[];
   /**
    * The deduction rules this run was computed with, as they stood when it was drafted (UX audit
    * TIME-20). Absent on runs drafted before the server kept them.
