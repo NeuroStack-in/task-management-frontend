@@ -28,6 +28,7 @@ import { ReleaseDeviceButton } from "./release-device-button";
 import { deviceStateLabel, isLiveDevice } from "../lib/device-state";
 import { effectiveUserId } from "../lib/presence";
 import { connMeta, lastSeen, Info, Meter, UNNAMED_DEVICE, variantLabel } from "./fleet-view";
+import { lastSeenText, shownConnectivity } from "../lib/device-activity";
 import { REMOVED_PERSON } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -128,8 +129,8 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
     );
   }
 
-  const meta = connMeta(device.connectivity);
-  const offline = device.connectivity === "offline";
+  const meta = connMeta(shownConnectivity(device));
+  const offline = shownConnectivity(device) === "offline";
 
   return (
     <div className="space-y-5">
@@ -255,6 +256,9 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
                   label="State"
                   value={deviceStateLabel(device.state)}
                 />
+                {/* Two different things: the newest sign of life (a live connection counts) and the
+                    last time the agent sent its data (2026-10-28). */}
+                <Info label="Last seen" value={lastSeenText(device)} />
                 <Info label="Last check-in" value={lastSeen(device.last_heartbeat)} />
               </div>
               {/* The raw id is gone from the grid (UX audit SET-23: "Agent id" was developer wording).

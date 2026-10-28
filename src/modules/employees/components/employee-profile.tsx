@@ -88,7 +88,8 @@ import {
 import { roleChange, scopeLabel } from "@/modules/roles/lib/role-change";
 import { helpFor, isSensitive } from "@/modules/roles/lib/permission-help";
 import { RoleChangeSummary } from "@/modules/roles/components/role-change-summary";
-import { connMeta, lastSeen } from "@/modules/agents/components/fleet-view";
+import { connMeta } from "@/modules/agents/components/fleet-view";
+import { lastSeenText, shownConnectivity } from "@/modules/agents/lib/device-activity";
 import { deviceStateLabel, isLiveDevice } from "@/modules/agents/lib/device-state";
 import {
   listDepartments,
@@ -1636,7 +1637,7 @@ function AccessTab({
             <ul className="divide-y">
               {devices.value.map((d) => {
                 const live = isLiveDevice(d.state);
-                const conn = connMeta(d.connectivity);
+                const conn = connMeta(shownConnectivity(d));
                 return (
                   <li key={d.agent_id} className="flex items-center gap-3 py-2">
                     <MonitorSmartphone className="size-4 shrink-0 text-muted-foreground" />
@@ -1650,7 +1651,7 @@ function AccessTab({
                       <p className="truncate text-xs text-muted-foreground">
                         {d.variant === "service" ? "Managed service" : "Desktop app"}
                         {d.agent_version ? ` · v${d.agent_version}` : ""} · last seen{" "}
-                        {lastSeen(d.last_heartbeat)}
+                        {lastSeenText(d)}
                       </p>
                     </div>
                     <Badge className={cn("shrink-0 font-medium", live ? conn.badge : "bg-muted text-muted-foreground")}>

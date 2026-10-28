@@ -1,6 +1,8 @@
 "use client";
 
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { useState } from "react";
+
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Grid3x3 } from "lucide-react";
 import {
   Card,
@@ -183,6 +185,10 @@ function Donut({
   layout?: "column" | "row";
 }) {
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
+  // Hovering a slice shows it in the middle of the ring. A floating tooltip landed on top of the
+  // centre figure and hid it ("Clocked in : 1 person" over "17% clocked in", 2026-10-28).
+  const [hovered, setHovered] = useState<number | null>(null);
+  const hot = hovered !== null ? slices[hovered] : undefined;
   return (
     // The ring grows to fill all space above/beside the legend (flex-1 +
     // percentage radii), so the card is used efficiently — no dead band.
@@ -211,6 +217,8 @@ function Donut({
               outerRadius="82%"
               paddingAngle={2}
               stroke="none"
+              onMouseEnter={(_, i) => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}
             >
               {/* Recharts draws each slice as `<path role="img">`; the Cell's props land on it, so
                   this is the slice's text alternative (QA audit 2026-10-08, WP-116). */}
@@ -222,26 +230,17 @@ function Donut({
                 />
               ))}
             </Pie>
-            <Tooltip
-              formatter={(v: number, name) => [
-                `${v} ${v === 1 ? "person" : "people"}`,
-                String(name),
-              ]}
-              contentStyle={{
-                background: "var(--popover)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius)",
-                fontSize: 12,
-                color: "var(--popover-foreground)",
-              }}
-            />
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
           <span className="font-display text-2xl leading-none font-semibold tabular-nums">
-            {center}
+            {hot ? hot.value : center}
           </span>
-          <span className="text-muted-foreground mt-1 text-xs">{caption}</span>
+          <span className="text-muted-foreground mt-1 max-w-[60%] text-center text-xs">
+            {hot
+              ? `${hot.label} · ${Math.round((hot.value / total) * 100)}%`
+              : caption}
+          </span>
         </div>
       </div>
       <ul className={cn("w-full space-y-2", layout === "row" && "sm:flex-1")}>

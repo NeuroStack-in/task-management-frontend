@@ -49,6 +49,13 @@ import { useFleet } from "../use-fleet";
 import type { ApiDevice } from "../services/fleet.service";
 import { effectiveUserId, presenceOf } from "../lib/presence";
 import { deviceStateLabel, isLiveDevice } from "../lib/device-state";
+import {
+  ago,
+  isCounted,
+  isInactive,
+  lastSeenText,
+  shownConnectivity,
+} from "../lib/device-activity";
 import { isBehind, latestVersions, targetFor, type LatestVersions } from "../lib/agent-version";
 
 /**
@@ -100,17 +107,9 @@ const STATUS_FILTER_LABELS: Record<string, string> = {
   offline: "Offline",
 };
 
+/** "5m ago" for an epoch-ms time — see `lib/device-activity.ts`. */
 export function lastSeen(ms: number): string {
-  if (!ms) return "never";
-  const diff = Date.now() - ms;
-  if (diff < 0) return "just now";
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const d = Math.floor(hr / 24);
-  return `${d}d ago`;
+  return ago(ms);
 }
 
 /**
@@ -176,7 +175,9 @@ function DeviceRow({
   ownerName: string | null;
   onOpen: () => void;
 }) {
-  const meta = connMeta(d.connectivity);
+  const shown = shownConnectivity(d);
+  const meta = connMeta(shown);
+  const inactive = isInactive(d);
   return (
     <TableRow
       // The whole row opens the device for a mouse; the device name is the real link, so the row is
@@ -250,7 +251,17 @@ function DeviceRow({
         </Badge>
       </TableCell>
       <TableCell>
-        {isLiveDevice(d.state) ? (
+        {inactive ? (
+          // Offline for a month or more: an old install or a replaced laptop, not one that might
+          // come back any minute. Left out of every count above (2026-10-28).
+          <Badge
+            variant="outline"
+            className="font-medium text-muted-foreground"
+            title="No check-in and no connection for over 30 days. Not counted in the totals."
+          >
+            Inactive
+          </Badge>
+        ) : isLiveDevice(d.state) ? (
           <Badge className={cn("font-medium", meta.badge)}>
             <span className={cn("mr-1.5 size-1.5 rounded-full", meta.dot)} />
             {/* A managed device that slept mid-shift reads "asleep" rather than a bare offline. */}
@@ -278,7 +289,7 @@ function DeviceRow({
         {d.ip}
       </TableCell>
       <TableCell className="pr-6 text-right text-xs text-muted-foreground tabular-nums">
-        {lastSeen(d.last_heartbeat)}
+        {lastSeenText(d)}
       </TableCell>
     </TableRow>
   );
@@ -317,9 +328,9 @@ export function FleetView() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [osFilter, setOsFilter] = useState("all");
   /**
-   * Released, revoked and deactivated devices are hidden unless asked for (UX audit SET-12). They
-   * read "Offline" among the live ones, and nothing can archive them yet — that needs a server
-   * route — so a filter is the honest interim.
+   * Retired devices (released, revoked, deactivated — UX audit SET-12) and inactive ones (no sign of
+   * life for 30+ days — old installs, replaced laptops) are hidden unless asked for, and never
+   * counted: on live `dev` they were about 30 of 40 "active" rows (2026-10-28).
    */
   const [showRetired, setShowRetired] = useState(false);
 
@@ -337,21 +348,24 @@ export function FleetView() {
   const attributedName = (d: ApiDevice) => ownerName(effectiveUserId(d) ?? "");
 
   const devices = useMemo(() => fleet?.devices ?? [], [fleet]);
-  const live = useMemo(() => devices.filter((d) => isLiveDevice(d.state)), [devices]);
-  const retiredCount = devices.length - live.length;
+  // `live` = the devices the page counts: not retired, and seen within 30 days.
+  const live = useMemo(() => devices.filter((d) => isCounted(d)), [devices]);
+  const retiredCount = devices.filter((d) => !isLiveDevice(d.state)).length;
+  const inactiveCount = devices.length - live.length - retiredCount;
+  const hiddenCount = retiredCount + inactiveCount;
   // Per-variant: the .exe and .msi are separate release streams (§8 Ph1), each compared with its own
   // published release — the service's manifest is asked for only when there are service devices.
   const { version: serviceRelease } = useManagedAgentRelease(
     devices.some((d) => d.variant === "service"),
   );
   const latest: LatestVersions = useMemo(
-    () => latestVersions(devices, release, serviceRelease),
-    [devices, release, serviceRelease],
+    () => latestVersions(live, release, serviceRelease),
+    [live, release, serviceRelease],
   );
   const behindOf = (d: ApiDevice) => (isBehind(d, latest) ? targetFor(d, latest) : null);
   const outdated = live.filter((d) => isBehind(d, latest)).length;
-  // Counted over live devices only — a retired device is neither online nor waiting to come back.
-  const onlineCount = live.filter((d) => d.connectivity !== "offline").length;
+  // Counted over live devices only — a retired or inactive device is not waiting to come back.
+  const onlineCount = live.filter((d) => shownConnectivity(d) !== "offline").length;
   const hasService = live.some((d) => d.variant === "service");
   const hasApp = live.some((d) => d.variant !== "service");
 
@@ -362,7 +376,7 @@ export function FleetView() {
   );
 
   const visible = (showRetired ? devices : live).filter((d) => {
-    if (statusFilter !== "all" && d.connectivity !== statusFilter) return false;
+    if (statusFilter !== "all" && shownConnectivity(d) !== statusFilter) return false;
     if (osFilter !== "all" && d.os !== osFilter) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -452,15 +466,29 @@ export function FleetView() {
           label="Devices"
           value={live.length}
           icon={MonitorSmartphone}
-          hint={retiredCount ? `active · ${retiredCount} retired not counted` : "enrolled"}
+          hint={
+            hiddenCount
+              ? `in use · not counted: ${[
+                  inactiveCount ? `${inactiveCount} inactive` : "",
+                  retiredCount ? `${retiredCount} retired` : "",
+                ]
+                  .filter(Boolean)
+                  .join(", ")}`
+              : "enrolled"
+          }
           featured
         />
-        <StatCard label="Online" value={onlineCount} icon={Wifi} hint="checked in within 10 min" />
+        <StatCard
+          label="Online"
+          value={onlineCount}
+          icon={Wifi}
+          hint="connected now, or checked in within 10 min"
+        />
         <StatCard
           label="Offline"
           value={live.length - onlineCount}
           icon={WifiOff}
-          hint="no recent check-in"
+          hint="not connected, no check-in for 10 min"
         />
         <StatCard label="Behind latest" value={outdated} icon={AlertTriangle} hint={behindHint} />
       </div>
@@ -509,7 +537,7 @@ export function FleetView() {
                 ))}
               </SelectContent>
             </Select>
-            {retiredCount > 0 ? (
+            {hiddenCount > 0 ? (
               <div className="flex items-center gap-2 sm:pl-2">
                 <Switch
                   id="fleet-show-retired"
@@ -517,7 +545,7 @@ export function FleetView() {
                   onCheckedChange={(v) => setShowRetired(Boolean(v))}
                 />
                 <Label htmlFor="fleet-show-retired" className="text-sm font-normal whitespace-nowrap">
-                  Show retired ({retiredCount})
+                  Show inactive and retired ({hiddenCount})
                 </Label>
               </div>
             ) : null}
@@ -535,12 +563,12 @@ export function FleetView() {
             <EmptyState
               icon={MonitorSmartphone}
               title="No active devices"
-              description={`${retiredCount} retired ${retiredCount === 1 ? "device is" : "devices are"} hidden. ${EMPTY_FLEET_HINT[mode]}`}
+              description={`${hiddenCount} inactive or retired ${hiddenCount === 1 ? "device is" : "devices are"} hidden. ${EMPTY_FLEET_HINT[mode]}`}
               action={
                 <div className="flex flex-col items-center gap-2">
                   {emptyActions}
                   <Button variant="link" size="sm" onClick={() => setShowRetired(true)}>
-                    Show retired devices
+                    Show them
                   </Button>
                 </div>
               }
@@ -570,7 +598,7 @@ export function FleetView() {
                     <TableHead>Status</TableHead>
                     <TableHead className="hidden md:table-cell">CPU · Memory</TableHead>
                     <TableHead className="hidden lg:table-cell">IP</TableHead>
-                    <TableHead className="pr-6 text-right">Last check-in</TableHead>
+                    <TableHead className="pr-6 text-right">Last seen</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

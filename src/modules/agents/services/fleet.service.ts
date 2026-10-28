@@ -18,6 +18,12 @@ export interface ApiDevice {
   ip: string;
   /** Epoch ms of the last heartbeat. */
   last_heartbeat: number;
+  /**
+   * Epoch ms of the last sign of life of any kind — the newer of the last heartbeat and the last
+   * live-connection event. Absent on servers from before 2026-10-28; read it through
+   * `lib/device-activity.ts` (`lastSeenAt`), which falls back to `last_heartbeat`.
+   */
+  last_seen?: number;
   /** `online` | `idle` | `offline`. */
   connectivity: string;
   /**
